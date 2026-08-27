@@ -1,0 +1,4 @@
+defaults:
+  - easywam_mot
+  - lora: video_dit
+  - _self_

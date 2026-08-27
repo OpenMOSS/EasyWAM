@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - libero_easywam_unified
+  - override /model: easywam_unified_lora
+  - _self_

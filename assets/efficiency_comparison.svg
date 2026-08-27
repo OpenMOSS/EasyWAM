@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">EasyWAM-MoT and FastWAM training efficiency comparison</title>
+  <desc id="desc">EasyWAM-MoT reaches 121.9 samples per second compared with 51.5 for FastWAM, and has lower data, forward, and backward time per step.</desc>
+  <rect width="1200" height="540" rx="20" fill="#f8fafc"/>
+  <text x="600" y="48" text-anchor="middle" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#0f172a">Training Efficiency Comparison</text>
+  <text x="600" y="76" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#64748b">Architecture-matched · 8 × NVIDIA H100 GPUs · per-device batch size 16</text>
+
+  <rect x="45" y="95" width="535" height="400" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="312" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#0f172a">Throughput</text>
+  <text x="312" y="146" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#64748b">samples / second (higher is better)</text>
+
+  <line x1="105" y1="430" x2="535" y2="430" stroke="#94a3b8"/>
+  <line x1="105" y1="355" x2="535" y2="355" stroke="#e2e8f0"/>
+  <line x1="105" y1="280" x2="535" y2="280" stroke="#e2e8f0"/>
+  <line x1="105" y1="205" x2="535" y2="205" stroke="#e2e8f0"/>
+  <line x1="105" y1="130" x2="535" y2="130" stroke="#e2e8f0"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#64748b" text-anchor="end">
+    <text x="96" y="434">0</text>
+    <text x="96" y="359">40</text>
+    <text x="96" y="284">80</text>
+    <text x="96" y="209">120</text>
+    <text x="96" y="134">160</text>
+  </g>
+  <rect x="180" y="201.4" width="110" height="228.6" rx="6" fill="#2563eb"/>
+  <rect x="350" y="333.4" width="110" height="96.6" rx="6" fill="#94a3b8"/>
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <text x="235" y="192" font-size="17" font-weight="700" fill="#1d4ed8">121.9</text>
+    <text x="405" y="324" font-size="17" font-weight="700" fill="#475569">51.5</text>
+    <text x="235" y="455" font-size="13" font-weight="700" fill="#0f172a">EasyWAM-MoT</text>
+    <text x="405" y="455" font-size="14" font-weight="700" fill="#0f172a">FastWAM</text>
+  </g>
+  <rect x="249" y="475" width="126" height="30" rx="15" fill="#dbeafe"/>
+  <text x="312" y="496" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#1d4ed8">2.37× faster</text>
+
+  <rect x="600" y="95" width="555" height="400" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="877" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#0f172a">Time per Step by Stage</text>
+  <text x="877" y="146" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#64748b">seconds (lower is better)</text>
+
+  <line x1="665" y1="430" x2="1120" y2="430" stroke="#94a3b8"/>
+  <line x1="665" y1="355" x2="1120" y2="355" stroke="#e2e8f0"/>
+  <line x1="665" y1="280" x2="1120" y2="280" stroke="#e2e8f0"/>
+  <line x1="665" y1="205" x2="1120" y2="205" stroke="#e2e8f0"/>
+  <line x1="665" y1="130" x2="1120" y2="130" stroke="#e2e8f0"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#64748b" text-anchor="end">
+    <text x="656" y="434">0.0</text>
+    <text x="656" y="359">0.4</text>
+    <text x="656" y="284">0.8</text>
+    <text x="656" y="209">1.2</text>
+    <text x="656" y="134">1.6</text>
+  </g>
+
+  <rect x="715" y="425.2" width="42" height="4.8" rx="2" fill="#2563eb"/>
+  <rect x="762" y="415.8" width="42" height="14.2" rx="3" fill="#94a3b8"/>
+  <rect x="855" y="333.2" width="42" height="96.8" rx="4" fill="#2563eb"/>
+  <rect x="902" y="197.3" width="42" height="232.7" rx="4" fill="#94a3b8"/>
+  <rect x="995" y="339.2" width="42" height="90.8" rx="4" fill="#2563eb"/>
+  <rect x="1042" y="229.8" width="42" height="200.2" rx="4" fill="#94a3b8"/>
+
+  <g font-family="Arial, sans-serif" font-size="11" font-weight="700" text-anchor="middle">
+    <text x="736" y="417" fill="#1d4ed8">0.0258</text>
+    <text x="783" y="408" fill="#475569">0.0759</text>
+    <text x="876" y="325" fill="#1d4ed8">0.5162</text>
+    <text x="923" y="189" fill="#475569">1.2412</text>
+    <text x="1016" y="331" fill="#1d4ed8">0.4842</text>
+    <text x="1063" y="222" fill="#475569">1.0680</text>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">
+    <text x="759" y="455">Data</text>
+    <text x="899" y="455">Forward</text>
+    <text x="1039" y="455">Backward</text>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="12">
+    <rect x="760" y="474" width="14" height="14" rx="2" fill="#2563eb"/>
+    <text x="781" y="486" fill="#334155">EasyWAM-MoT</text>
+    <rect x="900" y="474" width="14" height="14" rx="2" fill="#94a3b8"/>
+    <text x="921" y="486" fill="#334155">FastWAM</text>
+  </g>
+</svg>

@@ -1,0 +1,68 @@
+# @package _global_
+
+defaults:
+  - train
+  - override /task: libero_easywam_mot
+  - _self_
+
+ckpt: null
+gpu_id: 0
+
+model:
+  load_text_encoder: true
+  skip_dit_load_from_pretrain: true
+  action_dit_pretrained_path: null
+
+EVALUATION:
+  task_suite_name: libero_spatial
+  task_id: 0
+  # The official LIBERO-Plus protocol evaluates every perturbation task once.
+  num_trials: 1
+  output_dir: ./evaluate_results/libero_plus/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
+  video_mode: none
+  visualize_future_video: false
+  progress: false
+  timing_enabled: false
+
+  env_num: 1
+  num_steps_wait: 30
+  replan_steps: 10
+  binarize_gripper: true
+  use_action_ensembler: false
+
+  action_horizon: null
+  num_inference_steps: ${eval_num_inference_steps}
+  sigma_shift: null
+  text_cfg_scale: 1.0
+  negative_prompt: ""
+  rand_device: cpu
+  tiled: false
+
+  dataset_stats_path: null
+  device: cuda
+
+MULTIRUN:
+  create_only: false
+  task_suite_names:
+    - libero_spatial
+    - libero_object
+    - libero_goal
+    - libero_10
+  # Optional filters. Task IDs are zero-based and apply to every selected suite.
+  categories: null
+  difficulty_levels: null
+  task_ids: null
+  num_gpus: 8
+  # 1 selects EGL; values greater than 1 select CPU OSMesa rendering.
+  max_tasks_per_gpu: 2
+
+# Internal worker arguments populated by run_libero_plus_manager.py.
+WORKER:
+  task_file: null
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: .
+  output_subdir: null

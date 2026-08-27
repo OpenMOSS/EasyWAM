@@ -1,0 +1,40 @@
+_target_: runtime.create_easywam_unified
+model_id: ./checkpoints/Wan2.2-TI2V-5B
+tokenizer_model_id: ./checkpoints/umt5-xxl
+tokenizer_max_len: 128
+load_text_encoder: false
+attention_backend: auto
+action_dim: ${data.train.processor.action_output_dim}
+state_dim: ${data.train.processor.proprio_output_dim}
+projector_hidden_dim: 64
+skip_dit_load_from_pretrain: false
+
+video_dit_config:
+  has_image_input: false
+  patch_size: [1, 2, 2]
+  in_dim: 48
+  hidden_dim: 3072
+  ffn_dim: 14336
+  freq_dim: 256
+  text_dim: 4096
+  out_dim: 48
+  num_heads: 24
+  attn_head_dim: 128
+  num_layers: 30
+  eps: 1.0e-06
+  seperated_timestep: true
+  fuse_vae_embedding_in_latents: true
+  video_attention_mask_mode: "first_frame_causal"
+
+video_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+
+action_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+
+loss:
+  lambda_video: 1.0
