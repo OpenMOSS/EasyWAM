@@ -25,9 +25,9 @@ Download `assets.zip` from the [official LIBERO-Plus assets](https://huggingface
 
 Use any EasyWAM checkpoint trained with a LIBERO task, for example:
 
-- `libero_easywam_mot` or `libero_easywam_mot_lora`
-- `libero_easywam_unified` or `libero_easywam_unified_lora`
-- `libero_easywam_hidden` or `libero_easywam_hidden_lora`
+- `libero_easywam_mot_wan22` or `libero_easywam_mot_wan22_lora`
+- `libero_easywam_unified_wan22` or `libero_easywam_unified_wan22_lora`
+- `libero_easywam_hidden_wan22` or `libero_easywam_hidden_wan22_lora`
 
 `dataset_stats.json` is required. If `EVALUATION.dataset_stats_path` is omitted, the manager searches up to four parent directories of the checkpoint.
 
@@ -35,7 +35,7 @@ Validate the installation and build a task manifest without running rollouts:
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   MULTIRUN.create_only=true \
   EVALUATION.output_dir=./evaluate_results/libero_plus/validation
 ```
@@ -46,7 +46,7 @@ The official configuration evaluates every selected perturbation task once. The 
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   MULTIRUN.num_gpus=8 \
@@ -57,7 +57,7 @@ Filter a development run by suite, perturbation category, difficulty, or zero-ba
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   'MULTIRUN.task_suite_names=[libero_spatial]' \

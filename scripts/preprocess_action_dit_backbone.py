@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
 
-from model.wan22.action_dit import ActionDiT
-from model.wan22.helpers.loader import load_wan22_ti2v_5b_components
+from model.component.action_dit import ActionDiT
+from model.backbone.loader import load_easywam_backbone
 
 
 def _parse_dtype(name: str) -> torch.dtype:
@@ -96,30 +96,122 @@ def _resize_tensor_to_shape(src: torch.Tensor, target_shape: tuple[int, ...]) ->
     return out.to(dtype=src.dtype)
 
 
-def _load_model_config(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _load_model_config(path: Path, backbone_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
     cfg = OmegaConf.load(str(path))
-    if "video_dit_config" not in cfg or "action_dit_config" not in cfg:
-        raise ValueError(
-            f"`{path}` must contain both `video_dit_config` and `action_dit_config` at top level."
-        )
-
-    video_cfg = OmegaConf.to_container(cfg.video_dit_config, resolve=False)
+    if "action_dit_config" not in cfg:
+        raise ValueError(f"`{path}` must contain `action_dit_config`.")
+    backbone_path = path.parent / "backbone" / f"{backbone_name}.yaml"
+    if not backbone_path.is_file():
+        raise FileNotFoundError(f"Backbone config not found: {backbone_path}")
+    backbone_cfg = OmegaConf.to_container(OmegaConf.load(backbone_path), resolve=False)
     action_cfg = OmegaConf.to_container(cfg.action_dit_config, resolve=False)
-    if not isinstance(video_cfg, dict) or not isinstance(action_cfg, dict):
-        raise ValueError("`video_dit_config` and `action_dit_config` must resolve to dicts.")
-
-    if _is_unresolved_interpolation(video_cfg.get("action_dim")):
-        print("[WARN] `video_dit_config.action_dim` is unresolved; defaulting to 7 for preprocessing.")
-        video_cfg["action_dim"] = 7
+    if not isinstance(backbone_cfg, dict) or not isinstance(action_cfg, dict):
+        raise ValueError("Backbone and ActionDiT configs must resolve to dictionaries.")
+    if isinstance(backbone_cfg.get("dit_config"), dict):
+        backbone_cfg["dit_config"]["attention_backend"] = backbone_cfg.get(
+            "attention_backend", "sdpa"
+        )
 
     if _is_unresolved_interpolation(action_cfg.get("action_dim")):
         print("[WARN] `action_dit_config.action_dim` is unresolved; defaulting to 7 for preprocessing.")
         action_cfg["action_dim"] = 7
 
     for key in ["num_heads", "attn_head_dim", "num_layers", "text_dim", "freq_dim"]:
-        action_cfg[key] = _resolve_from_video_cfg(action_cfg.get(key), video_cfg)
+        action_cfg[key] = backbone_cfg[key]
+    action_cfg["attention_backend"] = backbone_cfg.get("attention_backend", "sdpa")
 
-    return video_cfg, action_cfg, cfg
+    return backbone_cfg, action_cfg
+
+
+def _cosmos_source_key(target_key: str) -> str | None:
+    direct = {
+        "text_embedding.0.weight": "crossattn_proj.0.weight",
+        "text_embedding.0.bias": "crossattn_proj.0.bias",
+        "time_embedding.0.weight": "t_embedder.1.linear_1.weight",
+        "time_embedding.2.weight": "t_embedder.1.linear_1.weight",
+        "time_projection.1.weight": "t_embedder.1.linear_2.weight",
+    }
+    if target_key in direct:
+        return direct[target_key]
+    parts = target_key.split(".")
+    if len(parts) < 4 or parts[0] != "blocks":
+        return None
+    layer = parts[1]
+    suffix = ".".join(parts[2:])
+    mapping = {
+        "self_attn.q.weight": "self_attn.q_proj.weight",
+        "self_attn.k.weight": "self_attn.k_proj.weight",
+        "self_attn.v.weight": "self_attn.v_proj.weight",
+        "self_attn.o.weight": "self_attn.output_proj.weight",
+        "self_attn.norm_q.weight": "self_attn.q_norm.weight",
+        "self_attn.norm_k.weight": "self_attn.k_norm.weight",
+        "cross_attn.q.weight": "cross_attn.q_proj.weight",
+        "cross_attn.k.weight": "cross_attn.k_proj.weight",
+        "cross_attn.v.weight": "cross_attn.v_proj.weight",
+        "cross_attn.o.weight": "cross_attn.output_proj.weight",
+        "cross_attn.norm_q.weight": "cross_attn.q_norm.weight",
+        "cross_attn.norm_k.weight": "cross_attn.k_norm.weight",
+        "ffn.0.weight": "mlp.layer1.weight",
+        "ffn.2.weight": "mlp.layer2.weight",
+    }
+    source_suffix = mapping.get(suffix)
+    return None if source_suffix is None else f"blocks.{layer}.{source_suffix}"
+
+
+def _convert_backbone_state(
+    backbone_name: str,
+    video_state: dict[str, torch.Tensor],
+    action_state: dict[str, torch.Tensor],
+    backbone_keys: set[str],
+    apply_alpha_scaling: bool,
+) -> tuple[dict[str, torch.Tensor], int, int, int]:
+    output = {}
+    copied = interpolated = initialized = 0
+    for key in sorted(backbone_keys):
+        target = action_state[key]
+        source_key = key if backbone_name == "wan22" else _cosmos_source_key(key)
+        src = video_state.get(source_key) if source_key is not None else None
+        if src is None:
+            if key == "text_embedding.2.weight" and target.ndim == 2 and target.shape[0] == target.shape[1]:
+                value = torch.eye(target.shape[0], dtype=target.dtype)
+            elif key.endswith(".weight") and ("norm3" in key):
+                value = torch.ones_like(target)
+            else:
+                value = torch.zeros_like(target)
+            initialized += 1
+        elif (
+            backbone_name == "cosmos25"
+            and key == "time_projection.1.weight"
+            and src.ndim == 2
+            and src.shape[0] % 3 == 0
+            and target.shape[0] % 6 == 0
+        ):
+            target_hidden = target.shape[0] // 6
+            chunks = []
+            for chunk in src.reshape(3, src.shape[0] // 3, src.shape[1]):
+                chunks.append(_resize_tensor_to_shape(chunk, (target_hidden, target.shape[1])))
+            value = torch.cat(chunks + chunks, dim=0)
+            if apply_alpha_scaling and src.shape[-1] != target.shape[-1]:
+                value = value.float() * (float(src.shape[-1]) / float(target.shape[-1])) ** 0.5
+            interpolated += 1
+        elif (
+            backbone_name == "cosmos25"
+            and (".norm_q.weight" in key or ".norm_k.weight" in key)
+            and src.ndim == target.ndim == 1
+            and target.numel() % src.numel() == 0
+        ):
+            value = src.repeat(target.numel() // src.numel())
+            interpolated += 1
+        elif tuple(src.shape) == tuple(target.shape):
+            value = src
+            copied += 1
+        else:
+            value = _resize_tensor_to_shape(src, tuple(target.shape))
+            if apply_alpha_scaling and src.ndim >= 2 and src.shape[-1] != target.shape[-1]:
+                value = value.float() * (float(src.shape[-1]) / float(target.shape[-1])) ** 0.5
+            interpolated += 1
+        output[key] = value.detach().to(dtype=target.dtype, device="cpu").contiguous()
+    return output, copied, interpolated, initialized
 
 
 def _require_int_config(cfg: dict[str, Any], key: str) -> int:
@@ -138,10 +230,15 @@ def _require_float_config(cfg: dict[str, Any], key: str) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Preprocess ActionDiT backbone weights from WanVideoDiT and save as .pt payload."
+        description="Preprocess ActionDiT weights from a Wan22 or Cosmos25 video backbone."
     )
-    parser.add_argument("--model-config", required=True, help="Path to model yaml, e.g. configs/model/easywam_mot.yaml")
+    parser.add_argument(
+        "--model-config",
+        required=True,
+        help="Path to model yaml, e.g. configs/model/easywam_mot_wan22.yaml",
+    )
     parser.add_argument("--output", required=True, help="Output .pt path for preprocessed ActionDiT backbone.")
+    parser.add_argument("--backbone", default="wan22", choices=["wan22", "cosmos25"])
     parser.add_argument("--device", default="cpu", help="Device for loading model and preprocessing.")
     parser.add_argument("--dtype", default="float32", choices=["float32", "float16", "bfloat16"])
     parser.add_argument(
@@ -156,7 +253,7 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     apply_alpha_scaling = _parse_bool(args.apply_alpha_scaling)
 
-    video_cfg, action_cfg, cfg = _load_model_config(model_config_path)
+    backbone_cfg, action_cfg = _load_model_config(model_config_path, args.backbone)
     torch_dtype = _parse_dtype(args.dtype)
     int_fields = ["hidden_dim", "action_dim", "ffn_dim", "num_layers", "num_heads", "attn_head_dim", "text_dim", "freq_dim"]
     for key in int_fields:
@@ -166,12 +263,10 @@ def main() -> None:
     print(f"[INFO] Loaded model config from {model_config_path}. "
           f"Preprocessing ActionDiT backbone with dtype={torch_dtype} on device={args.device}, "
           f"apply_alpha_scaling={apply_alpha_scaling}.")
-    components = load_wan22_ti2v_5b_components(
+    components = load_easywam_backbone(
+        backbone_cfg,
         device=args.device,
         torch_dtype=torch_dtype,
-        model_id=cfg.get("model_id", "./checkpoints/Wan2.2-TI2V-5B"),
-        tokenizer_model_id=cfg.get("tokenizer_model_id", "./checkpoints/umt5-xxl"),
-        dit_config=video_cfg,
     )
     video_expert = components.dit
 
@@ -187,30 +282,17 @@ def main() -> None:
     video_state = video_expert.state_dict()
     backbone_keys = ActionDiT.backbone_key_set(action_state.keys())
 
-    backbone_state_dict: dict[str, torch.Tensor] = {}
-    copied = 0
-    interpolated = 0
-    for key in sorted(backbone_keys):
-        if key not in video_state:
-            raise ValueError(f"Key `{key}` not found in video expert state dict.")
-        src = video_state[key]
-        target = action_state[key]
-        if tuple(src.shape) == tuple(target.shape):
-            value = src
-            copied += 1
-        else:
-            value = _resize_tensor_to_shape(src, tuple(target.shape))
-            if apply_alpha_scaling and src.ndim >= 2 and src.shape[-1] != target.shape[-1]:
-                alpha = (float(src.shape[-1]) / float(target.shape[-1])) ** 0.5
-                value = value.to(torch.float32) * alpha
-            interpolated += 1
-        backbone_state_dict[key] = value.detach().to(dtype=target.dtype, device="cpu").contiguous()
+    backbone_state_dict, copied, interpolated, initialized = _convert_backbone_state(
+        args.backbone, video_state, action_state, backbone_keys, apply_alpha_scaling
+    )
 
     payload = {
         "policy": {
             "skip_prefixes": list(ActionDiT.ACTION_BACKBONE_SKIP_PREFIXES),
             "alpha_scaling": bool(apply_alpha_scaling),
             "interpolation": "sequential_1d_linear_align_corners_true",
+            "source_backbone": args.backbone,
+            "mapping_version": 1,
         },
         "backbone_state_dict": backbone_state_dict,
         "meta": {
@@ -229,7 +311,8 @@ def main() -> None:
     skipped = len(action_state) - len(backbone_keys)
     print(
         "[INFO] Saved ActionDiT backbone payload to "
-        f"{output_path} (copied={copied}, interpolated={interpolated}, skipped={skipped})."
+        f"{output_path} (copied={copied}, interpolated={interpolated}, "
+        f"initialized={initialized}, skipped={skipped})."
     )
 
 

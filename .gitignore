@@ -2,8 +2,8 @@
 # Misc
 outputs/
 tmp/
-checkpoints
-data/
+/checkpoints/
+/data/
 apex/
 runs/
 log/

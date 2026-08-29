@@ -1,4 +1,0 @@
-defaults:
-  - easywam_hidden
-  - lora: video_dit
-  - _self_

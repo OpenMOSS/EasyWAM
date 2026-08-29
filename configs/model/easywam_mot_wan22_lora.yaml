@@ -1,0 +1,35 @@
+defaults:
+  - backbone: wan22
+  - lora: video_dit
+  - _self_
+
+_target_: runtime.create_easywam_mot
+attention_backend: ${model.backbone.attention_backend}
+state_dim: ${data.train.processor.proprio_output_dim}
+projector_hidden_dim: 64
+action_dit_pretrained_path: ${model.backbone.action_dit_pretrained_path}
+skip_dit_load_from_pretrain: false
+
+action_dit_config:
+  action_dim: ${data.train.processor.action_output_dim}
+  projector_hidden_dim: 64
+  hidden_dim: 1024
+  ffn_dim: 4096
+  num_heads: ${model.backbone.num_heads}
+  attn_head_dim: ${model.backbone.attn_head_dim}
+  num_layers: ${model.backbone.num_layers}
+  text_dim: ${model.backbone.text_dim}
+  freq_dim: ${model.backbone.freq_dim}
+  eps: 1.0e-06
+  attention_backend: ${model.backbone.attention_backend}
+  use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}
+
+video_scheduler: ${model.backbone.video_scheduler}
+
+action_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+
+loss:
+  lambda_video: 1.0

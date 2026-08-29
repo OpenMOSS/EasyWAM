@@ -32,24 +32,28 @@ data/robotwin2.0/
 
 ## 训练
 
-预计算所有 RoboTwin 模型共享的文本 cache：
+预计算 RoboTwin 文本 cache。每条 prompt 会按 SHA-256 哈希单独写入文件，并在训练时按需加载：
 
 ```bash
-python scripts/precompute_text_embeds.py task=robotwin_easywam_mot
+python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_cosmos25
 ```
 
 当前有效的任务名如下：
 
-| 模型 | 全参数训练 | LoRA |
-| --- | --- | --- |
-| EasyWAM-MoT | `robotwin_easywam_mot` | `robotwin_easywam_mot_lora` |
-| EasyWAM-Unified | `robotwin_easywam_unified` | `robotwin_easywam_unified_lora` |
-| EasyWAM-Hidden | `robotwin_easywam_hidden` | `robotwin_easywam_hidden_lora` |
+| 模型 | Wan 全量 | Wan LoRA | Cosmos 全量 | Cosmos LoRA |
+| --- | --- | --- | --- | --- |
+| EasyWAM-MoT | `robotwin_easywam_mot_wan22` | `robotwin_easywam_mot_wan22_lora` | `robotwin_easywam_mot_cosmos25` | `robotwin_easywam_mot_cosmos25_lora` |
+| EasyWAM-Unified | `robotwin_easywam_unified_wan22` | `robotwin_easywam_unified_wan22_lora` | `robotwin_easywam_unified_cosmos25` | `robotwin_easywam_unified_cosmos25_lora` |
+| EasyWAM-Hidden | `robotwin_easywam_hidden_wan22` | `robotwin_easywam_hidden_wan22_lora` | `robotwin_easywam_hidden_cosmos25` | `robotwin_easywam_hidden_cosmos25_lora` |
 
 例如：
 
 ```bash
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
+
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_cosmos25
 ```
 
 默认数据配置从 `data/robotwin2.0/dataset_stats.json` 加载归一化统计。如果使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
@@ -60,7 +64,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot \
+  task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
@@ -71,7 +75,7 @@ python experiments/robotwin/run_robotwin_manager.py \
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot ckpt=<path/to/checkpoint.pt> \
+  task=robotwin_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   EVALUATION.task_name=beat_block_hammer \
   EVALUATION.instruction_type=seen

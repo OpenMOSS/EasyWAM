@@ -1,0 +1,52 @@
+name: wan22
+model_id: ./checkpoints/Wan2.2-TI2V-5B
+tokenizer_model_id: ./checkpoints/Wan2.2-TI2V-5B/google/umt5-xxl
+tokenizer_max_len: 128
+load_text_encoder: false
+text_encoder_id: wan22ti2v5b
+text_dim: 4096
+attention_backend: auto
+use_gradient_checkpointing: false
+num_layers: 30
+num_heads: 24
+attn_head_dim: 128
+hidden_dim: 3072
+freq_dim: 256
+video_hidden_layer: 17
+action_dit_pretrained_path: ./checkpoints/ActionDiT_Wan22_5B_alphascale_1024hdim.pt
+
+dit_config:
+  has_image_input: false
+  patch_size: [1, 2, 2]
+  in_dim: 48
+  hidden_dim: 3072
+  ffn_dim: 14336
+  freq_dim: 256
+  text_dim: 4096
+  out_dim: 48
+  num_heads: 24
+  attn_head_dim: 128
+  num_layers: 30
+  eps: 1.0e-06
+  seperated_timestep: true
+  fuse_vae_embedding_in_latents: true
+  video_attention_mask_mode: first_frame_causal
+  attention_backend: ${model.backbone.attention_backend}
+  use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}
+
+video_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+
+lora_target_modules:
+  - self_attn.q
+  - self_attn.k
+  - self_attn.v
+  - self_attn.o
+  - cross_attn.q
+  - cross_attn.k
+  - cross_attn.v
+  - cross_attn.o
+  - ffn.0
+  - ffn.2

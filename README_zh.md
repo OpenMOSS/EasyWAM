@@ -49,6 +49,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | Backbone | 支持情况 |
 | --- | :---: |
 | Wan2.2-TI2V-5B | ✅ |
+| Cosmos-Predict2.5-2B | ✅ |
 
 ### 🧪 Benchmark
 
@@ -59,6 +60,8 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | RoboTwin | 全参数训练和 LoRA | Clean 和 randomized 评测 |
 
 ## 🏆 Benchmark 结果
+
+> 以下所有 Benchmark 结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。
 
 <details open>
 <summary><b>LIBERO</b></summary>
@@ -94,6 +97,8 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 
 ## ⚡ 效率结果
 
+> 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。
+
 EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一致的条件下对比 EasyWAM 训练框架与 FastWAM 原始代码框架。在 **8 × NVIDIA H100 GPUs**、**per-device batch size 为 16** 的配置下，EasyWAM-MoT 的吞吐量达到 **121.9 samples/s**，是 FastWAM（51.5 samples/s）的 **2.37 倍**；每 step 的数据读取、前向传播和反向传播耗时分别降低 **66.0%**、**58.4%** 和 **54.7%**。
 
 <p align="center">
@@ -126,28 +131,54 @@ pip install -e .
 
 ### 📦 准备模型
 
-将模型放到默认配置使用的位置：
+请在项目根目录运行以下命令。下载位置与
+`configs/model/backbone/wan22.yaml`、`configs/model/backbone/cosmos25.yaml`
+中的默认路径一致。
+
+```bash
+mkdir -p checkpoints
+
+# Wan2.2 Video DiT、VAE、UMT5 encoder 和 tokenizer
+huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir checkpoints/Wan2.2-TI2V-5B
+
+# Cosmos post-trained 2B Video DiT 和对应的 Wan2.1 video tokenizer
+huggingface-cli download nvidia/Cosmos-Predict2.5-2B \
+  --include "base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt" "tokenizer.pth" \
+  --local-dir checkpoints/Cosmos-Predict2.5-2B
+
+# 用于生成 Cosmos 文本缓存的 Reason1 text encoder 和 tokenizer
+huggingface-cli download nvidia/Cosmos-Reason1-7B --local-dir checkpoints/Cosmos-Reason1-7B
+```
+
+完成下载并生成 ActionDiT 初始化权重后，默认配置实际使用以下文件：
 
 ```text
 checkpoints/
 ├── Wan2.2-TI2V-5B/
-└── umt5-xxl/
-```
-
-在项目根目录运行以下命令，从 Hugging Face 下载模型：
-
-```bash
-mkdir -p checkpoints
-huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir checkpoints/Wan2.2-TI2V-5B
-huggingface-cli download google/umt5-xxl --local-dir checkpoints/umt5-xxl
+├── Cosmos-Predict2.5-2B/
+│   ├── base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt
+│   └── tokenizer.pth
+├── Cosmos-Reason1-7B/
+├── ActionDiT_Wan22_5B_alphascale_1024hdim.pt
+└── ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt
 ```
 
 EasyWAM-MoT 和 EasyWAM-Hidden 还需要经过插值初始化的 ActionDiT 权重：
 
 ```bash
+# 输出路径与 configs/model/backbone/wan22.yaml 完全一致
 python scripts/preprocess_action_dit_backbone.py \
-  --model-config configs/model/easywam_mot.yaml \
-  --output checkpoints/ActionDiT_linear_interp_Wan22_alphascale_1024hdim.pt \
+  --model-config configs/model/easywam_mot_wan22.yaml \
+  --backbone wan22 \
+  --output checkpoints/ActionDiT_Wan22_5B_alphascale_1024hdim.pt \
+  --device cuda \
+  --dtype bfloat16
+
+# 输出路径与 configs/model/backbone/cosmos25.yaml 完全一致
+python scripts/preprocess_action_dit_backbone.py \
+  --model-config configs/model/easywam_mot_cosmos25.yaml \
+  --backbone cosmos25 \
+  --output checkpoints/ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt \
   --device cuda \
   --dtype bfloat16
 ```
@@ -159,30 +190,25 @@ EasyWAM-Unified 不需要该 ActionDiT checkpoint。
 准备好 benchmark 数据后执行一次：
 
 ```bash
-python scripts/precompute_text_embeds.py task=libero_easywam_mot
-# 或：python scripts/precompute_text_embeds.py task=robotwin_easywam_mot
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
+# 或：python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
-
-文本 cache 取决于 benchmark 数据，而不取决于 WAM 架构，因此同一 benchmark 的 EasyWAM-MoT、EasyWAM-Unified、EasyWAM-Hidden 和 LoRA task 可以共用。
 
 ### 🏋️ 训练
-
-启动训练前，请根据本机 EasyWAM 环境的实际路径设置 `PYTHON_PATH`，也可以直接修改训练脚本中的默认值：
-
-```bash
-export PYTHON_PATH=~/miniforge3/envs/easywam/bin/python
-# 或：
-export PYTHON_PATH=~/miniconda3/envs/easywam/bin/python
-```
 
 训练脚本直接接收 Hydra overrides，通过 `NPROC_PER_NODE` 设置本机进程数：
 
 ```bash
 # 8 张本机 GPU，DeepSpeed ZeRO-1
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
+
+# 三种 EasyWAM 均可用同一 override 切换 Cosmos25
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
+  task=libero_easywam_mot_cosmos25
 
 # 4 张本机 GPU，DeepSpeed ZeRO-2 LoRA 训练
-NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_lora
+NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_wan22_lora
 ```
 
 `scripts/train_zero2_offload.sh` 启用 ZeRO-2 CPU Offload。多机训练还需设置 `NNODES`、`NODE_RANK`、`MASTER_ADDR` 和 `MASTER_PORT`。
@@ -192,17 +218,17 @@ NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_lora
 ```bash
 # LIBERO
 python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 
 # LIBERO-Plus（使用 LIBERO checkpoint）
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 
 # RoboTwin
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot \
+  task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 ```
 

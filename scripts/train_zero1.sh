@@ -2,12 +2,13 @@
 set -euo pipefail
 
 EXTRA_ARGS=("$@")
-PYTHON_PATH=${PYTHON_PATH:-~/miniforge3/envs/easywam/bin/python}
 NPROC_PER_NODE="${NPROC_PER_NODE:-${PET_NPROC_PER_NODE:-8}}"
 NUM_MACHINES="${NNODES:-${PET_NNODES:-1}}"
 MACHINE_RANK="${NODE_RANK:-${PET_NODE_RANK:-0}}"
 MAIN_PROCESS_IP="${MASTER_ADDR:-${PET_MASTER_ADDR:-}}"
 MAIN_PROCESS_PORT="${MASTER_PORT:-${PET_MASTER_PORT:-29500}}"
+RUN_ID="${RUN_ID:-$(date +%Y-%m-%d_%H-%M-%S)}"
+GLOBAL_NUM_PROCESSES=$((NPROC_PER_NODE * NUM_MACHINES))
 
 if ! [[ "${NPROC_PER_NODE}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[launch] NPROC_PER_NODE/PET_NPROC_PER_NODE must be a positive integer, got: ${NPROC_PER_NODE}" >&2
@@ -43,12 +44,9 @@ for arg in "${EXTRA_ARGS[@]}"; do
   fi
 done
 
-RUN_ID="${RUN_ID:-$(date +%Y-%m-%d_%H-%M-%S)}"
-GLOBAL_NUM_PROCESSES=$((NPROC_PER_NODE * NUM_MACHINES))
+echo "[launch] nproc_per_node=${NPROC_PER_NODE} num_processes=${GLOBAL_NUM_PROCESSES} num_machines=${NUM_MACHINES} machine_rank=${MACHINE_RANK} run_id=${RUN_ID}"
 
-echo "[launch] python=${PYTHON_PATH} nproc_per_node=${NPROC_PER_NODE} num_processes=${GLOBAL_NUM_PROCESSES} num_machines=${NUM_MACHINES} machine_rank=${MACHINE_RANK} run_id=${RUN_ID}"
-
-"${PYTHON_PATH}" -m accelerate.commands.launch \
+accelerate launch \
   --config_file scripts/accelerate_configs/accelerate_zero1_ds.yaml \
   --num_processes "${GLOBAL_NUM_PROCESSES}" \
   --num_machines "${NUM_MACHINES}" \

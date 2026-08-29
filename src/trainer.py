@@ -454,7 +454,7 @@ class Wan22Trainer:
 
     @staticmethod
     def _apply_dit_only_train_mode(model):
-        from model.wan22.lora import has_lora, set_video_dit_lora_trainable
+        from model.component.lora import has_lora, set_video_dit_lora_trainable
 
         model.eval()
         model.requires_grad_(False)
@@ -584,7 +584,6 @@ class Wan22Trainer:
             "action_cfg_scale": 1.0,
             "num_inference_steps": self.eval_num_inference_steps,
             "seed": 42,
-            "tiled": False,
         }
         if sample["context"] is not None:
             infer_kwargs["prompt"] = None
@@ -669,8 +668,8 @@ class Wan22Trainer:
 
         # 4. VAE reconstruction metrics against GT video
         gt_video_batch = video0.unsqueeze(0).to(device=model.device, dtype=model.torch_dtype)
-        vae_latents = model._encode_video_latents(gt_video_batch, tiled=False)
-        vae_recon_video = model._decode_latents(vae_latents, tiled=False)
+        vae_latents = model._encode_video_latents(gt_video_batch)
+        vae_recon_video = model._decode_latents(vae_latents)
         vae_video_tensor = pil_frames_to_video_tensor(vae_recon_video)
 
         assert vae_video_tensor.shape == gt_video_tensor.shape, (

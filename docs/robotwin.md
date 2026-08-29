@@ -32,24 +32,28 @@ The pipeline combines the high camera and two wrist cameras into a 384×320 vide
 
 ## Training
 
-Precompute the shared RoboTwin text cache:
+Precompute the RoboTwin text cache. Each prompt is written to its own SHA-256-named file and loaded on demand during training:
 
 ```bash
-python scripts/precompute_text_embeds.py task=robotwin_easywam_mot
+python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_cosmos25
 ```
 
 Select a current task:
 
-| Model | Full training | LoRA |
-| --- | --- | --- |
-| EasyWAM-MoT | `robotwin_easywam_mot` | `robotwin_easywam_mot_lora` |
-| EasyWAM-Unified | `robotwin_easywam_unified` | `robotwin_easywam_unified_lora` |
-| EasyWAM-Hidden | `robotwin_easywam_hidden` | `robotwin_easywam_hidden_lora` |
+| Model | Wan full | Wan LoRA | Cosmos full | Cosmos LoRA |
+| --- | --- | --- | --- | --- |
+| EasyWAM-MoT | `robotwin_easywam_mot_wan22` | `robotwin_easywam_mot_wan22_lora` | `robotwin_easywam_mot_cosmos25` | `robotwin_easywam_mot_cosmos25_lora` |
+| EasyWAM-Unified | `robotwin_easywam_unified_wan22` | `robotwin_easywam_unified_wan22_lora` | `robotwin_easywam_unified_cosmos25` | `robotwin_easywam_unified_cosmos25_lora` |
+| EasyWAM-Hidden | `robotwin_easywam_hidden_wan22` | `robotwin_easywam_hidden_wan22_lora` | `robotwin_easywam_hidden_cosmos25` | `robotwin_easywam_hidden_cosmos25_lora` |
 
 For example:
 
 ```bash
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
+
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_cosmos25
 ```
 
 The default data config loads normalization statistics from `data/robotwin2.0/dataset_stats.json`. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.
@@ -60,7 +64,7 @@ Run all tasks listed by RoboTwin's `_eval_step_limit.yml`:
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot \
+  task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
@@ -71,7 +75,7 @@ Evaluate one task or change the language protocol with overrides:
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot ckpt=<path/to/checkpoint.pt> \
+  task=robotwin_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   EVALUATION.task_name=beat_block_hammer \
   EVALUATION.instruction_type=seen

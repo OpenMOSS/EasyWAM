@@ -49,6 +49,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | Backbone | Supported |
 | --- | :---: |
 | Wan2.2-TI2V-5B | ✅ |
+| Cosmos-Predict2.5-2B | ✅ |
 
 ### 🧪 Benchmarks
 
@@ -59,6 +60,8 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | RoboTwin | Full-parameter and LoRA | Clean and randomized evaluation |
 
 ## 🏆 Benchmark Results
+
+> All benchmark results reported below use **Wan2.2-TI2V-5B** as the backbone.
 
 <details open>
 <summary><b>LIBERO</b></summary>
@@ -94,6 +97,8 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 ## ⚡ Efficiency Results
 
+> All efficiency results reported below use **Wan2.2-TI2V-5B** as the backbone.
+
 EasyWAM-MoT and FastWAM use the same model architecture, enabling an architecture-matched comparison between the EasyWAM training framework and the original FastWAM codebase. Measured on **8 × NVIDIA H100 GPUs** with a **per-device batch size of 16**, EasyWAM-MoT achieves **121.9 samples/s**, a **2.37×** throughput improvement over FastWAM's 51.5 samples/s. It also reduces data, forward, and backward time per step by **66.0%**, **58.4%**, and **54.7%**, respectively.
 
 <p align="center">
@@ -126,28 +131,54 @@ pip install -e .
 
 ### 📦 Prepare Models
 
-Place the models at the paths used by the default configs:
+Run the following commands from the project root. The paths match the values in
+`configs/model/backbone/wan22.yaml` and `configs/model/backbone/cosmos25.yaml`.
+
+```bash
+mkdir -p checkpoints
+
+# Wan2.2 video DiT, VAE, UMT5 encoder, and tokenizer
+huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir checkpoints/Wan2.2-TI2V-5B
+
+# Cosmos post-trained 2B video DiT and its Wan2.1 video tokenizer
+huggingface-cli download nvidia/Cosmos-Predict2.5-2B \
+  --include "base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt" "tokenizer.pth" \
+  --local-dir checkpoints/Cosmos-Predict2.5-2B
+
+# Reason1 text encoder and tokenizer used to build the Cosmos text cache
+huggingface-cli download nvidia/Cosmos-Reason1-7B --local-dir checkpoints/Cosmos-Reason1-7B
+```
+
+After downloading and generating ActionDiT initialization weights, the files used by
+the default configs are:
 
 ```text
 checkpoints/
 ├── Wan2.2-TI2V-5B/
-└── umt5-xxl/
-```
-
-Download models from Hugging Face by running the following commands from the project root:
-
-```bash
-mkdir -p checkpoints
-huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir checkpoints/Wan2.2-TI2V-5B
-huggingface-cli download google/umt5-xxl --local-dir checkpoints/umt5-xxl
+├── Cosmos-Predict2.5-2B/
+│   ├── base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt
+│   └── tokenizer.pth
+├── Cosmos-Reason1-7B/
+├── ActionDiT_Wan22_5B_alphascale_1024hdim.pt
+└── ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt
 ```
 
 EasyWAM-MoT and EasyWAM-Hidden also use an interpolated ActionDiT initialization:
 
 ```bash
+# Writes the exact path referenced by configs/model/backbone/wan22.yaml
 python scripts/preprocess_action_dit_backbone.py \
-  --model-config configs/model/easywam_mot.yaml \
-  --output checkpoints/ActionDiT_linear_interp_Wan22_alphascale_1024hdim.pt \
+  --model-config configs/model/easywam_mot_wan22.yaml \
+  --backbone wan22 \
+  --output checkpoints/ActionDiT_Wan22_5B_alphascale_1024hdim.pt \
+  --device cuda \
+  --dtype bfloat16
+
+# Writes the exact path referenced by configs/model/backbone/cosmos25.yaml
+python scripts/preprocess_action_dit_backbone.py \
+  --model-config configs/model/easywam_mot_cosmos25.yaml \
+  --backbone cosmos25 \
+  --output checkpoints/ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt \
   --device cuda \
   --dtype bfloat16
 ```
@@ -159,30 +190,25 @@ EasyWAM-Unified does not require this ActionDiT checkpoint.
 Run this once after preparing a benchmark dataset:
 
 ```bash
-python scripts/precompute_text_embeds.py task=libero_easywam_mot
-# Or: python scripts/precompute_text_embeds.py task=robotwin_easywam_mot
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
+# Or: python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
-
-The cache depends on the benchmark data rather than the selected WAM architecture, so it can be shared by the corresponding EasyWAM-MoT, EasyWAM-Unified, EasyWAM-Hidden, and LoRA tasks.
 
 ### 🏋️ Train
-
-Set `PYTHON_PATH` to the Python executable in your local EasyWAM environment before launching, or modify its default value in the training scripts:
-
-```bash
-export PYTHON_PATH=~/miniforge3/envs/easywam/bin/python
-# Or:
-export PYTHON_PATH=~/miniconda3/envs/easywam/bin/python
-```
 
 The launchers accept Hydra overrides directly. Set the number of local processes through `NPROC_PER_NODE`:
 
 ```bash
 # DeepSpeed ZeRO-1 on 8 local GPUs
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
+
+# All three EasyWAM variants can switch to Cosmos25 through the corresponding task config
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
+  task=libero_easywam_mot_cosmos25
 
 # DeepSpeed ZeRO-2 LoRA training on 4 local GPUs
-NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_lora
+NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_wan22_lora
 ```
 
 `scripts/train_zero2_offload.sh` enables ZeRO-2 CPU offload. Multi-node runs additionally use `NNODES`, `NODE_RANK`, `MASTER_ADDR`, and `MASTER_PORT`.
@@ -192,17 +218,17 @@ NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_lora
 ```bash
 # LIBERO
 python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 
 # LIBERO-Plus (uses a LIBERO checkpoint)
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 
 # RoboTwin
 python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot \
+  task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 ```
 

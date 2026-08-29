@@ -25,9 +25,9 @@ pip install --no-deps -e <path/to/LIBERO-plus>
 
 可以使用任意通过 LIBERO task 训练的 EasyWAM checkpoint，例如：
 
-- `libero_easywam_mot` 或 `libero_easywam_mot_lora`
-- `libero_easywam_unified` 或 `libero_easywam_unified_lora`
-- `libero_easywam_hidden` 或 `libero_easywam_hidden_lora`
+- `libero_easywam_mot_wan22` 或 `libero_easywam_mot_wan22_lora`
+- `libero_easywam_unified_wan22` 或 `libero_easywam_unified_wan22_lora`
+- `libero_easywam_hidden_wan22` 或 `libero_easywam_hidden_wan22_lora`
 
 评测必须提供 `dataset_stats.json`。如果没有设置 `EVALUATION.dataset_stats_path`，manager 会在 checkpoint 向上的四层父目录中自动查找。
 
@@ -35,7 +35,7 @@ pip install --no-deps -e <path/to/LIBERO-plus>
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   MULTIRUN.create_only=true \
   EVALUATION.output_dir=./evaluate_results/libero_plus/validation
 ```
@@ -46,7 +46,7 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   MULTIRUN.num_gpus=8 \
@@ -57,7 +57,7 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 
 ```bash
 python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot \
+  task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   'MULTIRUN.task_suite_names=[libero_spatial]' \

@@ -1,6 +1,0 @@
-# @package _global_
-
-defaults:
-  - robotwin_easywam_hidden
-  - override /model: easywam_hidden_lora
-  - _self_

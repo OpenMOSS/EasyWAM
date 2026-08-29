@@ -27,6 +27,7 @@ from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
 from experiments.prompt_context_cache import PromptContextCache
+from model.helpers.inference import configure_inference_compile
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +154,8 @@ class WorldActionRobotWinPolicy:
         text_cfg_scale: float,
         negative_prompt: str,
         rand_device: str,
-        tiled: bool,
         timing_enabled: bool,
+        torch_compile: bool,
         num_video_frames: int,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
@@ -163,6 +164,10 @@ class WorldActionRobotWinPolicy:
         self.model = instantiate(model_cfg_copy, model_dtype=model_dtype, device=device)
         self.model.load_checkpoint(checkpoint_path, merge_lora=True)
         self.model = self.model.to(device).eval()
+        self.model = configure_inference_compile(
+            self.model,
+            enabled=torch_compile,
+        )
 
         self.processor: WAMProcessor = instantiate(processor_cfg).eval()
         dataset_stats = load_dataset_stats_from_json(str(dataset_stats_path))
@@ -180,7 +185,6 @@ class WorldActionRobotWinPolicy:
         self.text_cfg_scale = float(text_cfg_scale)
         self.negative_prompt = str(negative_prompt)
         self.rand_device = str(rand_device)
-        self.tiled = bool(tiled)
         self.timing_enabled = bool(timing_enabled)
         self._num_video_frames = int(num_video_frames)
 
@@ -263,7 +267,6 @@ class WorldActionRobotWinPolicy:
             "sigma_shift": self.sigma_shift,
             "seed": self.seed,
             "rand_device": self.rand_device,
-            "tiled": self.tiled,
         }
         if self._supports_num_video_frames:
             infer_kwargs["num_video_frames"] = int(self._num_video_frames)
@@ -393,9 +396,11 @@ def get_model(usr_args: Dict[str, Any]):
     text_cfg_scale = float(usr_args.get("text_cfg_scale", cfg.EVALUATION.get("text_cfg_scale", 1.0)))
     negative_prompt = str(usr_args.get("negative_prompt", cfg.EVALUATION.get("negative_prompt", "")))
     rand_device = str(usr_args.get("rand_device", cfg.EVALUATION.get("rand_device", "cpu")))
-    tiled = _parse_bool(usr_args.get("tiled", cfg.EVALUATION.get("tiled", False)))
     timing_enabled = _parse_bool(
         usr_args.get("timing_enabled", cfg.EVALUATION.get("timing_enabled", False))
+    )
+    torch_compile = _parse_bool(
+        usr_args.get("torch_compile", cfg.EVALUATION.get("torch_compile", False))
     )
 
     policy = WorldActionRobotWinPolicy(
@@ -413,8 +418,8 @@ def get_model(usr_args: Dict[str, Any]):
         text_cfg_scale=text_cfg_scale,
         negative_prompt=negative_prompt,
         rand_device=rand_device,
-        tiled=tiled,
         timing_enabled=timing_enabled,
+        torch_compile=torch_compile,
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
     )
     return policy

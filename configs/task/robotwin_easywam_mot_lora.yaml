@@ -1,6 +1,0 @@
-# @package _global_
-
-defaults:
-  - robotwin_easywam_mot
-  - override /model: easywam_mot_lora
-  - _self_

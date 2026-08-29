@@ -4,14 +4,4 @@ lora_alpha: 128
 lora_dropout: 0.0
 bias: none
 init_lora_weights: true
-target_modules:
-  - self_attn.q
-  - self_attn.k
-  - self_attn.v
-  - self_attn.o
-  - cross_attn.q
-  - cross_attn.k
-  - cross_attn.v
-  - cross_attn.o
-  - ffn.0
-  - ffn.2
+target_modules: ${model.backbone.lora_target_modules}

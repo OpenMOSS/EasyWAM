@@ -1,0 +1,37 @@
+name: cosmos25
+model_id: ./checkpoints/Cosmos-Predict2.5-2B
+reason_model_id: ./checkpoints/Cosmos-Reason1-7B
+tokenizer_max_len: 128
+load_text_encoder: false
+text_encoder_id: cosmosreason17bfinal3584_cosmosprompt
+text_dim: 3584
+attention_backend: auto
+use_gradient_checkpointing: false
+video_attention_mask_mode: first_frame_causal
+num_layers: 28
+num_heads: 16
+attn_head_dim: 128
+hidden_dim: 2048
+freq_dim: 2048
+video_hidden_layer: 16
+action_dit_pretrained_path: ./checkpoints/ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt
+
+video_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+  time_distribution: logit_normal
+  training_weight: uniform
+  use_karras_sigmas: true
+
+lora_target_modules:
+  - self_attn.q_proj
+  - self_attn.k_proj
+  - self_attn.v_proj
+  - self_attn.output_proj
+  - cross_attn.q_proj
+  - cross_attn.k_proj
+  - cross_attn.v_proj
+  - cross_attn.output_proj
+  - mlp.layer1
+  - mlp.layer2

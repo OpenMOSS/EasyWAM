@@ -21,6 +21,5 @@ sigma_shift: null
 text_cfg_scale: 1.0
 negative_prompt: ""
 rand_device: cpu
-tiled: false
 timing_enabled: false
 skip_get_obs_within_replan: false

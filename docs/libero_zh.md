@@ -37,31 +37,36 @@ data/libero_mujoco3.3.2/
 
 ## 训练
 
-首先预计算一次聚合式文本 embedding cache。所有 LIBERO 模型配置都可以共用该 cache：
+首先预计算一次逐指令文本 embedding cache。每条 prompt 按 SHA-256 哈希单独存储，使用相同文本 encoder 的模型配置可以共用该 cache：
 
 ```bash
-python scripts/precompute_text_embeds.py task=libero_easywam_mot
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
 也可以使用多张 GPU：
 
 ```bash
 torchrun --standalone --nproc_per_node=8 \
-  scripts/precompute_text_embeds.py task=libero_easywam_mot
+  scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 ```
 
 当前有效的任务名如下：
 
-| 模型 | 全参数训练 | LoRA |
-| --- | --- | --- |
-| EasyWAM-MoT | `libero_easywam_mot` | `libero_easywam_mot_lora` |
-| EasyWAM-Unified | `libero_easywam_unified` | `libero_easywam_unified_lora` |
-| EasyWAM-Hidden | `libero_easywam_hidden` | `libero_easywam_hidden_lora` |
+| 模型 | Wan 全量 | Wan LoRA | Cosmos 全量 | Cosmos LoRA |
+| --- | --- | --- | --- | --- |
+| EasyWAM-MoT | `libero_easywam_mot_wan22` | `libero_easywam_mot_wan22_lora` | `libero_easywam_mot_cosmos25` | `libero_easywam_mot_cosmos25_lora` |
+| EasyWAM-Unified | `libero_easywam_unified_wan22` | `libero_easywam_unified_wan22_lora` | `libero_easywam_unified_cosmos25` | `libero_easywam_unified_cosmos25_lora` |
+| EasyWAM-Hidden | `libero_easywam_hidden_wan22` | `libero_easywam_hidden_wan22_lora` | `libero_easywam_hidden_cosmos25` | `libero_easywam_hidden_cosmos25_lora` |
 
 将 task 作为 Hydra override 启动训练：
 
 ```bash
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
+
+# Cosmos-Predict2.5 backbone（MoT/Hidden/Unified 通用）
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
+  task=libero_easywam_mot_cosmos25
 ```
 
 需要 ZeRO-2 或 ZeRO-2 CPU Offload 时，分别使用 `scripts/train_zero2.sh` 或 `scripts/train_zero2_offload.sh`。训练结果保存在 `runs/<task>/<run-id>/`。如果没有配置预先计算的归一化统计，首次训练会在 run 目录生成 `dataset_stats.json`；评测时应使用与 checkpoint 匹配的统计文件。
@@ -72,9 +77,9 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot
 
 ```bash
 python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot \
-  ckpt=./runs/libero_easywam_mot/<run-id>/checkpoints/weights/<checkpoint>.pt \
-  EVALUATION.dataset_stats_path=./runs/libero_easywam_mot/<run-id>/dataset_stats.json \
+  task=libero_easywam_mot_wan22 \
+  ckpt=./runs/libero_easywam_mot_wan22/<run-id>/checkpoints/weights/<checkpoint>.pt \
+  EVALUATION.dataset_stats_path=./runs/libero_easywam_mot_wan22/<run-id>/dataset_stats.json \
   MULTIRUN.num_gpus=8
 ```
 
@@ -83,14 +88,14 @@ python experiments/libero/run_libero_manager.py \
 ```bash
 # 只评测部分 suite，在四张 GPU 上各启动一个 worker
 python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot ckpt=<path/to/checkpoint.pt> \
+  task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   'MULTIRUN.task_suite_names=[libero_spatial,libero_object]' \
   MULTIRUN.num_gpus=4 MULTIRUN.max_tasks_per_gpu=1
 
 # 仅检查安装并生成任务清单，不启动 rollout
 python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot ckpt=<path/to/checkpoint.pt> MULTIRUN.create_only=true
+  task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> MULTIRUN.create_only=true
 ```
 
 默认协议会评测四个 suite，每个任务执行 50 次。每张 GPU 一个 worker 时 manager 使用 EGL；单卡多 worker 时使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。

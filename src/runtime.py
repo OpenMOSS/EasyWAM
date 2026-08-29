@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 def _apply_video_dit_lora(model, lora):
     if lora is None:
         return model
-    from model.wan22.lora import inject_video_dit_lora
+    from model.component.lora import inject_video_dit_lora
 
     inject_video_dit_lora(model.video_dit, lora)
     return model
@@ -75,7 +75,7 @@ def create_wan22_model(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.wan22.wan22 import Wan22Core
+    from model.backbone.wan22.wan22_core import Wan22Core
 
     if isinstance(dit_config, DictConfig):
         dit_config = OmegaConf.to_container(dit_config, resolve=True)
@@ -95,10 +95,42 @@ def create_wan22_model(
     )
 
 
+def create_cosmos25_model(
+    model_id: str = "./checkpoints/Cosmos-Predict2.5-2B",
+    reason_model_id: str = "./checkpoints/Cosmos-Reason1-7B",
+    tokenizer_max_len: int = 128,
+    load_text_encoder: bool = True,
+    attention_backend: str = "sdpa",
+    use_gradient_checkpointing: bool = False,
+    train_shift: float = 5.0,
+    infer_shift: float = 5.0,
+    num_train_timesteps: int = 1000,
+    model_dtype: torch.dtype = torch.bfloat16,
+    device: str = "cuda",
+):
+    """Create the standalone Cosmos-Predict2.5-2B Image2World backbone."""
+    from model.backbone.cosmos25 import Cosmos25Core
+
+    return Cosmos25Core.from_cosmos25_pretrained(
+        model_id=model_id,
+        reason_model_id=reason_model_id,
+        device=device,
+        torch_dtype=model_dtype,
+        load_text_encoder=bool(load_text_encoder),
+        tokenizer_max_len=int(tokenizer_max_len),
+        attention_backend=str(attention_backend),
+        use_gradient_checkpointing=bool(use_gradient_checkpointing),
+        train_shift=float(train_shift),
+        infer_shift=float(infer_shift),
+        num_train_timesteps=int(num_train_timesteps),
+    )
+
+
 def create_easywam_mot(
-    model_id: str,
-    tokenizer_model_id: str,
-    video_dit_config,
+    model_id: str | None = None,
+    tokenizer_model_id: str | None = None,
+    video_dit_config=None,
+    backbone=None,
     tokenizer_max_len: int = 512,
     load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
@@ -114,7 +146,32 @@ def create_easywam_mot(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.wan22.easywam_mot import EasyWAMMoT
+    from model.easywam_mot import EasyWAMMoT
+
+    if backbone is not None:
+        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
+        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
+        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
+        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
+        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
+        model = EasyWAMMoT.from_backbone_pretrained(
+            backbone=backbone,
+            device=device,
+            torch_dtype=model_dtype,
+            state_dim=state_dim,
+            projector_hidden_dim=projector_hidden_dim,
+            action_dit_config=action_dit_config,
+            action_dit_pretrained_path=action_dit_pretrained_path,
+            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
+            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
+            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
+            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
+            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
+            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
+            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
+            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        )
+        return _apply_video_dit_lora(model, lora)
 
     if isinstance(video_dit_config, DictConfig):
         video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
@@ -189,11 +246,12 @@ def create_easywam_mot(
 
 
 def create_easywam_unified(
-    model_id: str,
-    tokenizer_model_id: str,
-    video_dit_config,
-    action_dim: int,
-    state_dim: int,
+    model_id: str | None = None,
+    tokenizer_model_id: str | None = None,
+    video_dit_config=None,
+    backbone=None,
+    action_dim: int | None = None,
+    state_dim: int | None = None,
     tokenizer_max_len: int = 512,
     load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
@@ -207,7 +265,30 @@ def create_easywam_unified(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.wan22.easywam_unified import EasyWAMUnified
+    from model.easywam_unified import EasyWAMUnified
+
+    if backbone is not None:
+        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
+        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
+        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
+        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
+        model = EasyWAMUnified.from_backbone_pretrained(
+            backbone=backbone,
+            action_dim=int(action_dim),
+            state_dim=int(state_dim),
+            projector_hidden_dim=projector_hidden_dim,
+            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
+            device=device,
+            torch_dtype=model_dtype,
+            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
+            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
+            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
+            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
+            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
+            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
+            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        )
+        return _apply_video_dit_lora(model, lora)
 
     if isinstance(video_dit_config, DictConfig):
         video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
@@ -272,12 +353,13 @@ def create_easywam_unified(
 
 
 def create_easywam_hidden(
-    model_id: str,
-    tokenizer_model_id: str,
-    video_dit_config,
-    action_dit_config,
-    action_dim: int,
-    state_dim: int,
+    model_id: str | None = None,
+    tokenizer_model_id: str | None = None,
+    video_dit_config=None,
+    action_dit_config=None,
+    backbone=None,
+    action_dim: int | None = None,
+    state_dim: int | None = None,
     tokenizer_max_len: int = 512,
     load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
@@ -293,7 +375,35 @@ def create_easywam_hidden(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.wan22.easywam_hidden import EasyWAMHidden
+    from model.easywam_hidden import EasyWAMHidden
+
+    if backbone is not None:
+        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
+        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
+        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
+        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
+        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
+        model = EasyWAMHidden.from_backbone_pretrained(
+            backbone=backbone,
+            action_dit_config=action_dit_config,
+            action_dit_pretrained_path=action_dit_pretrained_path,
+            action_dim=int(action_dim),
+            state_dim=int(state_dim),
+            projector_hidden_dim=projector_hidden_dim,
+            video_hidden_layer=int(video_hidden_layer),
+            detach_video_hidden=detach_video_hidden,
+            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
+            device=device,
+            torch_dtype=model_dtype,
+            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
+            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
+            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
+            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
+            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
+            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
+            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        )
+        return _apply_video_dit_lora(model, lora)
 
     if isinstance(video_dit_config, DictConfig):
         video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
@@ -441,6 +551,12 @@ def run_inference(cfg: DictConfig):
         else:
             logger.warning("Checkpoint not found, skipping load: %s", checkpoint_path)
     model.eval()
+    from model.helpers.inference import configure_inference_compile
+
+    model = configure_inference_compile(
+        model,
+        enabled=bool(inference_cfg.get("torch_compile", False)),
+    )
     
     def center_crop_resize(img: Image, width: int, height: int) -> Image.Image:
         src_w, src_h = img.size
@@ -471,7 +587,6 @@ def run_inference(cfg: DictConfig):
         "sigma_shift": None if inference_cfg.get("sigma_shift") is None else float(inference_cfg.sigma_shift),
         "seed": int(inference_cfg.seed),
         "rand_device": str(inference_cfg.rand_device),
-        "tiled": bool(inference_cfg.tiled),
     }
 
     infer_out = model.infer(**infer_kwargs)

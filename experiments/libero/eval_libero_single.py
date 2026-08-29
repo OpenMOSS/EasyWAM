@@ -46,6 +46,7 @@ from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from libero.libero import benchmark
 from experiments.libero.action_ensembler import ActionEnsembler
 from experiments.prompt_context_cache import PromptContextCache
+from model.helpers.inference import configure_inference_compile
 
 OmegaConf.register_new_resolver("eval", eval)
 OmegaConf.register_new_resolver("max", lambda x: max(x))
@@ -299,11 +300,14 @@ def _validate_visualize_future_video_cfg(cfg: DictConfig) -> None:
     if not bool(cfg.EVALUATION.get("visualize_future_video", False)):
         return
 
-    action_conditioned = cfg.model.video_dit_config.get("action_conditioned", False)
+    video_dit_config = cfg.model.get("video_dit_config")
+    if video_dit_config is None:
+        video_dit_config = cfg.model.backbone.get("dit_config", {})
+    action_conditioned = video_dit_config.get("action_conditioned", False)
     if action_conditioned is not False:
         raise ValueError(
             "EVALUATION.visualize_future_video=true requires "
-            "model.video_dit_config.action_conditioned=false."
+            "model.backbone.dit_config.action_conditioned=false."
         )
 
 
@@ -422,7 +426,6 @@ def _predict_action_chunk(
         ),
         "seed": None if cfg.get("seed") is None else int(cfg.seed),
         "rand_device": str(cfg.EVALUATION.get("rand_device", "cpu")),
-        "tiled": bool(cfg.EVALUATION.get("tiled", False)),
     }
     visualize_future_video = bool(cfg.EVALUATION.get("visualize_future_video", False))
     predicted_future_frames = None
@@ -772,6 +775,10 @@ def build_eval_runtime(cfg: DictConfig) -> LiberoEvalRuntime:
     model = instantiate(cfg.model, model_dtype=model_dtype, device=model_device)
     _load_model_checkpoint(model, str(cfg.ckpt))
     model = model.to(model_device).eval()
+    model = configure_inference_compile(
+        model,
+        enabled=bool(cfg.EVALUATION.get("torch_compile", False)),
+    )
     model._eval_supports_num_video_frames = (
         "num_video_frames" in inspect.signature(model.infer_action).parameters
     )

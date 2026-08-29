@@ -2,14 +2,15 @@
 
 defaults:
   - train
-  - override /task: robotwin_easywam_mot
+  - override /task: robotwin_easywam_mot_wan22
   - _self_
 
 ckpt: null
 gpu_id: 0
 
 model:
-  load_text_encoder: true
+  backbone:
+    load_text_encoder: true
   skip_dit_load_from_pretrain: true
   action_dit_pretrained_path: null
 
@@ -30,8 +31,8 @@ EVALUATION:
   text_cfg_scale: 1.0
   negative_prompt: ""
   rand_device: cpu
-  tiled: false
   timing_enabled: false
+  torch_compile: false
   skip_get_obs_within_replan: true
 
   # Runtime inputs

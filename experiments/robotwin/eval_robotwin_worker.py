@@ -73,7 +73,6 @@ def _common_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) ->
         "text_cfg_scale": cfg.EVALUATION.text_cfg_scale,
         "negative_prompt": cfg.EVALUATION.negative_prompt,
         "rand_device": cfg.EVALUATION.rand_device,
-        "tiled": cfg.EVALUATION.tiled,
         "timing_enabled": cfg.EVALUATION.timing_enabled,
     }
     for key, value in values.items():

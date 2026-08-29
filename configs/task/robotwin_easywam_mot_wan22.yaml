@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - override /data: robotwin
+  - override /model: easywam_mot_wan22
+  - _self_
+
+batch_size: 16
+num_workers: 8
+
+lr_scheduler_type: cosine
+learning_rate: 1e-4
+max_steps: 30000
+log_every: 100
+save_every: 2000
+eval_every: 1000
+eval_num_inference_steps: 10
+
+gradient_accumulation_steps: 1
+weight_decay: 1e-2
+resume: null
