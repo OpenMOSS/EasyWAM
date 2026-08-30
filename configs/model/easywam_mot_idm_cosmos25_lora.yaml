@@ -1,0 +1,5 @@
+defaults:
+  - easywam_mot_cosmos25_lora
+  - _self_
+
+_target_: runtime.create_easywam_mot_idm

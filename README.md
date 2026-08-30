@@ -35,13 +35,17 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 ### 🧠 Models
 
 - **EasyWAM-Unified.** A single-backbone architecture that places video, action, and robot-state tokens in one Video DiT to jointly predict future video and actions. The architecture is based on [DreamZero](https://github.com/dreamzero0/dreamzero).
-- **EasyWAM-MoT.** A dual-backbone architecture with separate Video DiT and Action DiT experts whose tokens interact through shared mixed self-attention. The architecture is based on [FastWAM](https://github.com/yuantianyuan01/FastWAM).
+- **EasyWAM-MoT.** A dual-backbone model with separate Video DiT and Action DiT experts whose tokens interact through shared mixed self-attention. It performs action-only prediction and is based on [FastWAM](https://github.com/yuantianyuan01/FastWAM).
+- **EasyWAM-MoT-Joint.** A dual-backbone model that jointly denoises video and action tokens through shared mixed self-attention.
+- **EasyWAM-MoT-IDM.** A dual-backbone model that uses teacher-forced conditional video for action prediction.
 - **EasyWAM-Hidden.** A dual-backbone architecture that uses intermediate Video DiT features as conditional input to a separate Action DiT. The architecture is based on [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT).
 
 | Model | Full-Parameter Training | LoRA Fine-Tuning |
 | --- | :---: | :---: |
 | EasyWAM-Unified | ✅ | ✅ |
 | EasyWAM-MoT | ✅ | ✅ |
+| EasyWAM-MoT-Joint | ✅ | ✅ |
+| EasyWAM-MoT-IDM | ✅ | ✅ |
 | EasyWAM-Hidden | ✅ | ✅ |
 
 ### 🏗️ Backbone
@@ -203,7 +207,7 @@ The launchers accept Hydra overrides directly. Set the number of local processes
 # DeepSpeed ZeRO-1 on 8 local GPUs
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
 
-# All three EasyWAM variants can switch to Cosmos25 through the corresponding task config
+# MoT, MoT-Joint, and MoT-IDM each have a corresponding Cosmos25 task config
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=libero_easywam_mot_cosmos25
 

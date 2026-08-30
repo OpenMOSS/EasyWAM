@@ -126,7 +126,8 @@ def create_cosmos25_model(
     )
 
 
-def create_easywam_mot(
+def _create_easywam_mot(
+    model_cls,
     model_id: str | None = None,
     tokenizer_model_id: str | None = None,
     video_dit_config=None,
@@ -146,15 +147,13 @@ def create_easywam_mot(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.easywam_mot import EasyWAMMoT
-
     if backbone is not None:
         backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
         action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
         video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
         action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
         loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
-        model = EasyWAMMoT.from_backbone_pretrained(
+        model = model_cls.from_backbone_pretrained(
             backbone=backbone,
             device=device,
             torch_dtype=model_dtype,
@@ -221,7 +220,7 @@ def create_easywam_mot(
         lora,
     )
 
-    model = EasyWAMMoT.from_wan22_pretrained(
+    model = model_cls.from_wan22_pretrained(
         device=device,
         torch_dtype=model_dtype,
         model_id=model_id,
@@ -243,6 +242,27 @@ def create_easywam_mot(
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
     )
     return _apply_video_dit_lora(model, lora)
+
+
+def create_easywam_mot(*args, **kwargs):
+    """Create the original action-only EasyWAM MoT model."""
+    from model.easywam_mot import EasyWAMMoT
+
+    return _create_easywam_mot(EasyWAMMoT, *args, **kwargs)
+
+
+def create_easywam_mot_joint(*args, **kwargs):
+    """Create the EasyWAM MoT-Joint model."""
+    from model.easywam_mot_joint import EasyWAMMoTJoint
+
+    return _create_easywam_mot(EasyWAMMoTJoint, *args, **kwargs)
+
+
+def create_easywam_mot_idm(*args, **kwargs):
+    """Create the EasyWAM MoT-IDM model."""
+    from model.easywam_mot_idm import EasyWAMMoTIDM
+
+    return _create_easywam_mot(EasyWAMMoTIDM, *args, **kwargs)
 
 
 def create_easywam_unified(

@@ -35,13 +35,17 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 ### 🧠 模型
 
 - **EasyWAM-Unified：** 采用单主干架构，将视频、动作和机器人状态 token 输入同一个 Video DiT，联合预测未来视频与动作。该架构参考 [DreamZero](https://github.com/dreamzero0/dreamzero)。
-- **EasyWAM-MoT：** 采用双主干架构，使用独立的 Video DiT 和 Action DiT 专家，并通过共享的混合自注意力实现两类 token 的交互。该架构参考 [FastWAM](https://github.com/yuantianyuan01/FastWAM)。
+- **EasyWAM-MoT：** 采用双主干架构，使用独立的 Video DiT 和 Action DiT 专家，并通过共享的混合自注意力实现两类 token 的交互。该模型仅进行动作预测，架构参考 [FastWAM](https://github.com/yuantianyuan01/FastWAM)。
+- **EasyWAM-MoT-Joint：** 采用双主干架构，通过共享的混合自注意力联合去噪视频和动作 token。
+- **EasyWAM-MoT-IDM：** 采用双主干架构，使用 teacher-forcing 条件视频进行动作预测。
 - **EasyWAM-Hidden：** 采用双主干架构，将 Video DiT 的中间特征作为独立 Action DiT 的条件输入。该架构参考 [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT)。
 
 | 模型 | 全参数训练 | LoRA 微调 |
 | --- | :---: | :---: |
 | EasyWAM-Unified | ✅ | ✅ |
 | EasyWAM-MoT | ✅ | ✅ |
+| EasyWAM-MoT-Joint | ✅ | ✅ |
+| EasyWAM-MoT-IDM | ✅ | ✅ |
 | EasyWAM-Hidden | ✅ | ✅ |
 
 ### 🏗️ Backbone
@@ -203,7 +207,7 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 # 8 张本机 GPU，DeepSpeed ZeRO-1
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
 
-# 三种 EasyWAM 均可用同一 override 切换 Cosmos25
+# MoT、MoT-Joint 和 MoT-IDM 均有对应的 Cosmos25 task 配置
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=libero_easywam_mot_cosmos25
 
