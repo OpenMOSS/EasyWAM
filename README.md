@@ -2,7 +2,7 @@
   <img src="assets/icon.png" alt="EasyWAM Logo" width="20%">
 </p>
 
-<h1 align="center">🚀 EasyWAM: An Efficient and Easy-to-Use Codebase for World Action Model</h1>
+<h1 align="center">🚀 EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models</h1>
 
 <p align="center">A unified research codebase for training and evaluating World Action Models.</p>
 
@@ -19,9 +19,9 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
   <img src="assets/overview.png" alt="EasyWAM Overview" width="100%">
 </p>
 
+- 🧩 **Unified and modular design.** Modular model components share consistent data, training, checkpoint, and evaluation interfaces, making new WAM designs easier to integrate.
 - ⚡ **Efficient computation.** Efficiency is a first-class design goal in EasyWAM. It natively integrates **FlashAttention 2/3/4** to accelerate attention workloads and provides complete **LoRA** support from parameter-efficient training and checkpointing to merged inference. BF16, gradient checkpointing, DeepSpeed ZeRO, and PyTorch SDPA fallback further improve speed, memory usage, and compatibility.
 - 🚄 **Optimized end-to-end pipeline.** EasyWAM streamlines every stage of training and inference. Sparse video decoding, indexed text caches, persistent workers, prompt caching, and resumable evaluation eliminate repeated work and deliver substantial speedups across both **training and inference**.
-- 🧩 **Unified and extensible design.** Modular model components share consistent data, training, checkpoint, and evaluation interfaces, making new WAM designs easier to integrate.
 - 🛠️ **Easy-to-use workflows.** Hydra-based configuration, standardized training and evaluation recipes, distributed launchers, automatic GPU sharding, and result summaries keep common workflows straightforward.
 
 > 🌟 **Hope:** We hope EasyWAM will become an efficient and easy-to-use codebase for World Action Model research, enabling researchers to explore WAMs more quickly and easily. More models and benchmarks will be continuously added and supported. We warmly welcome contributions from the community to help make EasyWAM better. If you encounter any problems or have suggestions for improving EasyWAM, please open an issue. We will continue to refine and improve EasyWAM.
@@ -270,9 +270,9 @@ We welcome you to cite **EasyWAM**'s experimental results and codebase in your r
 
 ```bibtex
 @misc{easywam2026,
-  title  = {EasyWAM: An Efficient and Easy-to-Use Codebase for World Action Model},
-  author = {EasyWAM Contributors},
+  title  = {EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models},
+  author = {EasyWAM-Team},
   year   = {2026},
-  url    = {https://github.com/KevinConqueror/EasyWAM}
+  url    = {https://github.com/OpenMOSS/EasyWAM}
 }
 ```
