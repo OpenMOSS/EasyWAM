@@ -263,9 +263,19 @@ EasyWAM/
 └── runs/             # Training outputs
 ```
 
+## 🤝 Contributing
+
+EasyWAM is built with the community. You can help by fixing bugs, improving documentation, adding model or benchmark support, or sharing ideas that make World Action Model research more accessible.
+
+- **Report a bug:** Open an [Issue](https://github.com/OpenMOSS/EasyWAM/issues) with reproduction steps, configuration details, and relevant logs.
+- **Propose a feature or improvement:** Open an Issue to discuss the scope and approach before starting a substantial change.
+- **Submit a pull request:** Keep changes focused, update documentation when needed, and describe how you verified the change.
+
+We are happy to welcome contributions in any form. If you would like to contribute or help build EasyWAM together, please email [siyinwang20@fudan.edu.cn](mailto:siyinwang20@fudan.edu.cn). See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the contribution guidelines.
+
 ## 🙏 Acknowledgements
 
-We are especially grateful to the [FastWAM](https://github.com/yuantianyuan01/FastWAM) team for its substantial code contributions, which provided an important foundation for EasyWAM. We also thank the [DreamZero](https://github.com/dreamzero0/dreamzero) and [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT) teams for their ideas and open-source resources, as well as the teams behind [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO), [LIBERO-Plus](https://github.com/sylvestf/LIBERO-plus), and [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) for releasing their benchmarks, code, and assets.
+This project builds on code from [FastWAM](https://github.com/yuantianyuan01/FastWAM), and draws inspiration and references from [DreamZero](https://github.com/dreamzero0/dreamzero) and [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT). Thanks to all the teams above for their valuable contributions to the open-source community.
 
 ## 📝 Citation
 
