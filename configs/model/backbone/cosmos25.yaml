@@ -3,10 +3,11 @@ model_id: ./checkpoints/Cosmos-Predict2.5-2B
 reason_model_id: ./checkpoints/Cosmos-Reason1-7B
 tokenizer_max_len: 128
 load_text_encoder: false
-text_encoder_id: cosmosreason17bfinal3584_cosmosprompt
-text_dim: 3584
+text_encoder_id: cosmos_reason1_7b
+text_dim: 1024
 attention_backend: auto
 use_gradient_checkpointing: false
+# Options: first_frame_causal, bidirectional. Keep first_frame_causal by default.
 video_attention_mask_mode: first_frame_causal
 num_layers: 28
 num_heads: 16
@@ -20,7 +21,8 @@ video_scheduler:
   train_shift: 5.0
   infer_shift: 5.0
   num_train_timesteps: 1000
-  time_distribution: logit_normal
+  time_distribution: logitnormal
+  conditional_frame_timestep: 0.0001
   training_weight: uniform
   use_karras_sigmas: true
 

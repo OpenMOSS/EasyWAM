@@ -369,7 +369,7 @@ class Cosmos25DiTConfig:
     out_channels: int = 16
     hidden_size: int = 2048
     context_dim: int = 1024
-    reason_context_dim: int = 3584
+    reason_context_dim: int = 28 * 3584
     num_layers: int = 28
     num_heads: int = 16
     intermediate_size: int = 8192
@@ -378,6 +378,7 @@ class Cosmos25DiTConfig:
     attention_backend: str = "sdpa"
     use_gradient_checkpointing: bool = False
     video_attention_mask_mode: str = "bidirectional"
+    conditional_frame_timestep: float = 0.0001
 
 
 class Cosmos25VideoDiT(nn.Module):
@@ -405,7 +406,7 @@ class Cosmos25VideoDiT(nn.Module):
         self.backbone_name = "cosmos25"
         self.hidden_dim = config.hidden_size
         self.freq_dim = config.hidden_size
-        self.text_dim = config.reason_context_dim
+        self.text_dim = config.context_dim
         self.num_heads = config.num_heads
         self.attn_head_dim = config.hidden_size // config.num_heads
         self.patch_size = config.patch_size
@@ -425,6 +426,16 @@ class Cosmos25VideoDiT(nn.Module):
                 "'first_frame_causal', or 'per_frame_causal'."
             )
         self.fuse_vae_embedding_in_latents = True
+
+    def project_text_context(self, context: torch.Tensor) -> torch.Tensor:
+        if context.shape[-1] == self.config.context_dim:
+            return context
+        if context.shape[-1] != self.config.reason_context_dim:
+            raise ValueError(
+                "Cosmos context must be raw Reason1 features or preprojected features; "
+                f"got width {context.shape[-1]}."
+            )
+        return self.crossattn_proj(context.to(dtype=self.crossattn_proj[0].weight.dtype))
 
     @staticmethod
     def _timestep_features(timesteps: torch.Tensor, dim: int) -> torch.Tensor:
@@ -486,14 +497,12 @@ class Cosmos25VideoDiT(nn.Module):
         condition_mask = torch.zeros((b, 1, frames, height, width), device=x.device, dtype=x.dtype)
         if fuse_vae_embedding_in_latents:
             condition_mask[:, :, :1] = 1
-            # The released RF-with-EDM checkpoint's experiment explicitly
-            # overrides conditional_frame_timestep to 0.1.
-            timestep[:, 0] = 0.1
+            timestep[:, 0] = self.config.conditional_frame_timestep
         padding_mask = torch.zeros_like(condition_mask)
         hidden_5d = self.x_embedder(torch.cat((x, condition_mask, padding_mask), dim=1))
         _, tf, ph, pw, dim = hidden_5d.shape
         tokens = hidden_5d.reshape(b, tf * ph * pw, dim)
-        context = self.crossattn_proj(context.to(dtype=tokens.dtype))
+        context = self.project_text_context(context).to(dtype=tokens.dtype)
         # Native Cosmos cross-attention is mask-free, which also preserves FA4.
         del context_mask
         context_mask = None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 import torch
 import torch.nn as nn
@@ -15,15 +15,28 @@ COSMOS_REASON_SYSTEM_PROMPT = (
 
 
 class Cosmos25TextEncoder(nn.Module):
-    """Produce the normalized final Reason1 hidden state used for conditioning."""
+    """Produce Cosmos-Predict2.5 Reason1 conditioning features."""
 
-    output_dim = 3584
+    hidden_dim = 3584
+    num_hidden_layers = 28
+    raw_output_dim = hidden_dim * num_hidden_layers
 
     def __init__(self, model: nn.Module, tokenizer, max_length: int = 128):
         super().__init__()
         self.model = model
         self.tokenizer = tokenizer
         self.max_length = int(max_length)
+        self._projector: Callable[[torch.Tensor], torch.Tensor] | None = None
+
+    @property
+    def output_dim(self) -> int:
+        return 1024 if self._projector is not None else self.raw_output_dim
+
+    def set_projector(
+        self, projector: Callable[[torch.Tensor], torch.Tensor]
+    ) -> "Cosmos25TextEncoder":
+        self._projector = projector
+        return self
 
     @classmethod
     def from_pretrained(
@@ -36,6 +49,8 @@ class Cosmos25TextEncoder(nn.Module):
 
         model_path = str(Path(model_path))
         tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True, trust_remote_code=False)
+        tokenizer.padding_side = "right"
+        tokenizer.truncation_side = "right"
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_path,
             local_files_only=True,
@@ -75,7 +90,12 @@ class Cosmos25TextEncoder(nn.Module):
         )
 
     @torch.no_grad()
-    def forward(self, prompt: str | Sequence[str]) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        prompt: str | Sequence[str],
+        *,
+        return_token_mask: bool = False,
+    ):
         prompts = [prompt] if isinstance(prompt, str) else list(prompt)
         if not prompts or not all(isinstance(value, str) for value in prompts):
             raise TypeError("prompt must be a string or a non-empty sequence of strings.")
@@ -94,11 +114,26 @@ class Cosmos25TextEncoder(nn.Module):
         hidden_states = outputs.hidden_states
         if hidden_states is None or len(hidden_states) < 2:
             raise RuntimeError("Cosmos-Reason1 did not return transformer hidden states.")
-        hidden = hidden_states[-1]
-        hidden_float = hidden.float()
-        mean = hidden_float.mean(dim=-1, keepdim=True)
-        std = hidden_float.std(dim=-1, keepdim=True)
-        context = ((hidden_float - mean) / (std + 1e-8)).to(hidden.dtype)
-        if context.shape[-1] != self.output_dim:
-            raise RuntimeError(f"Expected Reason context width {self.output_dim}, got {context.shape[-1]}.")
-        return context, attention_mask.to(torch.bool)
+        transformer_states = hidden_states[1:]
+        if len(transformer_states) != self.num_hidden_layers:
+            raise RuntimeError(
+                f"Expected {self.num_hidden_layers} Reason transformer layers, "
+                f"got {len(transformer_states)}."
+            )
+        normalized = []
+        for hidden in transformer_states:
+            normalized.append(
+                (hidden - hidden.mean(dim=-1, keepdim=True))
+                / (hidden.std(dim=-1, keepdim=True) + 1e-8)
+            )
+        context = torch.cat(normalized, dim=-1)
+        if context.shape[-1] != self.raw_output_dim:
+            raise RuntimeError(
+                f"Expected Reason context width {self.raw_output_dim}, got {context.shape[-1]}."
+            )
+        if self._projector is not None:
+            context = self._projector(context)
+        model_mask = torch.ones_like(attention_mask, dtype=torch.bool)
+        if return_token_mask:
+            return context, model_mask, attention_mask.to(torch.bool)
+        return context, model_mask

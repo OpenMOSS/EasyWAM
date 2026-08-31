@@ -124,15 +124,6 @@ def _load_model_config(path: Path, backbone_name: str) -> tuple[dict[str, Any], 
 
 
 def _cosmos_source_key(target_key: str) -> str | None:
-    direct = {
-        "text_embedding.0.weight": "crossattn_proj.0.weight",
-        "text_embedding.0.bias": "crossattn_proj.0.bias",
-        "time_embedding.0.weight": "t_embedder.1.linear_1.weight",
-        "time_embedding.2.weight": "t_embedder.1.linear_1.weight",
-        "time_projection.1.weight": "t_embedder.1.linear_2.weight",
-    }
-    if target_key in direct:
-        return direct[target_key]
     parts = target_key.split(".")
     if len(parts) < 4 or parts[0] != "blocks":
         return None
@@ -172,28 +163,15 @@ def _convert_backbone_state(
         source_key = key if backbone_name == "wan22" else _cosmos_source_key(key)
         src = video_state.get(source_key) if source_key is not None else None
         if src is None:
-            if key == "text_embedding.2.weight" and target.ndim == 2 and target.shape[0] == target.shape[1]:
+            if backbone_name == "cosmos25":
+                value = target
+            elif key == "text_embedding.2.weight" and target.ndim == 2 and target.shape[0] == target.shape[1]:
                 value = torch.eye(target.shape[0], dtype=target.dtype)
             elif key.endswith(".weight") and ("norm3" in key):
                 value = torch.ones_like(target)
             else:
                 value = torch.zeros_like(target)
             initialized += 1
-        elif (
-            backbone_name == "cosmos25"
-            and key == "time_projection.1.weight"
-            and src.ndim == 2
-            and src.shape[0] % 3 == 0
-            and target.shape[0] % 6 == 0
-        ):
-            target_hidden = target.shape[0] // 6
-            chunks = []
-            for chunk in src.reshape(3, src.shape[0] // 3, src.shape[1]):
-                chunks.append(_resize_tensor_to_shape(chunk, (target_hidden, target.shape[1])))
-            value = torch.cat(chunks + chunks, dim=0)
-            if apply_alpha_scaling and src.shape[-1] != target.shape[-1]:
-                value = value.float() * (float(src.shape[-1]) / float(target.shape[-1])) ** 0.5
-            interpolated += 1
         elif (
             backbone_name == "cosmos25"
             and (".norm_q.weight" in key or ".norm_k.weight" in key)
@@ -248,6 +226,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    torch.manual_seed(42)
+
     model_config_path = Path(args.model_config)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,7 +272,7 @@ def main() -> None:
             "alpha_scaling": bool(apply_alpha_scaling),
             "interpolation": "sequential_1d_linear_align_corners_true",
             "source_backbone": args.backbone,
-            "mapping_version": 1,
+            "mapping_version": 2 if args.backbone == "cosmos25" else 1,
         },
         "backbone_state_dict": backbone_state_dict,
         "meta": {
@@ -304,6 +284,7 @@ def main() -> None:
             "text_dim": int(action_cfg["text_dim"]),
             "freq_dim": int(action_cfg["freq_dim"]),
             "eps": float(action_cfg["eps"]),
+            "preprojected_context": bool(action_cfg.get("preprojected_context", False)),
         },
     }
     torch.save(payload, str(output_path))

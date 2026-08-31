@@ -59,5 +59,8 @@ def load_easywam_backbone(
         video_attention_mask_mode=str(
             cfg.get("video_attention_mask_mode", "bidirectional")
         ),
+        conditional_frame_timestep=float(
+            cfg.get("video_scheduler", {}).get("conditional_frame_timestep", 0.0001)
+        ),
         skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
     )

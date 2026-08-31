@@ -30,6 +30,7 @@ dit_config:
   eps: 1.0e-06
   seperated_timestep: true
   fuse_vae_embedding_in_latents: true
+  # Options: first_frame_causal, bidirectional. Keep first_frame_causal by default.
   video_attention_mask_mode: first_frame_causal
   attention_backend: ${model.backbone.attention_backend}
   use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}

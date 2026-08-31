@@ -19,7 +19,10 @@ logger = get_logger(__name__)
 class EasyWAMMoT(torch.nn.Module):
     """MoT world model with video/action experts."""
 
+    model_variant = "mot"
+
     inference_compile_targets = (
+        "_predict_video_noise",
         "_predict_action_noise_with_cache",
         "_predict_joint_noise",
     )
@@ -121,6 +124,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        **model_init_kwargs: Any,
     ):
         from .backbone.loader import load_easywam_backbone, normalize_backbone_config
 
@@ -164,15 +168,23 @@ class EasyWAMMoT(torch.nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            **model_init_kwargs,
         )
         model.backbone_name = cfg["name"]
         if cfg["name"] == "cosmos25":
             from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
+            scheduler_cfg = dict(cfg.get("video_scheduler", {}))
             model.train_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_train_shift, use_karras_sigmas=False
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("train_shift", video_train_shift)),
+                use_karras_sigmas=False,
+                time_distribution=str(scheduler_cfg.get("time_distribution", "logitnormal")),
+                training_weight_method=str(scheduler_cfg.get("training_weight", "uniform")),
             )
             model.infer_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_infer_shift, use_karras_sigmas=True
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("infer_shift", video_infer_shift)),
+                use_karras_sigmas=bool(scheduler_cfg.get("use_karras_sigmas", True)),
             )
             model.train_scheduler = model.train_video_scheduler
             model.infer_scheduler = model.infer_video_scheduler
@@ -207,6 +219,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        **model_init_kwargs: Any,
     ):
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for EasyWAM-MoT.from_wan22_pretrained().")
@@ -262,6 +275,7 @@ class EasyWAMMoT(torch.nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            **model_init_kwargs,
         )
         model.model_paths = {
             "video_dit": components.dit_path,
@@ -686,6 +700,40 @@ class EasyWAMMoT(torch.nn.Module):
         return loss_total, loss_dict
 
     @torch.no_grad()
+    def _predict_video_noise(
+        self,
+        latents_video: torch.Tensor,
+        timestep_video: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        fuse_vae_embedding_in_latents: bool,
+    ) -> torch.Tensor:
+        """Run standalone video denoising through the shared staged backbone API."""
+        video_pre = self.video_expert.pre_dit(
+            x=latents_video,
+            timestep=timestep_video,
+            context=context,
+            context_mask=context_mask,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        video_tokens = video_pre["tokens"]
+        attention_mask = None
+        if self.video_expert.video_attention_mask_mode != "bidirectional":
+            attention_mask = self.video_expert.build_structured_video_attention_mask(
+                video_seq_len=video_tokens.shape[1],
+                video_tokens_per_frame=int(video_pre["meta"]["tokens_per_frame"]),
+                device=video_tokens.device,
+            )
+        for layer_index in range(len(self.video_expert.blocks)):
+            video_tokens = self.video_expert.forward_block(
+                layer_index,
+                video_tokens,
+                video_pre,
+                attention_mask,
+            )
+        return self.video_expert.post_dit(video_tokens, video_pre)
+
+    @torch.no_grad()
     def _predict_joint_noise(
         self,
         latents_video: torch.Tensor,
@@ -838,6 +886,24 @@ class EasyWAMMoT(torch.nn.Module):
         )
         return self.action_expert.post_dit(action_tokens, action_pre)
 
+    def _action_only_inference_step_count(
+        self,
+        num_inference_steps: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+        sigma_shift: Optional[float],
+    ) -> int:
+        if getattr(self, "backbone_name", None) != "cosmos25":
+            return int(num_inference_steps)
+        video_timesteps, _ = self.infer_video_scheduler.build_inference_schedule(
+            num_inference_steps=num_inference_steps,
+            device=device,
+            dtype=dtype,
+            shift_override=sigma_shift,
+        )
+        return len(video_timesteps)
+
     @torch.no_grad()
     def infer_joint(
         self,
@@ -865,6 +931,7 @@ class EasyWAMMoT(torch.nn.Module):
                 prompt=prompt,
                 input_image=input_image.clone(),
                 action_horizon=action_horizon,
+                num_video_frames=num_video_frames,
                 context=context.clone() if context is not None else None,
                 context_mask=context_mask.clone() if context_mask is not None else None,
                 num_inference_steps=num_inference_steps,
@@ -1032,11 +1099,35 @@ class EasyWAMMoT(torch.nn.Module):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
+        num_video_frames: int = 5,
     ) -> dict[str, Any]:
         self.eval()
-        if str(getattr(self.video_expert, "video_attention_mask_mode", "")) != "first_frame_causal":
+        attention_mode = str(
+            getattr(self.video_expert, "video_attention_mask_mode", "")
+        )
+        if attention_mode == "bidirectional":
+            joint_out = self.infer_joint(
+                prompt=prompt,
+                input_image=input_image,
+                num_video_frames=num_video_frames,
+                action_horizon=action_horizon,
+                proprio=proprio,
+                context=context,
+                context_mask=context_mask,
+                negative_prompt=negative_prompt,
+                text_cfg_scale=text_cfg_scale,
+                num_inference_steps=num_inference_steps,
+                sigma_shift=sigma_shift,
+                seed=seed,
+                rand_device=rand_device,
+                test_action_with_infer_action=False,
+            )
+            return {"action": joint_out["action"]}
+        if attention_mode != "first_frame_causal":
             raise ValueError(
-                "`infer_action` requires `video_attention_mask_mode='first_frame_causal'`."
+                "`infer_action` supports `video_attention_mask_mode` values "
+                "'first_frame_causal' and 'bidirectional', "
+                f"got {attention_mode!r}."
             )
 
         if input_image.ndim == 3:
@@ -1134,8 +1225,14 @@ class EasyWAMMoT(torch.nn.Module):
             video_attention_mask=attention_mask.slice(0, video_seq_len, 0, video_seq_len),
         )
 
+        action_inference_steps = self._action_only_inference_step_count(
+            num_inference_steps,
+            device=self.device,
+            dtype=latents_action.dtype,
+            sigma_shift=sigma_shift,
+        )
         infer_timesteps_action, infer_deltas_action = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=num_inference_steps,
+            num_inference_steps=action_inference_steps,
             device=self.device,
             dtype=latents_action.dtype,
             shift_override=sigma_shift,
@@ -1211,6 +1308,7 @@ class EasyWAMMoT(torch.nn.Module):
                 "step": step,
                 "torch_dtype": str(self.torch_dtype),
                 "backbone_name": getattr(self, "backbone_name", "wan22"),
+                "model_variant": self.model_variant,
             }
         if self.state_encoder is not None and not is_lora_model:
             payload["state_encoder"] = self.state_encoder.state_dict()
@@ -1231,6 +1329,12 @@ class EasyWAMMoT(torch.nn.Module):
             raise ValueError(
                 f"Checkpoint backbone {checkpoint_backbone!r} does not match model backbone "
                 f"{getattr(self, 'backbone_name', 'wan22')!r}."
+            )
+        checkpoint_variant = payload.get("model_variant")
+        if checkpoint_variant is not None and checkpoint_variant != self.model_variant:
+            raise ValueError(
+                f"Checkpoint model variant {checkpoint_variant!r} does not match current "
+                f"model variant {self.model_variant!r}."
             )
         is_lora_payload = is_lora_checkpoint(payload)
         if is_lora_payload:

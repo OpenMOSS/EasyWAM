@@ -168,13 +168,28 @@ class EasyWAMUnified(nn.Module):
         action_len: int,
         state_len: int,
         device: torch.device,
+        video_attention_mask_mode: str = "first_frame_causal",
     ) -> StructuredAttentionMask:
         total = clean_video_len + future_video_len + action_len + state_len
         future_action_end = clean_video_len + future_video_len + action_len
-        segments = [
-            AttentionSegment(0, clean_video_len, ((0, clean_video_len),)),
-        ]
-        if clean_video_len < future_action_end:
+        if video_attention_mask_mode == "bidirectional":
+            segments = [
+                AttentionSegment(0, future_action_end, ((0, total),)),
+            ]
+        elif video_attention_mask_mode == "first_frame_causal":
+            segments = [
+                AttentionSegment(0, clean_video_len, ((0, clean_video_len),)),
+            ]
+        else:
+            raise ValueError(
+                "EasyWAM-Unified supports `video_attention_mask_mode` values "
+                "'first_frame_causal' and 'bidirectional', "
+                f"got {video_attention_mask_mode!r}."
+            )
+        if (
+            video_attention_mask_mode == "first_frame_causal"
+            and clean_video_len < future_action_end
+        ):
             segments.append(
                 AttentionSegment(clean_video_len, future_action_end, ((0, total),))
             )
@@ -256,6 +271,7 @@ class EasyWAMUnified(nn.Module):
                 action_len=action_tokens.shape[1],
                 state_len=state_tokens.shape[1],
                 device=tokens.device,
+                video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
             )
             for layer_index in range(len(self.video_dit.blocks)):
                 tokens = self.video_dit.forward_block(
@@ -330,6 +346,7 @@ class EasyWAMUnified(nn.Module):
             action_len=action_tokens.shape[1],
             state_len=state_tokens.shape[1],
             device=tokens.device,
+            video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
         )
 
         for block in self.video_dit.blocks:
@@ -415,11 +432,18 @@ class EasyWAMUnified(nn.Module):
         model.backbone_name = cfg["name"]
         if cfg["name"] == "cosmos25":
             from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
+            scheduler_cfg = dict(cfg.get("video_scheduler", {}))
             model.train_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_train_shift, use_karras_sigmas=False
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("train_shift", video_train_shift)),
+                use_karras_sigmas=False,
+                time_distribution=str(scheduler_cfg.get("time_distribution", "logitnormal")),
+                training_weight_method=str(scheduler_cfg.get("training_weight", "uniform")),
             )
             model.infer_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_infer_shift, use_karras_sigmas=True
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("infer_shift", video_infer_shift)),
+                use_karras_sigmas=bool(scheduler_cfg.get("use_karras_sigmas", True)),
             )
             model.train_scheduler = model.train_video_scheduler
             model.infer_scheduler = model.infer_video_scheduler

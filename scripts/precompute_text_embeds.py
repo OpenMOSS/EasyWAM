@@ -268,10 +268,20 @@ def main(cfg: DictConfig):
         )
     elif backbone_name == "cosmos25":
         from model.backbone.cosmos25.cosmos_video_text_encoder import Cosmos25TextEncoder
+        from model.backbone.cosmos25.loader import (
+            load_cosmos25_text_projection,
+            resolve_cosmos25_dit_path,
+        )
 
         text_encoder = Cosmos25TextEncoder.from_pretrained(
             text_encoder_model_id, torch_dtype=torch_dtype, max_length=context_len
         ).to(device).eval()
+        projection = load_cosmos25_text_projection(
+            resolve_cosmos25_dit_path(model_id),
+            device=device,
+            torch_dtype=torch_dtype,
+        )
+        text_encoder.set_projector(projection)
 
     stats = {
         str(cache_dir): {"new": 0, "overwrite": 0, "skip": 0}
@@ -328,24 +338,33 @@ def main(cfg: DictConfig):
         disable=is_distributed and rank != 0,
     ) as pbar:
         with torch.no_grad():
-            for start in range(0, len(local_prompts), DEFAULT_BATCH_SIZE):
-                batch_prompts = local_prompts[start : start + DEFAULT_BATCH_SIZE]
+            encode_batch_size = 1 if backbone_name == "cosmos25" else DEFAULT_BATCH_SIZE
+            for start in range(0, len(local_prompts), encode_batch_size):
+                batch_prompts = local_prompts[start : start + encode_batch_size]
                 if tokenizer is None:
-                    context, mask = text_encoder(batch_prompts)
+                    if backbone_name == "cosmos25":
+                        context, mask, token_mask = text_encoder(
+                            batch_prompts, return_token_mask=True
+                        )
+                    else:
+                        context, mask = text_encoder(batch_prompts)
+                        token_mask = mask
                     mask = mask.to(device=device, dtype=torch.bool)
                 else:
                     ids, mask = tokenizer(batch_prompts, return_mask=True, add_special_tokens=True)
                     ids = ids.to(device)
                     mask = mask.to(device=device, dtype=torch.bool)
                     context = text_encoder(ids, mask)
-                over_length_prompts += int(mask.all(dim=1).sum().item())
+                    token_mask = mask
+                over_length_prompts += int(token_mask.all(dim=1).sum().item())
 
                 for i, prompt in enumerate(batch_prompts):
                     hashed = prompt_hash(prompt)
                     context_i = context[i].detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
                     mask_i = mask[i].detach().to(device="cpu", dtype=torch.bool).contiguous()
-                    context_i[~mask_i] = 0
-                    mask_i = torch.ones_like(mask_i)
+                    if backbone_name != "cosmos25":
+                        context_i[~mask_i] = 0
+                        mask_i = torch.ones_like(mask_i)
                     payload = build_text_embedding_payload(
                         context=context_i,
                         mask=mask_i,

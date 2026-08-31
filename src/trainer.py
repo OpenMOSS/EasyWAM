@@ -461,6 +461,12 @@ class Wan22Trainer:
         model.dit.train()
         model.dit.requires_grad_(True)
         video_dit = getattr(model, "video_dit", None)
+        if (
+            video_dit is not None
+            and getattr(video_dit, "backbone_name", None) == "cosmos25"
+            and hasattr(video_dit, "crossattn_proj")
+        ):
+            video_dit.crossattn_proj.requires_grad_(False)
         if video_dit is not None and has_lora(video_dit):
             set_video_dit_lora_trainable(video_dit)
         state_encoder = getattr(model, "state_encoder", None)

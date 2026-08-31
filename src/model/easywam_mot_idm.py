@@ -45,7 +45,17 @@ def _concat_sequence_values(left: Any, right: Any, dim: int) -> Any:
 class EasyWAMMoTIDM(EasyWAMMoTJoint):
     """EasyWAM MoT-IDM model with teacher-forced conditional video."""
 
-    video_cond_noise_prob = 0.5
+    model_variant = "mot_idm"
+
+    def __init__(self, *args, video_cond_noise_prob: float = 0.5, **kwargs):
+        super().__init__(*args, **kwargs)
+        video_cond_noise_prob = float(video_cond_noise_prob)
+        if not 0.0 <= video_cond_noise_prob <= 1.0:
+            raise ValueError(
+                "`video_cond_noise_prob` must be between 0 and 1, "
+                f"got {video_cond_noise_prob}."
+            )
+        self.video_cond_noise_prob = video_cond_noise_prob
 
     @torch.no_grad()
     def _build_teacher_forcing_attention_mask(
@@ -401,9 +411,9 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             timestep_video = step_t_video.unsqueeze(0).to(
                 dtype=latents_video.dtype, device=self.device
             )
-            pred_video = self.video_expert(
-                x=latents_video,
-                timestep=timestep_video,
+            pred_video = self._predict_video_noise(
+                latents_video=latents_video,
+                timestep_video=timestep_video,
                 context=context,
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_flag,

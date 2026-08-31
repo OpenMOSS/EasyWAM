@@ -180,7 +180,7 @@ class Cosmos25Core(torch.nn.Module):
         noisy = self.train_scheduler.add_noise(clean, noise, future_timestep)
         noisy[:, :, :1] = clean[:, :, :1]
         timestep = future_timestep[:, None].expand(batch, latent_t).clone()
-        timestep[:, 0] = 0.1
+        timestep[:, 0] = self.dit.config.conditional_frame_timestep
         condition_mask = torch.zeros((batch, 1, latent_t, clean.shape[3], clean.shape[4]), device=clean.device, dtype=clean.dtype)
         condition_mask[:, :, 0] = 1
         prediction = self._model_fn(
@@ -234,7 +234,7 @@ class Cosmos25Core(torch.nn.Module):
         timesteps = self.infer_scheduler.set_timesteps(num_inference_steps, self.device, sigma_shift)
         for scalar_t in timesteps:
             model_t = scalar_t.to(latents.dtype).expand(1, latent_t).clone()
-            model_t[:, 0] = 0.1
+            model_t[:, 0] = self.dit.config.conditional_frame_timestep
             positive_velocity = self._model_fn(latents, model_t, positive, positive_mask, condition_mask)
             velocity = positive_velocity
             if negative is not None:

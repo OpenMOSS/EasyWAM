@@ -19,6 +19,8 @@ class FlowUniPCScheduler:
         rho: float = 7.0,
         solver_order: int = 2,
         lower_order_final: bool = True,
+        time_distribution: str = "logitnormal",
+        training_weight_method: str = "uniform",
     ):
         if solver_order < 1:
             raise ValueError("solver_order must be positive.")
@@ -28,6 +30,12 @@ class FlowUniPCScheduler:
         self.rho = float(rho)
         self.solver_order = int(solver_order)
         self.lower_order_final = bool(lower_order_final)
+        self.time_distribution = str(time_distribution)
+        if self.time_distribution not in {"logitnormal", "uniform"}:
+            raise ValueError("time_distribution must be 'logitnormal' or 'uniform'.")
+        self.training_weight_method = str(training_weight_method)
+        if self.training_weight_method != "uniform":
+            raise ValueError("training_weight_method must be 'uniform'.")
 
         alphas = torch.linspace(
             1.0 / self.num_train_timesteps,
@@ -72,9 +80,7 @@ class FlowUniPCScheduler:
             inference_sigmas = _shift_sigma(inference_sigmas, shift)
 
         self.sigmas = torch.cat((inference_sigmas.float(), torch.zeros(1)))
-        self.timesteps = (inference_sigmas * self.num_train_timesteps).to(
-            device=device, dtype=torch.int64
-        )
+        self.timesteps = inference_sigmas.to(device=device, dtype=torch.float32)
         self._step_index = 0
         self._model_outputs = [None] * self.solver_order
         self._lower_order_nums = 0
@@ -256,11 +262,15 @@ class FlowUniPCScheduler:
         return previous
 
     def sample_training_t(self, batch_size: int, device, dtype: torch.dtype) -> torch.Tensor:
-        sigma = _shift_sigma(torch.randn(batch_size, device=device).sigmoid(), self.shift)
-        return (sigma * self.num_train_timesteps).to(dtype)
+        if self.time_distribution == "logitnormal":
+            sigma = torch.randn(batch_size, device=device, dtype=torch.float32).sigmoid()
+        else:
+            sigma = torch.rand(batch_size, device=device, dtype=torch.float32)
+        sigma = _shift_sigma(sigma, self.shift)
+        return sigma.to(dtype)
 
     def add_noise(self, clean: torch.Tensor, noise: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
-        sigma = (timestep.float() / self.num_train_timesteps).reshape(-1, *([1] * (clean.ndim - 1)))
+        sigma = timestep.float().reshape(-1, *([1] * (clean.ndim - 1)))
         sigma = sigma.to(clean.dtype)
         return (1 - sigma) * clean + sigma * noise
 
@@ -269,6 +279,5 @@ class FlowUniPCScheduler:
         del timestep
         return noise - clean
 
-    @staticmethod
-    def training_weight(timestep: torch.Tensor) -> torch.Tensor:
+    def training_weight(self, timestep: torch.Tensor) -> torch.Tensor:
         return torch.ones_like(timestep)

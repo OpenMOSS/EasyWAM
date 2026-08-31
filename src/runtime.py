@@ -144,9 +144,13 @@ def _create_easywam_mot(
     action_scheduler=None,
     loss=None,
     lora=None,
+    video_cond_noise_prob: float | None = None,
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
+    model_init_kwargs = {}
+    if video_cond_noise_prob is not None:
+        model_init_kwargs["video_cond_noise_prob"] = float(video_cond_noise_prob)
     if backbone is not None:
         backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
         action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
@@ -169,6 +173,7 @@ def _create_easywam_mot(
             action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
             action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
             loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+            **model_init_kwargs,
         )
         return _apply_video_dit_lora(model, lora)
 
@@ -240,6 +245,7 @@ def _create_easywam_mot(
         action_infer_shift=float(action_scheduler["infer_shift"]),
         action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        **model_init_kwargs,
     )
     return _apply_video_dit_lora(model, lora)
 

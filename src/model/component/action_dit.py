@@ -86,6 +86,7 @@ class ActionDiT(nn.Module):
         "text_dim",
         "freq_dim",
         "eps",
+        "preprojected_context",
     )
 
     def __init__(
@@ -102,6 +103,7 @@ class ActionDiT(nn.Module):
         projector_hidden_dim: int = 64,
         use_gradient_checkpointing: bool = False,
         attention_backend: str = "sdpa",
+        preprojected_context: bool = False,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -113,6 +115,7 @@ class ActionDiT(nn.Module):
         self.attn_head_dim = attn_head_dim
         self.projector_hidden_dim = int(projector_hidden_dim)
         self.attention_backend = require_attention_backend(attention_backend)
+        self.preprojected_context = bool(preprojected_context)
 
         if num_heads <= 0:
             raise ValueError(f"`num_heads` must be > 0, got {num_heads}")
@@ -126,11 +129,19 @@ class ActionDiT(nn.Module):
             hidden_dim=hidden_dim,
             projector_hidden_dim=self.projector_hidden_dim,
         )
-        self.text_embedding = nn.Sequential(
-            nn.Linear(text_dim, hidden_dim),
-            nn.GELU(approximate="tanh"),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
+        if self.preprojected_context:
+            if text_dim != hidden_dim:
+                raise ValueError(
+                    "preprojected_context requires text_dim == hidden_dim, "
+                    f"got {text_dim} and {hidden_dim}."
+                )
+            self.text_embedding = nn.Identity()
+        else:
+            self.text_embedding = nn.Sequential(
+                nn.Linear(text_dim, hidden_dim),
+                nn.GELU(approximate="tanh"),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
         self.time_embedding = nn.Sequential(
             nn.Linear(freq_dim, hidden_dim),
             nn.SiLU(),
@@ -220,14 +231,23 @@ class ActionDiT(nn.Module):
             "text_dim": int(action_cfg["text_dim"]),
             "freq_dim": int(action_cfg["freq_dim"]),
             "eps": float(action_cfg["eps"]),
+            "preprojected_context": bool(action_cfg.get("preprojected_context", False)),
         }
         for key in cls.ACTION_BACKBONE_META_KEYS:
             if key not in meta:
+                if key == "preprojected_context" and not expected_meta[key]:
+                    continue
                 raise ValueError(f"`meta.{key}` missing in {action_dit_pretrained_path}")
             expected_value = expected_meta[key]
             got_value = meta[key]
             if key == "eps":
                 if abs(float(got_value) - float(expected_value)) > 1e-12:
+                    raise ValueError(
+                        f"`meta.{key}` mismatch in {action_dit_pretrained_path}: "
+                        f"expected {expected_value}, got {got_value}"
+                    )
+            elif key == "preprojected_context":
+                if bool(got_value) != bool(expected_value):
                     raise ValueError(
                         f"`meta.{key}` mismatch in {action_dit_pretrained_path}: "
                         f"expected {expected_value}, got {got_value}"

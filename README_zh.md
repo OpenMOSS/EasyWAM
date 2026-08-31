@@ -91,11 +91,11 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 <details open>
 <summary><b>LIBERO-Plus</b></summary>
 
-| 模型 | 成功率（%） |
-| --- | :---: |
-| EasyWAM-Unified | 67.5 |
-| EasyWAM-MoT | 56.8 |
-| EasyWAM-Hidden | 72.4 |
+| 模型 | Background | Camera | Language | Layout | Light | Noise | Robot | 平均 |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| EasyWAM-Unified | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
+| EasyWAM-MoT | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
+| EasyWAM-Hidden | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
 
 </details>
 

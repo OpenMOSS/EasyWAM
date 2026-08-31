@@ -390,11 +390,18 @@ class EasyWAMHidden(nn.Module):
         model.backbone_name = cfg["name"]
         if cfg["name"] == "cosmos25":
             from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
+            scheduler_cfg = dict(cfg.get("video_scheduler", {}))
             model.train_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_train_shift, use_karras_sigmas=False
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("train_shift", video_train_shift)),
+                use_karras_sigmas=False,
+                time_distribution=str(scheduler_cfg.get("time_distribution", "logitnormal")),
+                training_weight_method=str(scheduler_cfg.get("training_weight", "uniform")),
             )
             model.infer_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps, video_infer_shift, use_karras_sigmas=True
+                video_num_train_timesteps,
+                float(scheduler_cfg.get("infer_shift", video_infer_shift)),
+                use_karras_sigmas=bool(scheduler_cfg.get("use_karras_sigmas", True)),
             )
             model.train_scheduler = model.train_video_scheduler
             model.infer_scheduler = model.infer_video_scheduler
@@ -1007,7 +1014,7 @@ class EasyWAMHidden(nn.Module):
             shift_override=sigma_shift,
         )
         action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=num_inference_steps,
+            num_inference_steps=len(video_timesteps),
             device=self.device,
             dtype=inputs["latents_action"].dtype,
             shift_override=sigma_shift,

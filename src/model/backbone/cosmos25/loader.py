@@ -68,21 +68,24 @@ def _clean_dit_state_dict(raw: dict) -> dict[str, torch.Tensor]:
     return state
 
 
-def _collapse_reason_projection(
-    state: dict[str, torch.Tensor],
-    target_context_dim: int,
-) -> None:
-    """Fold the 28-layer Reason projection onto one 3584-wide hidden state."""
-    key = "crossattn_proj.0.weight"
-    weight = state.get(key)
-    if weight is None or weight.shape[1] == target_context_dim:
-        return
-    if weight.shape[1] != ORIGINAL_REASON_CONTEXT_DIM or target_context_dim != 3584:
+def load_cosmos25_text_projection(
+    checkpoint_path: str | Path,
+    device: str | torch.device = "cpu",
+    torch_dtype: torch.dtype = torch.bfloat16,
+) -> torch.nn.Module:
+    state = _clean_dit_state_dict(_read_torch_checkpoint(Path(checkpoint_path)))
+    weight = state["crossattn_proj.0.weight"]
+    bias = state["crossattn_proj.0.bias"]
+    if tuple(weight.shape) != (1024, ORIGINAL_REASON_CONTEXT_DIM):
         raise RuntimeError(
-            f"Cannot adapt {key} from shape {tuple(weight.shape)} to input width "
-            f"{target_context_dim}."
+            "Unexpected Cosmos text projection shape: "
+            f"{tuple(weight.shape)}."
         )
-    state[key] = weight.reshape(weight.shape[0], 28, target_context_dim).sum(dim=1)
+    with torch.device("meta"):
+        linear = torch.nn.Linear(ORIGINAL_REASON_CONTEXT_DIM, 1024, bias=True)
+    linear.load_state_dict({"weight": weight, "bias": bias}, strict=True, assign=True)
+    projection = torch.nn.Sequential(linear, torch.nn.GELU())
+    return projection.eval().requires_grad_(False).to(device=device, dtype=torch_dtype)
 
 
 def load_cosmos25_dit(
@@ -92,6 +95,7 @@ def load_cosmos25_dit(
     attention_backend: str = "sdpa",
     use_gradient_checkpointing: bool = False,
     video_attention_mask_mode: str = "bidirectional",
+    conditional_frame_timestep: float = 0.0001,
 ) -> Cosmos25VideoDiT:
     path = Path(checkpoint_path)
     raw = _read_torch_checkpoint(path)
@@ -102,8 +106,8 @@ def load_cosmos25_dit(
         attention_backend=attention_backend,
         use_gradient_checkpointing=use_gradient_checkpointing,
         video_attention_mask_mode=video_attention_mask_mode,
+        conditional_frame_timestep=float(conditional_frame_timestep),
     )
-    _collapse_reason_projection(state, config.reason_context_dim)
     with torch.device("meta"):
         model = Cosmos25VideoDiT(config)
     model.load_state_dict(state, strict=True, assign=True)
@@ -121,6 +125,7 @@ def load_cosmos25_components(
     attention_backend: str = "sdpa",
     use_gradient_checkpointing: bool = False,
     video_attention_mask_mode: str = "bidirectional",
+    conditional_frame_timestep: float = 0.0001,
     skip_dit_load_from_pretrain: bool = False,
 ) -> Cosmos25Components:
     from .cosmos_video_vae import CosmosVideoVAE
@@ -142,6 +147,7 @@ def load_cosmos25_components(
                 attention_backend=attention_backend,
                 use_gradient_checkpointing=use_gradient_checkpointing,
                 video_attention_mask_mode=video_attention_mask_mode,
+                conditional_frame_timestep=float(conditional_frame_timestep),
             )
         ).to(device=device, dtype=torch_dtype)
         resolved_dit_path = "SKIPPED_PRETRAIN"
@@ -152,6 +158,7 @@ def load_cosmos25_components(
             attention_backend=attention_backend,
             use_gradient_checkpointing=use_gradient_checkpointing,
             video_attention_mask_mode=video_attention_mask_mode,
+            conditional_frame_timestep=float(conditional_frame_timestep),
         )
         resolved_dit_path = str(dit_path)
         logger.info("Finished loading pretrained Cosmos video DiT.")
@@ -163,6 +170,7 @@ def load_cosmos25_components(
         text_encoder = Cosmos25TextEncoder.from_pretrained(
             reason_path, torch_dtype=torch_dtype, max_length=tokenizer_max_len
         ).to(device)
+        text_encoder.set_projector(dit.project_text_context)
         logger.info("Finished loading Cosmos-Reason1 text encoder/tokenizer.")
     else:
         logger.info(

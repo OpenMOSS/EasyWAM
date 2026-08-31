@@ -174,6 +174,9 @@ def build_lora_checkpoint_payload(
         "backbone_name": getattr(model, "backbone_name", "wan22"),
         **lora_model_checkpoint_state(model),
     }
+    model_variant = getattr(model, "model_variant", None)
+    if model_variant is not None:
+        payload["model_variant"] = model_variant
     logger.info("Finished building trainable LoRA checkpoint payload")
     return payload
 

@@ -23,6 +23,7 @@ action_dit_config:
   eps: 1.0e-06
   attention_backend: ${model.backbone.attention_backend}
   use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}
+  preprojected_context: true
 
 video_scheduler: ${model.backbone.video_scheduler}
 
