@@ -9,6 +9,7 @@
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111.svg" alt="English README"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836.svg" alt="中文 README"></a>
+  <a href="https://huggingface.co/collections/OpenMOSS-Team/easywam"><img src="https://img.shields.io/badge/HF%20Model-Checkpoints-FFD21E.svg?logo=huggingface&logoColor=000000" alt="Hugging Face Models"></a>
 </p>
 
 ## ✨ Overview and Key Features
@@ -134,6 +135,8 @@ pip install -e .
 [FlashAttention](https://github.com/Dao-AILab/flash-attention) is optional. When installed, EasyWAM uses the fastest compatible implementation available and otherwise falls back to PyTorch SDPA.
 
 ### 📦 Prepare Models
+
+Released EasyWAM checkpoints are available in the [OpenMOSS-Team/EasyWAM collection on Hugging Face](https://huggingface.co/collections/OpenMOSS-Team/easywam). For checkpoint-specific download commands and usage requirements, see the corresponding [model cards](model_cards/).
 
 Run the following commands from the project root. The paths match the values in
 `configs/model/backbone/wan22.yaml` and `configs/model/backbone/cosmos25.yaml`.

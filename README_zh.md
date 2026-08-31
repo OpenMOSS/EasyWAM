@@ -9,6 +9,7 @@
 <p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/README-English-111111.svg" alt="English README"></a>
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836.svg" alt="中文 README"></a>
+  <a href="https://huggingface.co/collections/OpenMOSS-Team/easywam"><img src="https://img.shields.io/badge/HF%20Model-Checkpoints-FFD21E.svg?logo=huggingface&logoColor=000000" alt="Hugging Face Models"></a>
 </p>
 
 ## ✨ 概览与主要特性
@@ -134,6 +135,8 @@ pip install -e .
 [FlashAttention](https://github.com/Dao-AILab/flash-attention) 是可选依赖。安装后，EasyWAM 会使用当前环境中最快的兼容实现；无法使用时则回退到 PyTorch SDPA。
 
 ### 📦 准备模型
+
+已发布的 EasyWAM checkpoint 可从 Hugging Face 的 [OpenMOSS-Team/EasyWAM 模型集合](https://huggingface.co/collections/OpenMOSS-Team/easywam) 下载。各 checkpoint 的具体下载命令和使用要求请参阅对应的 [model cards](model_cards/)。
 
 请在项目根目录运行以下命令。下载位置与
 `configs/model/backbone/wan22.yaml`、`configs/model/backbone/cosmos25.yaml`
@@ -262,7 +265,7 @@ EasyWAM/
 
 ## 🙏 致谢
 
-我们尤其感谢 [FastWAM](https://github.com/yuantianyuan01/FastWAM) 团队提供的重要代码贡献，为 EasyWAM 的实现奠定了坚实基础。同时感谢 [DreamZero](https://github.com/dreamzero0/dreamzero) 和 [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT) 团队贡献的研究思路与开源资源，以及 [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO)、[LIBERO-Plus](https://github.com/sylvestf/LIBERO-plus) 和 [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) 团队公开 benchmark、代码与资源。
+我们尤其感谢 [FastWAM](https://github.com/yuantianyuan01/FastWAM) 团队提供的重要代码贡献，为 EasyWAM 的实现提供了基础。同时感谢 [DreamZero](https://github.com/dreamzero0/dreamzero) 和 [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT) 团队贡献的研究思路与开源资源，以及 [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO)、[LIBERO-Plus](https://github.com/sylvestf/LIBERO-plus) 和 [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) 团队公开 benchmark、代码与资源。
 
 ## 📝 Citation
 
@@ -270,9 +273,9 @@ EasyWAM/
 
 ```bibtex
 @misc{easywam2026,
-  title  = {EasyWAM: An Efficient and Easy-to-Use Codebase for World Action Model},
-  author = {EasyWAM Contributors},
+  title  = {EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models},
+  author = {EasyWAM-Team},
   year   = {2026},
-  url    = {https://github.com/KevinConqueror/EasyWAM}
+  url    = {https://github.com/OpenMOSS/EasyWAM}
 }
 ```
