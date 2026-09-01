@@ -92,13 +92,15 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 <details open>
 <summary><b>LIBERO-Plus</b></summary>
 
-| Model | Background | Camera | Language | Layout | Light | Noise | Robot | Avg. |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
-| EasyWAM-MoT | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
-| EasyWAM-Hidden | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
+| Model | Orig (LIBERO) | Background | Camera | Language | Layout | Light | Noise | Robot | Avg. |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| EasyWAM-Unified | 99.0 | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
+| EasyWAM-MoT | 97.4 | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
+| EasyWAM-Hidden | 98.6 | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
 
 </details>
+
+For an analysis of these benchmark results, see our blog: [What WAM Architecture Do We Need?](docs/blog01_arch.md) ([中文](docs/blog01_arch_zh.md)).
 
 ## ⚡ Efficiency Results
 
