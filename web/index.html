@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f2f4ee" />
+    <meta name="description" content="EasyWAM is a unified, efficient framework for World Action Model research." />
+    <title>EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models</title>
+    <link rel="icon" href="./assets/icon.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./site.css" />
+    <link rel="stylesheet" href="./site-overrides.css" />
+    <script defer src="./site.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#overview">Skip to content</a>
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="EasyWAM home">
+        <span class="brand-mark">EW</span>
+        <span><strong>EasyWAM</strong><small>research framework</small></span>
+      </a>
+      <div class="side-rule"></div>
+      <p class="side-kicker">Project map</p>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="side-link active" href="#overview"><span>01</span>Overview</a>
+        <a class="side-link" href="#results"><span>02</span>Results</a>
+        <a class="side-link" href="#blog"><span>03</span>Blog</a>
+        <a class="side-link" href="#contributing"><span>04</span>Contributing</a>
+      </nav>
+      <div class="side-bottom">
+        <p>Open source codebase for<br />World Action Models.</p>
+        <a class="github-link" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer">View on GitHub <span>↗</span></a>
+      </div>
+    </aside>
+
+    <header class="mobile-header">
+      <a class="mobile-brand" href="#overview"><span class="brand-mark">EW</span> EasyWAM</a>
+      <nav aria-label="Mobile navigation">
+        <a class="mobile-nav active" href="#overview">Overview</a>
+        <a class="mobile-nav" href="#results">Results</a>
+        <a class="mobile-nav" href="#blog">Blog</a>
+        <a class="mobile-nav" href="#contributing">Contributing</a>
+      </nav>
+    </header>
+
+    <main class="page">
+      <section id="overview" class="hero reveal">
+        <div class="hero-copy">
+          <div class="label-row"><span class="label accent">WORLD ACTION MODELS</span><span class="label">OPEN RESEARCH</span></div>
+          <p class="eyebrow">A unified research codebase</p>
+          <h1><em>EasyWAM</em>: A Unified and Efficient Framework for Training and Evaluating World Action Models</h1>
+          <p class="lede">EasyWAM connects model implementation, data processing, distributed training and evaluation in one coherent workflow, so ideas travel from notebook to robot faster.</p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="#contributing">Start contributing <span>↗</span></a>
+            <a class="button button-quiet" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer">Read the code <span>↗</span></a>
+          </div>
+          <div class="hero-meta"><span><i class="dot cyan"></i>MIT licensed</span><span><i class="dot orange"></i>Python 3.10+</span><span><i class="dot blue"></i>Active / 2026</span></div>
+        </div>
+      </section>
+
+      <section class="overview-section reveal" aria-labelledby="framework-title">
+        <div class="section-head"><div><p class="eyebrow">01 / overview</p><h2 id="framework-title">One framework.<br /><span>Every layer in sync.</span></h2></div><p class="section-intro">From sparse video decoding to resumable evaluation, EasyWAM makes the entire WAM loop inspectable and repeatable.</p></div>
+        <figure class="architecture-figure"><img src="./assets/overview.png" alt="EasyWAM framework overview from unified data to benchmark evaluation" loading="lazy" /><figcaption><span>FIG. 01</span> The EasyWAM pipeline. Shared interfaces keep data, model, training and evaluation aligned.</figcaption></figure>
+        <div class="feature-grid">
+          <article class="feature"><span class="feature-num">01</span><h3>Multiple architectures.<br /><em>One workflow.</em></h3><p>5 architectures (Unified / Hidden / MoT / MoT-Joint / MoT-IDM) × 2 backbones (Wan2.2-5B / Cosmos2.5-2B).</p></article>
+          <article class="feature"><span class="feature-num">02</span><h3>2.37× Efficiency<br /><em>Acceleration.</em></h3><p>20,000-step LIBERO training drops from 14 hr to 6 hr compared to FastWAM.</p></article>
+          <article class="feature"><span class="feature-num">03</span><h3>Supports Full &<br /><em>LoRA Fine-Tuning.</em></h3><p>Full-parameter and LoRA fine-tuning, with LoRA training runnable on a single RTX 4090.</p></article>
+          <article class="feature"><span class="feature-num">04</span><h3>Benchmarks<br /><em>Included.</em></h3><p>Built-in evaluation infrastructure for LIBERO, LIBERO-Plus, RoboTwin and more.</p></article>
+        </div>
+      </section>
+
+      <section id="results" class="benchmark-section reveal" aria-labelledby="benchmark-title">
+        <div class="section-head compact"><div><p class="eyebrow">02 / results</p><h2 id="benchmark-title">Strong results,<br /><span>controlled experiment.</span></h2></div><p class="section-intro">Wan2.2-TI2V-5B backbone · all scores are success rates (%), higher is better.</p></div>
+        <div class="perf-tables">
+          <div class="perf-pair">
+            <figure class="perf-table-wrap">
+              <figcaption><span>TABLE 01</span> LIBERO · full-parameter training</figcaption>
+              <table class="benchmark-table">
+                <thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg.</th></tr></thead>
+                <tbody>
+                  <tr><td>EasyWAM-Unified</td><td>99.0</td><td>99.4</td><td>99.2</td><td>98.2</td><td><b>99.0</b></td></tr>
+                  <tr><td>EasyWAM-MoT</td><td>97.8</td><td>98.4</td><td>97.6</td><td>95.6</td><td>97.4</td></tr>
+                  <tr><td>EasyWAM-Hidden</td><td>99.4</td><td>100.0</td><td>97.0</td><td>97.8</td><td>98.6</td></tr>
+                </tbody>
+              </table>
+            </figure>
+            <figure class="perf-table-wrap">
+              <figcaption><span>TABLE 02</span> LIBERO · LoRA fine-tuning (rank 128)</figcaption>
+              <table class="benchmark-table">
+                <thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg.</th></tr></thead>
+                <tbody>
+                  <tr><td>EasyWAM-Unified</td><td>84.0</td><td>97.8</td><td>92.0</td><td>81.2</td><td>88.8</td></tr>
+                  <tr><td>EasyWAM-MoT</td><td>96.8</td><td>98.8</td><td>94.4</td><td>90.4</td><td><b>95.1</b></td></tr>
+                  <tr><td>EasyWAM-Hidden</td><td>96.8</td><td>99.4</td><td>92.6</td><td>86.8</td><td>93.9</td></tr>
+                </tbody>
+              </table>
+            </figure>
+          </div>
+          <figure class="perf-table-wrap perf-table-wide">
+            <figcaption><span>TABLE 03</span> LIBERO-Plus · robustness (uses LIBERO checkpoints)</figcaption>
+            <table class="benchmark-table">
+              <thead><tr><th>Model</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr></thead>
+              <tbody>
+                <tr><td>EasyWAM-Unified</td><td>55.8</td><td>33.7</td><td>93.7</td><td>80.6</td><td>92.2</td><td>50.2</td><td>71.4</td><td>67.5</td></tr>
+                <tr><td>EasyWAM-MoT</td><td>52.8</td><td>20.6</td><td>80.4</td><td>65.2</td><td>85.1</td><td>51.5</td><td>49.7</td><td>56.8</td></tr>
+                <tr><td>EasyWAM-Hidden</td><td>56.8</td><td>49.2</td><td>95.3</td><td>81.0</td><td>90.4</td><td>58.2</td><td>77.4</td><td><b>72.4</b></td></tr>
+              </tbody>
+            </table>
+            <p class="table-note">LIBERO-Plus perturbs background, camera, language, layout, lighting, noise and robot embodiment.</p>
+          </figure>
+        </div>
+      </section>
+
+      <section id="blog" class="blog-section reveal" aria-labelledby="blog-title">
+        <div class="section-head compact"><div><p class="eyebrow">03 / blog</p><h2 id="blog-title">Living blog from<br /><span>the WAM frontier.</span></h2></div><p class="section-intro">Long-form analysis from the experiments behind EasyWAM.</p></div>
+        <div class="post-grid">
+          <a class="post featured post-card-link" href="./blog.html" data-category="architecture" aria-label="Read: What WAM architecture do we need?"><div class="post-index">01 / ARCHITECTURE</div><h3>What WAM architecture do we need?</h3><p>A closer look at Joint, Cascaded and Hidden designs, and what benchmark results reveal about the trade-offs.</p><div class="post-foot"><span>Aug 28, 2026 · 8 min read</span><span class="post-cta">Read the post ↗</span></div></a>
+        </div>
+      </section>
+
+      <section id="contributing" class="contribute-section reveal" aria-labelledby="contribute-title">
+        <div class="contribute-copy"><p class="eyebrow">04 / contributing</p><h2 id="contribute-title">Let's build<br /><em>something big.</em></h2><p>EasyWAM grows through shared recipes, careful benchmarks and practical fixes. Whether you are adding a model, improving a dataloader or writing your first issue, there is a place for your work here.</p><a class="button button-light" href="https://github.com/OpenMOSS/EasyWAM/issues" target="_blank" rel="noreferrer">Open an issue <span>↗</span></a></div>
+        <div class="contribute-steps"><div class="step"><span>01</span><div><h3>Pick a path</h3><p>Models · Data · Training · Evaluation</p></div></div><div class="step"><span>02</span><div><h3>Build in public</h3><p>Fork, branch, test and document the change.</p></div></div><div class="step"><span>03</span><div><h3>Share the result</h3><p>Open a pull request. We review with care.</p></div></div><div class="terminal"><div><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span></div><code><span>$</span> git clone github.com/OpenMOSS/EasyWAM<span></code><button id="copy-command" aria-label="Copy setup command">Copy command</button><span id="copy-status" role="status"></span></div></div>
+      </section>
+
+      <section id="contact" class="contact-section reveal">
+        <p class="contact-line">Contact us and build EasyWAM together — <a href="https://github.com/OpenMOSS/EasyWAM/discussions" target="_blank" rel="noreferrer">start a discussion ↗</a></p>
+      </section>
+
+      <footer class="footer"><span>EasyWAM / OpenMOSS</span><span>Built for the WAM community <i class="dot orange"></i></span><a href="#overview">Back to top ↑</a></footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f2f4ee" />
+    <title>我们需要什么样的 WAM 架构？ | EasyWAM</title>
+    <link rel="icon" href="./assets/icon.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./site.css" />
+    <link rel="stylesheet" href="./site-overrides.css" />
+  </head>
+  <body>
+    <header class="article-topbar">
+      <a class="article-brand" href="./index.html#overview">
+        <span class="brand-mark">EW</span>
+        <span><strong>EasyWAM</strong></span>
+      </a>
+      <nav aria-label="章节导航">
+        <a href="./index.html#overview">概览</a>
+        <a href="./index.html#performance">性能</a>
+        <a href="./index.html#blog" aria-current="page">博客</a>
+        <a href="./index.html#contributing">贡献</a>
+      </nav>
+      <a class="github-link" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer">GitHub <span>↗</span></a>
+    </header>
+
+    <main class="article-page">
+      <a class="article-back" href="./index.html#blog">← 返回博客</a>
+
+      <header class="article-header">
+        <p class="eyebrow">01 / 架构 · 2026 年 8 月 28 日</p>
+        <h1>我们需要什么样的<br /><em>WAM 架构？</em></h1>
+        <a class="lang-toggle" href="./blog.html" data-lang="zh" role="switch" aria-checked="true" aria-label="Switch to English">
+          <span class="lang-toggle-opt">EN</span>
+          <span class="lang-toggle-opt">中文</span>
+          <span class="lang-toggle-knob" aria-hidden="true"></span>
+        </a>
+      </header>
+
+      <article class="article-body">
+        <p>在设计世界动作模型（World Action Model）时，有一个问题始终绕不开：<strong>视频和动作到底应该共享同一个主干网络，还是分开建模？以及推理时真的需要生成未来预测吗？</strong>本文基于 EasyWAM 在 LIBERO / LIBERO-Plus 上对三种代表性架构的完整实验结果，把训练方式（全参数 / LoRA）与泛化能力（LIBERO-Plus）并排放在一起，梳理数字背后说明了什么，以及其中的架构原因。下文所有数据均来自基于 Wan2.2-TI2V-5B 主干的实验。</p>
+
+        <h2>实验设置</h2>
+        <ul>
+          <li><strong>EasyWAM-Unified</strong>（类 <a href="https://arxiv.org/pdf/2602.15922" target="_blank" rel="noreferrer">DreamZero</a>）：单 DiT 架构，将视频、动作和机器人状态 token 放入同一个 Video DiT 中联合去噪，动作与视频在同一个自注意力中双向耦合。</li>
+          <li><strong>EasyWAM-Hidden</strong>（类 <a href="https://arxiv.org/pdf/2603.10448" target="_blank" rel="noreferrer">DiT4DiT</a>）：双 DiT 架构，用一个独立的 Action DiT 单向地以 Video DiT 的中间特征为条件；推理时仍需预测未来视频。</li>
+          <li><strong>EasyWAM-MoT</strong>（类 <a href="https://arxiv.org/pdf/2603.16666" target="_blank" rel="noreferrer">FastWAM</a>）：双 DiT 架构，Video DiT 与 Action DiT 相互独立，通过共享的混合自注意力交互；推理时只预测动作，不生成或预测未来视频。</li>
+        </ul>
+
+        <hr />
+
+        <h2>RQ1：全参数训练与 LoRA 训练下，各架构表现如何？</h2>
+        <p><strong>设置</strong>：我们把全参数训练与 LoRA（Rank 128）训练的结果放到同一张表里，看看切换训练方式是否会改变架构之间的相对排名。</p>
+        <p class="table-label"><strong>结果（LIBERO，平均值）</strong></p>
+        <div class="article-table">
+          <table class="benchmark-table">
+            <thead>
+              <tr><th>模型</th><th>结构</th><th>训练</th><th>Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>平均</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>EasyWAM-Unified</td><td>单 DiT</td><td>全参数</td><td>99.0</td><td>99.4</td><td>99.2</td><td>98.2</td><td><b>99.0</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>双 DiT</td><td>全参数</td><td>99.4</td><td>100.0</td><td>97.0</td><td>97.8</td><td><b>98.6</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>双 DiT</td><td>全参数</td><td>97.8</td><td>98.4</td><td>97.6</td><td>95.6</td><td><b>97.4</b></td></tr>
+              <tr><td>EasyWAM-Unified</td><td>单 DiT</td><td>LoRA</td><td>84.0</td><td>97.8</td><td>92.0</td><td>81.2</td><td><b>88.8</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>双 DiT</td><td>LoRA</td><td>96.8</td><td>99.4</td><td>92.6</td><td>86.8</td><td><b>93.9</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>双 DiT</td><td>LoRA</td><td>96.8</td><td>98.8</td><td>94.4</td><td>90.4</td><td><b>95.1</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="findings-label"><strong>发现</strong></p>
+        <ul>
+          <li><strong>全参数训练下：Unified（99.0）&gt; Hidden（98.6）&gt; MoT（97.4）。</strong>单 DiT 设计把视频和动作 token 放在同一个自注意力里双向耦合——动作预测可以直接利用完整的视觉表征，视频生成反过来又被动作信号约束。要把这种紧耦合学好，需要对整个网络联合调参，而这正是全参数训练所提供的，因此在这一设置下 Unified 拔得头筹。</li>
+          <li><strong>LoRA 微调下：MoT（95.1）&gt; Hidden（93.9）&gt; Unified（88.8）。</strong>MoT 和 Hidden 都是双 DiT 架构，在很大程度上保留了预训练 Video DiT 的先验；LoRA 只需微调一个相对独立的 Action DiT（外加少量交互层）来适配动作侧，代价很低。相比之下，Unified 在全参数训练下的优势依赖于对<em>整个</em>主干的联合调整——一旦只能做低秩更新，联合视频-动作建模所需的"耦合能力"就无法再被 LoRA 捕捉，这一点最明显地体现在性能从 99.0 掉到 88.8。</li>
+        </ul>
+
+        <hr />
+
+        <h2>RQ2：不同架构的泛化能力如何？</h2>
+        <p><strong>设置</strong>：<a href="https://arxiv.org/pdf/2510.13626" target="_blank" rel="noreferrer">LIBERO-Plus</a> 把在 LIBERO 上训练好的 checkpoint 拿来，系统性地扰动背景、相机视角、语言指令、物体布局、光照、噪声和机器人本体，测试模型是否真的学到了可泛化的视觉-动作映射。三种架构遵循不同的推理范式：MoT 在推理时不生成或预测未来视频，而 Hidden 和 Unified 都会。</p>
+        <p class="table-label"><strong>结果（LIBERO-Plus，平均值）</strong></p>
+        <div class="article-table">
+          <table class="benchmark-table">
+            <thead>
+              <tr><th>模型</th><th>推理时预测视频？</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>平均</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>EasyWAM-Unified</td><td>✅</td><td>55.8</td><td>33.7</td><td>93.7</td><td>80.6</td><td>92.2</td><td>50.2</td><td>71.4</td><td><b>67.5</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>✅</td><td>56.8</td><td>49.2</td><td>95.3</td><td>81.0</td><td>90.4</td><td>58.2</td><td>77.4</td><td><b>72.4</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>❌</td><td>52.8</td><td>20.6</td><td>80.4</td><td>65.2</td><td>85.1</td><td>51.5</td><td>49.7</td><td><b>56.8</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="findings-label"><strong>发现</strong></p>
+        <ul>
+          <li><strong>推理时预测未来视频能显著提升泛化能力。</strong>Hidden（72.4）和 Unified（67.5）在推理时都预测未来视频，它们的平均分远超不预测的 MoT（56.8）。它们几乎在每个扰动维度上都领先，其中 Camera（49.2/33.7 对 20.6）和 Robot（77.4/71.4 对 49.7）上的差距尤其大。这表明"预测未来"本身提供了比纯动作模仿更强的监督信号——模型必须建模物体和视角如何随时间演化，才能生成一帧合理的未来画面，而这个过程会把它推向更接近底层物理、对扰动更鲁棒的视觉表征，而不是简单记住训练分布中的动作-观测映射。</li>
+          <li><strong>Hidden 比 Unified 泛化得更好，代价是一笔"视频-动作对齐税"。</strong>两者都在推理时预测视频，但 Hidden（72.4）明显优于 Unified（67.5）。原因在于 Hidden 的双 DiT 结构在很大程度上保留了预训练 Video DiT 的先验——视频分支基本按预训练的方式运行，只把中间特征喂给一个独立的 Action DiT。而 Unified 必须把动作 token 拉进同一个主干里联合训练，视频分支的表征因此持续被动作梯度扰动——实际上，它把自己原有的一部分纯视觉泛化能力，作为对齐两个模态的税付了出去。这笔税在分布外扰动下最为明显，尤其是 Camera（33.7 对 49.2）。</li>
+        </ul>
+
+        <hr />
+
+        <p>EasyWAM 是一套与社区共建、持续演进的 WAM 训练基础设施，我们欢迎任何形式的贡献——也希望有更多人成为 contributor。</p>
+        <p class="article-signoff">如果你对 WAM 的训练设置还有其他疑问，欢迎提 <a href="https://github.com/OpenMOSS/EasyWAM/issues" target="_blank" rel="noreferrer">Issue</a>——我们会做针对性实验并分享可复现的分析。也欢迎给已有的 issue +1，关注度更高的问题会被优先处理。如果你在自己的场景里跑过类似的对比实验，也非常欢迎在 Issue 里分享你的发现——我们会持续把更多模型和 benchmark 加入这套系统性评测。</p>
+
+        <hr />
+
+        <section class="article-cite" aria-label="如何引用本文">
+          <div class="cite-head">
+            <p class="cite-label">如何引用</p>
+            <button type="button" class="cite-copy" data-cite-copy data-copied="已复制" data-failed="复制失败">复制</button>
+          </div>
+          <pre data-cite-text>@misc{easywam2026,
+  title  = {EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models},
+  author = {EasyWAM-Team},
+  year   = {2026},
+  url    = {https://github.com/OpenMOSS/EasyWAM}
+}</pre>
+        </section>
+      </article>
+
+      <footer class="footer">
+        <span>EasyWAM / OpenMOSS</span>
+        <a href="./index.html#contributing">参与贡献 ↗</a>
+      </footer>
+    </main>
+    <script>
+      function copyToClipboard(text) {
+        const legacy = () => {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+          } catch (e) { return false; }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return Promise.race([
+            navigator.clipboard.writeText(text).then(() => true),
+            new Promise((resolve) => window.setTimeout(() => resolve(legacy()), 1200)),
+          ]).catch(() => legacy());
+        }
+        return Promise.resolve(legacy());
+      }
+      document.querySelectorAll('[data-cite-copy]').forEach((btn) => {
+        const label = btn.textContent;
+        btn.addEventListener('click', async () => {
+          const text = btn.closest('.article-cite').querySelector('[data-cite-text]').textContent.trim();
+          const ok = await copyToClipboard(text);
+          btn.textContent = ok ? btn.dataset.copied : btn.dataset.failed;
+          window.setTimeout(() => { btn.textContent = label; }, 2000);
+        });
+      });
+    </script>
+  </body>
+</html>

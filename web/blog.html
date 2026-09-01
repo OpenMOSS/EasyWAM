@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f2f4ee" />
+    <title>What WAM Architecture Do We Need? | EasyWAM</title>
+    <link rel="icon" href="./assets/icon.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./site.css" />
+    <link rel="stylesheet" href="./site-overrides.css" />
+  </head>
+  <body>
+    <header class="article-topbar">
+      <a class="article-brand" href="./index.html#overview">
+        <span class="brand-mark">EW</span>
+        <span><strong>EasyWAM</strong></span>
+      </a>
+      <nav aria-label="Section navigation">
+        <a href="./index.html#overview">Overview</a>
+        <a href="./index.html#performance">Performance</a>
+        <a href="./index.html#blog" aria-current="page">Blog</a>
+        <a href="./index.html#contributing">Contributing</a>
+      </nav>
+      <a class="github-link" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer">GitHub <span>↗</span></a>
+    </header>
+
+    <main class="article-page">
+      <a class="article-back" href="./index.html#blog">← Back to blog</a>
+
+      <header class="article-header">
+        <p class="eyebrow">01 / architecture · Aug 28, 2026</p>
+        <h1>What WAM Architecture<br /><em>Do We Need?</em></h1>
+        <a class="lang-toggle" href="./blog_zh.html" data-lang="en" role="switch" aria-checked="false" aria-label="Switch to Chinese">
+          <span class="lang-toggle-opt">EN</span>
+          <span class="lang-toggle-opt">中文</span>
+          <span class="lang-toggle-knob" aria-hidden="true"></span>
+        </a>
+      </header>
+
+      <article class="article-body">
+        <p>When designing a World Action Model, there's a question we can never quite avoid: <strong>should video and action share a single backbone, or be modeled separately? And does inference really need to generate a future prediction at all?</strong> This post draws on EasyWAM's full set of results on LIBERO / LIBERO-Plus for three representative architectures, laying the training regime (full-parameter / LoRA) and generalization ability (LIBERO-Plus) side by side, and walking through what the numbers say and the architectural reasons behind them. All figures below are from experiments on the Wan2.2-TI2V-5B backbone.</p>
+
+        <h2>Experimental Setup</h2>
+        <ul>
+          <li><strong>EasyWAM-Unified</strong> (<a href="https://arxiv.org/pdf/2602.15922" target="_blank" rel="noreferrer">DreamZero</a>-like): a single-DiT architecture that places video, action, and robot-state tokens into one Video DiT for joint denoising, with action and video bidirectionally coupled within the same self-attention.</li>
+          <li><strong>EasyWAM-Hidden</strong> (<a href="https://arxiv.org/pdf/2603.10448" target="_blank" rel="noreferrer">DiT4DiT</a>-like): a dual-DiT architecture that conditions a separate Action DiT on the Video DiT's intermediate features in one direction; inference still requires predicting future video.</li>
+          <li><strong>EasyWAM-MoT</strong> (<a href="https://arxiv.org/pdf/2603.16666" target="_blank" rel="noreferrer">FastWAM</a>-like): a dual-DiT architecture with an independent Video DiT and Action DiT interacting through shared mixed self-attention; at inference time it only predicts actions and does not generate or predict future video.</li>
+        </ul>
+
+        <hr />
+
+        <h2>RQ1: How do the architectures perform under full-parameter vs. LoRA training?</h2>
+        <p><strong>Setup</strong>: We put full-parameter training and LoRA (Rank 128) training results into the same table to see whether switching the training regime changes the relative ranking of the architectures.</p>
+        <p class="table-label"><strong>Results (LIBERO, Avg.)</strong></p>
+        <div class="article-table">
+          <table class="benchmark-table">
+            <thead>
+              <tr><th>Model</th><th>Structure</th><th>Training</th><th>Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg.</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>EasyWAM-Unified</td><td>Single-DiT</td><td>Full</td><td>99.0</td><td>99.4</td><td>99.2</td><td>98.2</td><td><b>99.0</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>Dual-DiT</td><td>Full</td><td>99.4</td><td>100.0</td><td>97.0</td><td>97.8</td><td><b>98.6</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>Dual-DiT</td><td>Full</td><td>97.8</td><td>98.4</td><td>97.6</td><td>95.6</td><td><b>97.4</b></td></tr>
+              <tr><td>EasyWAM-Unified</td><td>Single-DiT</td><td>LoRA</td><td>84.0</td><td>97.8</td><td>92.0</td><td>81.2</td><td><b>88.8</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>Dual-DiT</td><td>LoRA</td><td>96.8</td><td>99.4</td><td>92.6</td><td>86.8</td><td><b>93.9</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>Dual-DiT</td><td>LoRA</td><td>96.8</td><td>98.8</td><td>94.4</td><td>90.4</td><td><b>95.1</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="findings-label"><strong>Findings</strong></p>
+        <ul>
+          <li><strong>Under full-parameter training: Unified (99.0) &gt; Hidden (98.6) &gt; MoT (97.4).</strong> The single-DiT design places video and action tokens in the same self-attention, bidirectionally coupled — action prediction can draw directly on the full visual representation, and video generation is in turn constrained by the action signal. Learning this tight coupling well requires tuning the whole network jointly, which is exactly what full-parameter training provides, so Unified comes out on top in this setting.</li>
+          <li><strong>Under LoRA fine-tuning: MoT (95.1) &gt; Hidden (93.9) &gt; Unified (88.8).</strong> Both MoT and Hidden are dual-DiT architectures, which largely preserve the pretrained Video DiT prior; LoRA only needs to fine-tune a relatively independent Action DiT (plus a small amount of interaction layers) to adapt the action side, at a low cost. Unified's advantage under full-parameter training, by contrast, depends on jointly adjusting the <em>entire</em> backbone — once only a low-rank update is available, the "coupling capacity" that joint video-action modeling requires can no longer be captured by LoRA, and this shows up most starkly in performance dropping from 99.0 to 88.8.</li>
+        </ul>
+
+        <hr />
+
+        <h2>RQ2: How well do the different architectures generalize?</h2>
+        <p><strong>Setup</strong>: <a href="https://arxiv.org/pdf/2510.13626" target="_blank" rel="noreferrer">LIBERO-Plus</a> takes checkpoints trained on LIBERO and systematically perturbs background, camera viewpoint, language instructions, object layout, lighting, noise, and robot embodiment, testing whether a model has actually learned a generalizable vision-action mapping. The three architectures follow different inference paradigms: MoT does not generate or predict future video at inference time, while both Hidden and Unified do.</p>
+        <p class="table-label"><strong>Results (LIBERO-Plus, Avg.)</strong></p>
+        <div class="article-table">
+          <table class="benchmark-table">
+            <thead>
+              <tr><th>Model</th><th>Predicts video<br>at inference?</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>EasyWAM-Unified</td><td>Y</td><td>55.8</td><td>33.7</td><td>93.7</td><td>80.6</td><td>92.2</td><td>50.2</td><td>71.4</td><td><b>67.5</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>Y</td><td>56.8</td><td>49.2</td><td>95.3</td><td>81.0</td><td>90.4</td><td>58.2</td><td>77.4</td><td><b>72.4</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>N</td><td>52.8</td><td>20.6</td><td>80.4</td><td>65.2</td><td>85.1</td><td>51.5</td><td>49.7</td><td><b>56.8</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="findings-label"><strong>Findings</strong></p>
+        <ul>
+          <li><strong>Predicting future video at inference time significantly improves generalization.</strong> Hidden (72.4) and Unified (67.5) both predict future video at inference, and their average scores far exceed MoT (56.8), which doesn't. They lead on nearly every perturbation dimension, with the gap especially large on Camera (49.2/33.7 vs. 20.6) and Robot (77.4/71.4 vs. 49.7). This suggests that "predicting the future" itself provides a stronger supervisory signal than pure action imitation — the model has to model how objects and viewpoints evolve over time in order to generate a plausible future frame, and this process pushes it toward visual representations that are closer to the underlying physics, and more robust to perturbation, rather than simply memorizing the action-observation mapping from the training distribution.</li>
+          <li><strong>Hidden generalizes better than Unified, at the cost of a "video-action alignment tax."</strong> Both predict video at inference, but Hidden (72.4) clearly outperforms Unified (67.5). The reason is that Hidden's dual-DiT structure largely preserves the pretrained Video DiT's prior — the video branch runs essentially as it was pretrained, and only feeds its intermediate features to a separate Action DiT. Unified, on the other hand, has to pull action tokens into the same backbone for joint training, so the video branch's representation is continuously perturbed by action gradients — in effect, it pays a portion of its original pure-vision generalization ability as a tax for aligning the two modalities. This tax is most visible under out-of-distribution perturbation, especially Camera (33.7 vs. 49.2).</li>
+        </ul>
+
+        <hr />
+
+        <p>EasyWAM is a WAM training infrastructure built and continuously evolved together with the community, and we welcome contributions of any kind — we'd love for more people to become contributors.</p>
+        <p class="article-signoff">If you have other questions about WAM training setups, feel free to open an <a href="https://github.com/OpenMOSS/EasyWAM/issues" target="_blank" rel="noreferrer">Issue</a> — we'll run targeted experiments and share reproducible analysis. You're also welcome to +1 existing issues; the ones that get more attention will be prioritized. And if you've run similar comparative experiments in your own setting, we'd love for you to share your findings in Issues too — we'll keep adding more models and benchmarks to this systematic evaluation.</p>
+
+        <hr />
+
+        <section class="article-cite" aria-label="How to cite this post">
+          <div class="cite-head">
+            <p class="cite-label">How to cite</p>
+            <button type="button" class="cite-copy" data-cite-copy data-copied="Copied" data-failed="Copy failed">Copy</button>
+          </div>
+          <pre data-cite-text>@misc{easywam2026,
+  title  = {EasyWAM: A Unified and Efficient Framework for Training and Evaluating World Action Models},
+  author = {EasyWAM-Team},
+  year   = {2026},
+  url    = {https://github.com/OpenMOSS/EasyWAM}
+}</pre>
+        </section>
+      </article>
+
+      <footer class="footer">
+        <span>EasyWAM / OpenMOSS</span>
+        <a href="./index.html#contributing">Contribute ↗</a>
+      </footer>
+    </main>
+    <script>
+      function copyToClipboard(text) {
+        const legacy = () => {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+          } catch (e) { return false; }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return Promise.race([
+            navigator.clipboard.writeText(text).then(() => true),
+            new Promise((resolve) => window.setTimeout(() => resolve(legacy()), 1200)),
+          ]).catch(() => legacy());
+        }
+        return Promise.resolve(legacy());
+      }
+      document.querySelectorAll('[data-cite-copy]').forEach((btn) => {
+        const label = btn.textContent;
+        btn.addEventListener('click', async () => {
+          const text = btn.closest('.article-cite').querySelector('[data-cite-text]').textContent.trim();
+          const ok = await copyToClipboard(text);
+          btn.textContent = ok ? btn.dataset.copied : btn.dataset.failed;
+          window.setTimeout(() => { btn.textContent = label; }, 2000);
+        });
+      });
+    </script>
+  </body>
+</html>

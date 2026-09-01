@@ -1,0 +1,136 @@
+/* ---- Hero: single column, no aside ---- */
+.hero{display:block;min-height:0;padding:1rem 0 4.5rem}
+.hero .lede{max-width:760px}
+.hero .hero-copy{max-width:960px}
+
+/* ---- Overview features: 2x2 grid, larger type ---- */
+.feature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.feature{min-height:210px;padding:1.9rem 1.8rem;background:rgba(255,255,255,.55);display:flex;flex-direction:column}
+.feature:nth-child(1){border-top:3px solid var(--blue)}.feature:nth-child(2){border-top:3px solid var(--orange)}.feature:nth-child(3){border-top:3px solid var(--cyan)}.feature:nth-child(4){border-top:3px solid var(--ink)}
+.feature-num{font:700 10px var(--mono);color:var(--muted)}
+.feature h3{margin:1.5rem 0 .9rem;font-size:1.6rem;line-height:1.08;letter-spacing:-.04em}
+.feature h3 em{font-style:normal;color:var(--cyan)}
+.feature p{margin:0;color:var(--muted);font-size:14.5px;line-height:1.62}
+
+/* ---- Performance: LIBERO full / LoRA on top, LIBERO-Plus full width ---- */
+.benchmark-section{padding:5.7rem 0;border-bottom:1px solid var(--line)}
+.perf-tables{margin-top:.4rem}
+.perf-pair{display:grid;grid-template-columns:0.92fr 1.08fr;gap:1rem;margin-bottom:1rem}
+.perf-table-wide{overflow-x:auto}
+.perf-table-wide .benchmark-table{min-width:640px}
+.perf-table-wide .benchmark-table th{white-space:nowrap}
+.benchmark-table th:first-child,.benchmark-table td:first-child{width:1%;white-space:nowrap}
+.perf-table-wrap{margin:0;padding:1.4rem 1.5rem 1.5rem;border:1px solid var(--line);background:rgba(255,255,255,.5)}
+.perf-table-wrap figcaption{display:flex;gap:.7rem;margin:0 0 1.1rem;color:var(--muted);font:10px/1.5 var(--mono);text-transform:uppercase}
+.perf-table-wrap figcaption span{color:var(--orange)}
+.benchmark-table{width:100%;border-collapse:collapse;font-size:13px}
+.benchmark-table th{padding:.5rem .45rem;text-align:right;color:var(--muted);font:700 10px var(--mono);text-transform:uppercase;border-bottom:1px solid var(--line)}
+.benchmark-table th:first-child{text-align:left}
+.benchmark-table td{padding:.68rem .45rem;border-bottom:1px solid var(--line);text-align:right}
+.benchmark-table td:first-child{text-align:left}
+.benchmark-table td:not(:first-child){font-family:var(--mono)}
+.benchmark-table tr:last-child td{border-bottom:0}
+.benchmark-table b{color:var(--orange)}
+.benchmark-table .row-group{padding:1rem .45rem .5rem;color:var(--ink);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.1em;text-align:left;background:rgba(23,37,31,.03)}
+.table-note{margin:1.1rem .2rem 0;color:var(--muted);font-size:11px;line-height:1.6}
+
+/* ---- Blog: single full-width clickable card ---- */
+.blog-section .post-grid{grid-template-columns:1fr}
+.post-card-link{cursor:pointer}
+.post.featured{min-height:0;padding:2.4rem 2.6rem}
+.post.featured .post-index{letter-spacing:.11em}
+.post.featured h3{margin:1.2rem 0 1rem;font-size:2.4rem;line-height:1.05;letter-spacing:-.055em;max-width:18ch}
+.post.featured p{font-size:14.5px;line-height:1.65;max-width:62ch}
+.post.featured .post-foot{padding-top:1.8rem}
+.post-cta{font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:#fff}
+
+/* ---- Contact: single line, tucked under contributing ---- */
+.contribute-section{padding-bottom:1.6rem}
+.contribute-steps{padding-top:0}
+.contact-section{padding:1.2rem 0 2.4rem;border-bottom:1px solid var(--line)}
+.contact-line{margin:0;font-size:1.05rem;color:var(--muted)}
+.contact-line a{color:var(--cyan);font-weight:600}
+.contact-line a:hover{color:var(--orange)}
+
+/* ---- Article page ---- */
+.article-topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:1.4rem;padding:.75rem max(1.5rem,(100vw - 1100px)/2);border-bottom:1px solid var(--line);background:rgba(242,244,238,.92);backdrop-filter:blur(12px)}
+.article-brand{display:flex;align-items:center;gap:.6rem}
+.article-brand .brand-mark{width:1.9rem;height:1.9rem;font-size:.7rem}
+.article-brand strong{font-size:.95rem;letter-spacing:-.03em}
+.article-topbar nav{display:flex;gap:1.1rem;overflow:auto}
+.article-topbar nav a{white-space:nowrap;color:var(--muted);font:700 11px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.article-topbar nav a:hover{color:var(--ink)}
+.article-topbar nav a[aria-current="page"]{color:var(--ink);text-decoration:underline 2px var(--orange);text-underline-offset:.28em}
+.article-topbar .github-link{margin:0 0 0 auto;padding:0;border-top:0;display:flex;align-items:center;gap:.4rem;color:var(--ink);font:700 11px/1.4 var(--mono);text-transform:uppercase}
+.article-page{width:min(820px,calc(100% - 2rem));margin:0 auto;padding:2.2rem 0 1rem}
+.article-back{font:700 11px var(--mono);text-transform:uppercase;color:var(--muted)}
+.article-back:hover{color:var(--orange)}
+.article-header{padding:2.6rem 0 2rem;border-bottom:1px solid var(--line)}
+.article-header .eyebrow{margin:0 0 1.1rem}
+.article-header h1{font-size:clamp(2.7rem,6.4vw,4.8rem);line-height:1;letter-spacing:-.07em;margin:0}
+.article-header h1 em{font-style:normal;color:var(--cyan)}
+.lang-toggle{position:relative;display:inline-flex;align-items:center;margin-top:1.7rem;padding:.25rem;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.55);user-select:none;-webkit-tap-highlight-color:transparent}
+.lang-toggle-opt{position:relative;z-index:1;display:grid;place-items:center;width:3rem;padding:.34rem 0;font:700 11px var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);transition:color .25s ease}
+.lang-toggle-knob{position:absolute;z-index:0;top:.25rem;left:.25rem;width:3rem;height:calc(100% - .5rem);border-radius:999px;background:var(--ink);transition:transform .28s cubic-bezier(.4,0,.2,1),background .2s ease}
+.lang-toggle[data-lang="zh"] .lang-toggle-knob{transform:translateX(3rem)}
+.lang-toggle[data-lang="en"] .lang-toggle-opt:first-of-type,
+.lang-toggle[data-lang="zh"] .lang-toggle-opt:nth-of-type(2){color:var(--paper)}
+.lang-toggle:hover .lang-toggle-knob{background:var(--cyan)}
+.lang-toggle:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.article-body{max-width:720px;padding:2.6rem 0 3.5rem;font-size:16px;line-height:1.8}
+.article-body h2{margin:2.6rem 0 .9rem;font-size:1.55rem;line-height:1.18;letter-spacing:-.04em}
+.article-body p{margin:0 0 1.2rem}
+.article-body strong{color:var(--ink)}
+.article-body ul{padding-left:1.3rem;color:var(--muted)}
+.article-body li{margin:.7rem 0}
+.article-body hr{border:0;border-top:1px solid var(--line);margin:2.4rem 0}
+.article-body .table-label,.article-body .findings-label{margin:0 0 .4rem;color:var(--muted);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.1em}
+.article-body .findings-label{margin-top:1.6rem}
+.article-table{margin:.3rem 0 1.6rem;overflow-x:auto;border:1px solid var(--line);background:rgba(255,255,255,.5)}
+.article-table .benchmark-table{min-width:640px;font-size:12.5px}
+.article-table .benchmark-table th,.article-table .benchmark-table td{padding:.55rem .6rem}
+.article-table .benchmark-table td{white-space:nowrap}
+.article-table .benchmark-table th{vertical-align:bottom;line-height:1.25}
+@media(min-width:860px){.article-body .article-table{width:820px}}
+.article-signoff{font-weight:400}
+.article-signoff a{color:var(--cyan)}
+.article-page .footer{margin-top:1rem}
+
+/* ---- Article citation block ---- */
+.article-cite{position:relative;margin:2.4rem 0 0;padding:1.35rem 1.5rem 1.5rem;border:1px solid var(--line);border-left:3px solid var(--cyan);background:rgba(255,255,255,.55)}
+.article-cite .cite-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:0 0 .95rem}
+.article-cite .cite-label{margin:0;color:var(--muted);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.1em}
+.article-cite .cite-copy{flex-shrink:0;min-height:2rem;padding:.42rem .85rem;border:1px solid var(--ink);background:var(--ink);color:var(--paper);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;cursor:pointer;transition:background .2s ease,border-color .2s ease,transform .2s ease}
+.article-cite .cite-copy:hover{background:var(--cyan);border-color:var(--cyan);transform:translateY(-1px)}
+.article-cite .cite-copy:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.article-cite pre{margin:0;padding:0;overflow-x:auto;font:12.5px/1.7 var(--mono);color:var(--ink);white-space:pre}
+
+@media(max-width:680px){
+  .article-cite{padding:.95rem 1rem 1.1rem}
+  .article-cite .cite-head{margin-bottom:.7rem}
+  .article-cite .cite-copy{padding:.38rem .7rem}
+  .article-cite pre{font-size:11.5px}
+}
+
+/* ---- Hero title: increased scale, green wordmark ---- */
+.hero h1{font-size:clamp(4.0rem,4vw,4.8rem)}
+.hero h1 em{font-style:normal;color:var(--cyan)}
+
+/* ---- Contributing headline: match section headings ---- */
+.contribute-copy h2{font-size:3.1rem;line-height:1.04;letter-spacing:-.065em}
+
+@media(max-width:680px){
+  .hero h1{font-size:2.8rem;line-height:1.1}
+  .contribute-copy h2{font-size:2.45rem}
+  .feature-grid{grid-template-columns:1fr}
+  .feature{min-height:0}
+  .feature h3{font-size:1.45rem}
+  .perf-pair{grid-template-columns:1fr}
+  .post.featured{padding:1.6rem}
+  .post.featured h3{font-size:1.9rem}
+  .article-topbar{gap:1rem;padding:.7rem 1rem}
+  .article-topbar .github-link{display:none}
+  .article-header{padding:2rem 0 1.7rem}
+  .article-header h1{font-size:2.5rem}
+  .article-body{font-size:15px;padding-top:2.2rem}
+}
