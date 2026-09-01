@@ -12,11 +12,10 @@ from .component.attention import (
     AttentionSegment,
     StructuredAttentionMask,
     build_structured_attention_mask,
-    elide_fully_valid_attention_mask,
 )
 from .backbone.wan22.loader import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
-from .backbone.wan22.wan_video_dit import precompute_freqs_cis, sinusoidal_embedding_1d
+from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
 
 logger = get_logger(__name__)
 
@@ -45,6 +44,7 @@ class EasyWAMUnified(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
         super().__init__()
         self.backbone_name = getattr(video_dit, "backbone_name", "wan22")
@@ -78,8 +78,6 @@ class EasyWAMUnified(nn.Module):
                 ),
             }
         )
-        self.freqs_action = precompute_freqs_cis(self.attn_head_dim, end=4096)
-        self.freqs_state = precompute_freqs_cis(self.attn_head_dim, end=1024)
         self.vae = vae
         self.text_encoder = text_encoder
         self.tokenizer = tokenizer
@@ -94,22 +92,60 @@ class EasyWAMUnified(nn.Module):
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
 
-        self.train_video_scheduler = ContinuousFlowMatchScheduler(
-            num_train_timesteps=video_num_train_timesteps,
-            shift=video_train_shift,
-        )
-        self.infer_video_scheduler = ContinuousFlowMatchScheduler(
-            num_train_timesteps=video_num_train_timesteps,
-            shift=video_infer_shift,
-        )
-        self.train_action_scheduler = ContinuousFlowMatchScheduler(
-            num_train_timesteps=action_num_train_timesteps,
-            shift=action_train_shift,
-        )
-        self.infer_action_scheduler = ContinuousFlowMatchScheduler(
-            num_train_timesteps=action_num_train_timesteps,
-            shift=action_infer_shift,
-        )
+        scheduler_cfg = dict(video_scheduler_config or {})
+        if self.backbone_name == "wan22":
+            scheduler_cls = ContinuousFlowMatchScheduler
+            self.train_video_scheduler = scheduler_cls(
+                num_train_timesteps=video_num_train_timesteps,
+                shift=video_train_shift,
+            )
+            self.infer_video_scheduler = scheduler_cls(
+                num_train_timesteps=video_num_train_timesteps,
+                shift=video_infer_shift,
+            )
+            self.train_action_scheduler = scheduler_cls(
+                num_train_timesteps=action_num_train_timesteps,
+                shift=action_train_shift,
+            )
+            self.infer_action_scheduler = scheduler_cls(
+                num_train_timesteps=action_num_train_timesteps,
+                shift=action_infer_shift,
+            )
+        elif self.backbone_name == "cosmos25":
+            time_distribution = str(
+                scheduler_cfg.get("time_distribution", "logitnormal")
+            )
+            training_weight = str(scheduler_cfg.get("training_weight", "uniform"))
+            use_karras_sigmas = bool(scheduler_cfg.get("use_karras_sigmas", True))
+            self.train_video_scheduler = FlowUniPCScheduler(
+                video_num_train_timesteps,
+                video_train_shift,
+                use_karras_sigmas=False,
+                time_distribution=time_distribution,
+                training_weight_method=training_weight,
+            )
+            self.infer_video_scheduler = FlowUniPCScheduler(
+                video_num_train_timesteps,
+                video_infer_shift,
+                use_karras_sigmas=use_karras_sigmas,
+            )
+            self.train_action_scheduler = FlowUniPCScheduler(
+                action_num_train_timesteps,
+                action_train_shift,
+                use_karras_sigmas=False,
+                time_distribution=time_distribution,
+                training_weight_method=training_weight,
+            )
+            self.infer_action_scheduler = FlowUniPCScheduler(
+                action_num_train_timesteps,
+                action_infer_shift,
+                use_karras_sigmas=use_karras_sigmas,
+            )
+        else:
+            raise ValueError(
+                "EasyWAM-Unified supports scheduler families for 'wan22' and "
+                f"'cosmos25', got backbone {self.backbone_name!r}."
+            )
         self.train_scheduler = self.train_video_scheduler
         self.infer_scheduler = self.infer_video_scheduler
         self.to(device=self.device, dtype=self.torch_dtype)
@@ -121,45 +157,6 @@ class EasyWAMUnified(nn.Module):
     @property
     def blocks(self):
         return self.video_dit.blocks
-
-    def _build_video_freqs(self, f: int, h: int, w: int, device: torch.device) -> torch.Tensor:
-        freqs = torch.cat(
-            [
-                self.video_dit.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
-                self.video_dit.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
-                self.video_dit.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1),
-            ],
-            dim=-1,
-        ).reshape(f * h * w, 1, -1)
-        return freqs.to(device)
-
-    def _build_t_mod(
-        self,
-        timestep_video: torch.Tensor,
-        timestep_action: torch.Tensor,
-        timestep_state: torch.Tensor,
-        video_frames: int,
-        tokens_per_frame: int,
-        action_len: int,
-        state_len: int,
-        dtype: torch.dtype,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        batch_size = timestep_video.shape[0]
-        video_token_t = torch.ones(
-            (batch_size, video_frames, tokens_per_frame),
-            dtype=timestep_video.dtype,
-            device=timestep_video.device,
-        ) * timestep_video.view(batch_size, 1, 1)
-        video_token_t[:, 0, :] = 0
-        video_token_t = video_token_t.reshape(batch_size, -1)
-
-        action_token_t = timestep_action.view(batch_size, 1).expand(-1, action_len)
-        state_token_t = timestep_state.view(batch_size, 1).expand(-1, state_len)
-        token_t = torch.cat([video_token_t, action_token_t, state_token_t], dim=1)
-        t_emb = sinusoidal_embedding_1d(self.freq_dim, token_t.reshape(-1)).to(dtype=dtype)
-        t = self.video_dit.time_embedding(t_emb).reshape(batch_size, -1, self.hidden_dim)
-        t_mod = self.video_dit.time_projection(t).unflatten(2, (6, self.hidden_dim))
-        return t, t_mod
 
     @staticmethod
     def _build_single_chunk_mask(
@@ -246,100 +243,29 @@ class EasyWAMUnified(nn.Module):
             context_mask = torch.ones((batch_size, context.shape[1]), dtype=torch.bool, device=context.device)
         context_mask = context_mask.to(device=x.device, dtype=torch.bool)
 
-        if hasattr(self.video_dit, "pre_unified_dit"):
-            action_tokens = self.dit["action_encoder"](action)
-            state_tokens = self.dit["state_encoder"](
-                state.to(device=x.device, dtype=x.dtype)
-            )
-            pre = self.video_dit.pre_unified_dit(
-                x=x,
-                timestep_video=timestep_video.to(device=x.device, dtype=x.dtype),
-                action_tokens=action_tokens,
-                timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
-                state_tokens=state_tokens,
-                timestep_state=timestep_state.to(device=x.device, dtype=x.dtype),
-                context=context,
-                context_mask=context_mask,
-            )
-            tokens = pre["tokens"]
-            meta = pre["meta"]
-            video_len = int(meta["video_len"])
-            tokens_per_frame = int(meta["tokens_per_frame"])
-            attention_mask = self._build_single_chunk_mask(
-                clean_video_len=tokens_per_frame,
-                future_video_len=video_len - tokens_per_frame,
-                action_len=action_tokens.shape[1],
-                state_len=state_tokens.shape[1],
-                device=tokens.device,
-                video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
-            )
-            for layer_index in range(len(self.video_dit.blocks)):
-                tokens = self.video_dit.forward_block(
-                    layer_index, tokens, pre, attention_mask
-                )
-            video_out = self.video_dit.post_unified_dit(tokens, pre)
-            action_out = self.dit["action_decoder"](
-                tokens[:, video_len:video_len + action_tokens.shape[1]]
-            )
-            return video_out, action_out
-
-        video_tokens_5d = self.video_dit.patchify(x)
-        video_frames, patch_h, patch_w = video_tokens_5d.shape[2:]
-        tokens_per_frame = patch_h * patch_w
-        video_len = video_frames * tokens_per_frame
-        if video_frames <= 1:
-            raise ValueError("EasyWAM-Unified requires at least one clean and one future latent frame.")
-
-        video_tokens = video_tokens_5d.flatten(start_dim=2).transpose(1, 2).contiguous()
         action_tokens = self.dit["action_encoder"](action)
         state_tokens = self.dit["state_encoder"](
             state.to(device=x.device, dtype=x.dtype)
         )
-        tokens = torch.cat([video_tokens, action_tokens, state_tokens], dim=1)
-
-        video_freqs = self._build_video_freqs(video_frames, patch_h, patch_w, tokens.device)
-        action_freqs = self.freqs_action[: action_tokens.shape[1]].view(action_tokens.shape[1], 1, -1)
-        state_freqs = self.freqs_state[: state_tokens.shape[1]].view(state_tokens.shape[1], 1, -1)
-        freqs = torch.cat(
-            [
-                video_freqs,
-                action_freqs.to(tokens.device),
-                state_freqs.to(tokens.device),
-            ],
-            dim=0,
-        )
-
-        t, t_mod = self._build_t_mod(
-            timestep_video=timestep_video.to(device=x.device, dtype=x.dtype),
-            timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
-            timestep_state=timestep_state.to(device=x.device, dtype=x.dtype),
-            video_frames=video_frames,
-            tokens_per_frame=tokens_per_frame,
-            action_len=action_tokens.shape[1],
-            state_len=state_tokens.shape[1],
-            dtype=x.dtype,
-        )
-
-        context_emb = self.video_dit.text_embedding(context.to(device=x.device, dtype=x.dtype))
-        compact_context_mask = elide_fully_valid_attention_mask(context_mask)
-        if compact_context_mask is None:
-            non_state_len = tokens.shape[1] - state_tokens.shape[1]
-            segments = [AttentionSegment(0, non_state_len, ((0, context.shape[1]),))]
-            if state_tokens.shape[1]:
-                segments.append(AttentionSegment(non_state_len, tokens.shape[1], ()))
-            context_attn_mask = (
-                None
-                if not state_tokens.shape[1]
-                else build_structured_attention_mask(
-                    tokens.shape[1], context.shape[1], segments, tokens.device
-                )
+        if not hasattr(self.video_dit, "pre_unified_dit") or not hasattr(
+            self.video_dit, "post_unified_dit"
+        ):
+            raise TypeError(
+                f"Backbone {type(self.video_dit).__name__} does not implement the Unified staged API."
             )
-        else:
-            context_attn_mask = compact_context_mask.unsqueeze(1).expand(
-                -1, tokens.shape[1], -1
-            ).clone()
-            if state_tokens.shape[1] > 0:
-                context_attn_mask[:, -state_tokens.shape[1] :, :] = False
+        pre = self.video_dit.pre_unified_dit(
+            x=x,
+            timestep_video=timestep_video.to(device=x.device, dtype=x.dtype),
+            action_tokens=action_tokens,
+            timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
+            state_tokens=state_tokens,
+            timestep_state=timestep_state.to(device=x.device, dtype=x.dtype),
+            context=context,
+            context_mask=context_mask,
+        )
+        tokens = pre["tokens"]
+        video_len = int(pre["meta"]["video_len"])
+        tokens_per_frame = int(pre["meta"]["tokens_per_frame"])
         attention_mask = self._build_single_chunk_mask(
             clean_video_len=tokens_per_frame,
             future_video_len=video_len - tokens_per_frame,
@@ -349,38 +275,25 @@ class EasyWAMUnified(nn.Module):
             video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
         )
 
-        for block in self.video_dit.blocks:
-            if self.video_dit.use_gradient_checkpointing:
-                from .helpers.gradient import gradient_checkpoint_forward
+        for layer_index in range(len(self.video_dit.blocks)):
+            if self.video_dit.use_gradient_checkpointing and torch.is_grad_enabled():
+                from torch.utils.checkpoint import checkpoint
 
-                tokens = gradient_checkpoint_forward(
-                    block,
-                    self.video_dit.use_gradient_checkpointing,
-                    tokens,
-                    context_emb,
-                    t_mod,
-                    freqs,
-                    context_mask=context_attn_mask,
-                    self_attn_mask=attention_mask,
+                def _block_forward(value, index=layer_index):
+                    return self.video_dit.forward_block(
+                        index, value, pre, attention_mask
+                    )
+
+                tokens = checkpoint(
+                    _block_forward, tokens, use_reentrant=False
                 )
             else:
-                tokens = block(
-                    tokens,
-                    context_emb,
-                    t_mod,
-                    freqs,
-                    context_mask=context_attn_mask,
-                    self_attn_mask=attention_mask,
+                tokens = self.video_dit.forward_block(
+                    layer_index, tokens, pre, attention_mask
                 )
-
-        video_out_tokens = tokens[:, :video_len]
-        action_out_tokens = tokens[:, video_len : video_len + action_tokens.shape[1]]
-        video_t = t[:, :video_len]
-        video_out = self.video_dit.head(video_out_tokens, video_t)
-        video_out = self.video_dit.unpatchify(video_out, (video_frames, patch_h, patch_w))
-        action_out = self.dit["action_decoder"](action_out_tokens)
-        return video_out, action_out
-
+        outputs = self.video_dit.post_unified_dit(tokens, pre)
+        action_out = self.dit["action_decoder"](outputs["action_tokens"])
+        return outputs["video"], action_out
 
     @classmethod
     def from_backbone_pretrained(
@@ -400,6 +313,7 @@ class EasyWAMUnified(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        video_scheduler_config: Optional[dict[str, Any]] = None,
     ) -> "EasyWAMUnified":
         from .backbone.loader import load_easywam_backbone, normalize_backbone_config
 
@@ -410,6 +324,8 @@ class EasyWAMUnified(nn.Module):
             torch_dtype=torch_dtype,
             skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
         )
+        if video_scheduler_config is None:
+            video_scheduler_config = dict(cfg.get("video_scheduler", {}))
         model = cls(
             video_dit=components.dit,
             vae=components.vae,
@@ -428,25 +344,9 @@ class EasyWAMUnified(nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            video_scheduler_config=video_scheduler_config,
         )
         model.backbone_name = cfg["name"]
-        if cfg["name"] == "cosmos25":
-            from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
-            scheduler_cfg = dict(cfg.get("video_scheduler", {}))
-            model.train_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps,
-                float(scheduler_cfg.get("train_shift", video_train_shift)),
-                use_karras_sigmas=False,
-                time_distribution=str(scheduler_cfg.get("time_distribution", "logitnormal")),
-                training_weight_method=str(scheduler_cfg.get("training_weight", "uniform")),
-            )
-            model.infer_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps,
-                float(scheduler_cfg.get("infer_shift", video_infer_shift)),
-                use_karras_sigmas=bool(scheduler_cfg.get("use_karras_sigmas", True)),
-            )
-            model.train_scheduler = model.train_video_scheduler
-            model.infer_scheduler = model.infer_video_scheduler
         model.model_paths = {
             "video_dit": components.dit_path,
             "vae": components.vae_path,
@@ -476,6 +376,7 @@ class EasyWAMUnified(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for EasyWAM-Unified.")
@@ -512,6 +413,7 @@ class EasyWAMUnified(nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            video_scheduler_config=video_scheduler_config,
         )
         model.model_paths = {
             "video_dit": components.dit_path,
@@ -685,9 +587,17 @@ class EasyWAMUnified(nn.Module):
 
         action = inputs["action"]
         noise_action = torch.randn_like(action)
-        timestep_action = timestep_video.to(device=self.device, dtype=action.dtype)
-        noisy_action = self.train_action_scheduler.add_noise(action, noise_action, timestep_action)
-        target_action = self.train_action_scheduler.training_target(action, noise_action, timestep_action)
+        timestep_action = self.train_action_scheduler.sample_training_t(
+            batch_size=batch_size,
+            device=self.device,
+            dtype=action.dtype,
+        )
+        noisy_action = self.train_action_scheduler.add_noise(
+            action, noise_action, timestep_action
+        )
+        target_action = self.train_action_scheduler.training_target(
+            action, noise_action, timestep_action
+        )
 
         pred_video, pred_action = self._forward_dit(
             x=noisy_video,
@@ -830,7 +740,7 @@ class EasyWAMUnified(nn.Module):
             shift_override=sigma_shift,
         )
         infer_timesteps_action, infer_deltas_action = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=len(infer_timesteps_video),
+            num_inference_steps=num_inference_steps,
             device=self.device,
             dtype=latents_action.dtype,
             shift_override=sigma_shift,
@@ -842,7 +752,9 @@ class EasyWAMUnified(nn.Module):
             infer_deltas_action,
         ):
             timestep_video = step_t_video.unsqueeze(0).to(dtype=latents_video.dtype, device=self.device)
-            timestep_action = step_t_action.unsqueeze(0).to(dtype=latents_action.dtype, device=self.device)
+            timestep_action = step_t_action.unsqueeze(0).to(
+                dtype=latents_action.dtype, device=self.device
+            )
             pred_video, pred_action = self._forward_dit(
                 x=latents_video,
                 timestep_video=timestep_video,

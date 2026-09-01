@@ -5,14 +5,14 @@ defaults:
   - override /model: easywam_mot_joint_cosmos25
   - _self_
 
-batch_size: 16
+batch_size: 8
 num_workers: 8
 
 lr_scheduler_type: cosine
 learning_rate: 1e-4
-max_steps: 20000
+max_steps: 40000
 log_every: 100
-save_every: 2000
+save_every: 4000
 eval_every: 1000
 eval_num_inference_steps: 10
 

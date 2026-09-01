@@ -358,9 +358,21 @@ class CosmosFinalLayer(nn.Module):
             nn.SiLU(), nn.Linear(hidden_size, rank, bias=False), nn.Linear(rank, 2 * hidden_size, bias=False)
         )
 
-    def forward(self, x: torch.Tensor, embedding: torch.Tensor, adaln_lora: torch.Tensor) -> torch.Tensor:
+    def condition_tokens(
+        self,
+        x: torch.Tensor,
+        embedding: torch.Tensor,
+        adaln_lora: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply native Cosmos output normalization/modulation without projection."""
         shift, scale = (self.adaln_modulation(embedding) + adaln_lora[..., : 2 * x.shape[-1]]).chunk(2, -1)
-        return self.linear(self.layer_norm(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None])
+        for _ in range(x.ndim - embedding.ndim):
+            shift = shift.unsqueeze(2)
+            scale = scale.unsqueeze(2)
+        return self.layer_norm(x) * (1 + scale) + shift
+
+    def forward(self, x: torch.Tensor, embedding: torch.Tensor, adaln_lora: torch.Tensor) -> torch.Tensor:
+        return self.linear(self.condition_tokens(x, embedding, adaln_lora))
 
 
 @dataclass(frozen=True)
@@ -624,11 +636,31 @@ class Cosmos25VideoDiT(nn.Module):
         video["freqs"] = (torch.cat(cos_parts), torch.cat(sin_parts))
         video["context"] = projected_context
         video["context_mask"] = joint_context_mask
-        video["meta"].update({"video_len": video_len, "action_len": action_tokens.shape[1], "state_len": state_tokens.shape[1]})
+        video["meta"].update(
+            {
+                "video_len": video_len,
+                "action_len": action_tokens.shape[1],
+                "state_len": state_tokens.shape[1],
+                "action_modulation_index": video_steps,
+            }
+        )
         return video
 
-    def post_unified_dit(self, tokens: torch.Tensor, pre_state: dict) -> torch.Tensor:
-        return self.post_dit(tokens[:, :pre_state["meta"]["video_len"]], pre_state)
+    def post_unified_dit(self, tokens: torch.Tensor, pre_state: dict) -> dict[str, torch.Tensor]:
+        video_len = int(pre_state["meta"]["video_len"])
+        action_len = int(pre_state["meta"]["action_len"])
+        action_index = int(pre_state["meta"]["action_modulation_index"])
+        action_tokens = tokens[:, video_len:video_len + action_len]
+        embedding = pre_state["t_mod"]["embedding"][:, action_index:action_index + 1]
+        adaln_lora = pre_state["t_mod"]["adaln_lora"][:, action_index:action_index + 1]
+        embedding = embedding.expand(-1, action_len, -1)
+        adaln_lora = adaln_lora.expand(-1, action_len, -1)
+        return {
+            "video": self.post_dit(tokens[:, :video_len], pre_state),
+            "action_tokens": self.final_layer.condition_tokens(
+                action_tokens, embedding, adaln_lora
+            ),
+        }
 
     def forward(
         self,
