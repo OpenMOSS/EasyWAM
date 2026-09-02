@@ -506,7 +506,7 @@ def build_datasets(data_cfg: DictConfig):
 
 def run_training(cfg: DictConfig):
     from accelerate import Accelerator
-    from trainer import Wan22Trainer
+    from trainer import EasyWAMTrainer
     from utils import misc
 
     mixed_precision = _normalize_mixed_precision(cfg.mixed_precision)
@@ -529,7 +529,7 @@ def run_training(cfg: DictConfig):
     model = instantiate(cfg.model, model_dtype=model_dtype, device=str(accelerator.device))
     train_ds, val_ds = build_datasets(cfg.data)
 
-    trainer = Wan22Trainer(
+    trainer = EasyWAMTrainer(
         cfg=cfg,
         accelerator=accelerator,
         model=model,

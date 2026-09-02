@@ -8,6 +8,7 @@ apex/
 runs/
 log/
 evaluate_results/
+/tests/
 .deepspeed*
 
 

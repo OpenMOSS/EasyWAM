@@ -69,7 +69,7 @@ def _forward_training_model(model, sample):
     return loss, metrics
 
 
-class Wan22Trainer:
+class EasyWAMTrainer:
     def __init__(self, model, train_dataset, val_dataset=None, *, cfg: DictConfig, accelerator: Accelerator):
         self.model = model
         self.train_dataset = train_dataset
