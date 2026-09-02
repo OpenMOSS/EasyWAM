@@ -553,7 +553,7 @@ class EasyWAMTrainer:
             "action_horizon": action_horizon,
         }
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def evaluate(self):
         if self.val_dataset is None:
             return None
@@ -1026,6 +1026,7 @@ class EasyWAMTrainer:
 
             if self.accelerator.sync_gradients:
                 self.global_step += 1
+                checkpoint_saved_at_current_step = False
                 current_lr = float(self.optimizer.param_groups[0]["lr"])
                 if self.accelerator.is_local_main_process:
                     progress_bar.set_postfix(
@@ -1134,6 +1135,7 @@ class EasyWAMTrainer:
 
                 if self.save_every > 0 and self.global_step % self.save_every == 0:
                     ckpt_info = self.save_checkpoint()
+                    checkpoint_saved_at_current_step = True
                     if self.accelerator.is_main_process:
                         logger.info(
                             "[ckpt] step=%d weights=%s state=%s",
@@ -1144,7 +1146,8 @@ class EasyWAMTrainer:
 
                 if self.global_step >= self.max_steps:
                     progress_bar.close()
-                    ckpt_info = self.save_checkpoint()
+                    if not checkpoint_saved_at_current_step:
+                        ckpt_info = self.save_checkpoint()
                     if self.accelerator.is_main_process:
                         logger.info(
                             "[done] max_steps reached step=%d weights=%s state=%s",
