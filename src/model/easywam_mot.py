@@ -10,6 +10,7 @@ from utils.logging_config import get_logger
 from .component.action_dit import ActionDiT, StateEncoder
 from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
 from .component.mot import MoT
+from .prompt_utils import mask_prompt_padding
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
 logger = get_logger(__name__)
@@ -351,11 +352,7 @@ class EasyWAMMoT(torch.nn.Module):
         ids = ids.to(self.device)
         mask = mask.to(self.device, dtype=torch.bool)
         prompt_emb = self.text_encoder(ids, mask)
-        # FIXME: original implementation's zero padding is visible in cross-attn.
-        seq_lens = mask.gt(0).sum(dim=1).long()
-        for i, v in enumerate(seq_lens):
-            prompt_emb[i, v:] = 0
-        mask = torch.ones_like(mask)
+        prompt_emb, mask = mask_prompt_padding(prompt_emb, mask)
         return prompt_emb.to(device=self.device), mask
 
     def _append_state_to_context(

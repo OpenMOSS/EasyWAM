@@ -10,6 +10,7 @@ from utils.logging_config import get_logger
 from .component.action_dit import ActionDiT, StateEncoder
 from .helpers.gradient import gradient_checkpoint_forward
 from .backbone.wan22.loader import load_wan22_ti2v_5b_components
+from .prompt_utils import mask_prompt_padding
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
 
@@ -539,10 +540,7 @@ class EasyWAMHidden(nn.Module):
         ids = ids.to(self.device)
         mask = mask.to(self.device, dtype=torch.bool)
         prompt_emb = self.text_encoder(ids, mask)
-        seq_lens = mask.gt(0).sum(dim=1).long()
-        for i, v in enumerate(seq_lens):
-            prompt_emb[i, v:] = 0
-        mask = torch.ones_like(mask)
+        prompt_emb, mask = mask_prompt_padding(prompt_emb, mask)
         return prompt_emb.to(device=self.device), mask
 
     @torch.no_grad()
