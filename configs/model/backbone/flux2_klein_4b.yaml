@@ -1,0 +1,27 @@
+name: flux2
+variant: klein-base-4b
+flux2_src_path: ./third_party/flux2
+model_path: ./checkpoints/flux2/FLUX.2-klein-base-4B/flux-2-klein-base-4b.safetensors
+ae_model_path: ./checkpoints/flux2/FLUX.2-dev/ae.safetensors
+qwen3_model_spec: Qwen/Qwen3-4B
+qwen3_output_layers: [9, 18, 27]
+tokenizer_max_len: 512
+load_text_encoder: false
+text_encoder_id: qwen3_flux2
+text_dim: 7680
+attention_backend: auto
+use_gradient_checkpointing: false
+num_heads: 24
+attn_head_dim: 128
+num_layers_double: 5
+num_layers_single: 20
+action_dit_pretrained_path: null
+
+video_scheduler:
+  train_shift: 5.0
+  infer_shift: 5.0
+  num_train_timesteps: 1000
+
+lora_target_modules:
+  - transformer.double_blocks
+  - transformer.single_blocks

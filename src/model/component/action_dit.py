@@ -1,7 +1,10 @@
 import os
+from typing import Any, Dict, Optional
+
 import torch
 import torch.nn as nn
-from typing import Any, Dict, Optional
+
+from ..backbone.protocol import BLOCK_PROTOCOL_MAIN
 
 from utils.logging_config import get_logger
 
@@ -76,6 +79,7 @@ class ActionDecoder(nn.Module):
 
 
 class ActionDiT(nn.Module):
+    block_protocol = BLOCK_PROTOCOL_MAIN
     ACTION_BACKBONE_SKIP_PREFIXES = ("action_encoder.", "action_decoder.", "head.")
     ACTION_BACKBONE_META_KEYS = (
         "hidden_dim",
