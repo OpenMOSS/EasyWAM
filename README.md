@@ -57,6 +57,10 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | --- | :---: |
 | Wan2.2-TI2V-5B | ✅ |
 | Cosmos-Predict2.5-2B | ✅ |
+| FLUX.2 Klein-4B (ImageWAM-compatible) | ✅ |
+
+See [FLUX.2 / ImageWAM backbone integration](docs/flux2_imagewam_integration.md)
+for checkpoint migration, configuration, and evaluation details.
 
 ### 🧪 Benchmarks
 

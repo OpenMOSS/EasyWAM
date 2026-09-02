@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
+from ..protocol import BLOCK_PROTOCOL_MAIN
 from ...component.attention import (
     AttentionSegment,
     StructuredAttentionMask,
@@ -395,6 +396,8 @@ class Cosmos25DiTConfig:
 
 class Cosmos25VideoDiT(nn.Module):
     """Cosmos-Predict2.5-2B Image2World DiT with native checkpoint names."""
+
+    block_protocol = BLOCK_PROTOCOL_MAIN
 
     def __init__(self, config: Cosmos25DiTConfig = Cosmos25DiTConfig()):
         super().__init__()

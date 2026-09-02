@@ -4,7 +4,10 @@ import os
 
 import torch.distributed as dist
 
-from rich.logging import RichHandler
+try:
+    from rich.logging import RichHandler
+except ImportError:  # Rich is optional on minimal training/runtime images.
+    RichHandler = None
 
 
 def setup_logging(
@@ -72,8 +75,11 @@ def setup_logging(
         if rich_handler_kwargs:
             default_rich_kwargs.update(rich_handler_kwargs)
         
-        # Create RichHandler
-        rich_handler = RichHandler(**default_rich_kwargs)
+        # Prefer Rich when installed, while keeping minimal cluster runtimes usable.
+        if RichHandler is None:
+            rich_handler = logging.StreamHandler()
+        else:
+            rich_handler = RichHandler(**default_rich_kwargs)
         
         # Configure Formatter
         default_formatter_kwargs = {

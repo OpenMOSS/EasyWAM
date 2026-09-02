@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from .attention import StructuredAttentionMask, normalize_attention_backend, run_attention
+from ..backbone.protocol import BLOCK_PROTOCOL_FLUX2, BLOCK_PROTOCOL_MAIN, SUPPORTED_BLOCK_PROTOCOLS
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,9 @@ class MoT(nn.Module):
         self.expert_order = list(self.mixtures.keys())
 
         first_expert = self.mixtures[self.expert_order[0]]
+        self.block_protocol = str(getattr(first_expert, "block_protocol", BLOCK_PROTOCOL_MAIN))
+        if self.block_protocol not in SUPPORTED_BLOCK_PROTOCOLS:
+            raise ValueError(f"Unsupported MoT block protocol: {self.block_protocol!r}")
         self.num_layers = len(first_expert.blocks)
         self.num_heads = first_expert.num_heads
         self.attn_head_dim = first_expert.attn_head_dim
@@ -48,6 +52,12 @@ class MoT(nn.Module):
 
         for name in self.expert_order[1:]:
             expert = self.mixtures[name]
+            expert_protocol = str(getattr(expert, "block_protocol", BLOCK_PROTOCOL_MAIN))
+            if expert_protocol != self.block_protocol:
+                raise ValueError(
+                    f"All experts must use the same block protocol; got {self.block_protocol!r} "
+                    f"and {expert_protocol!r} for {name!r}."
+                )
             if len(expert.blocks) != self.num_layers:
                 raise ValueError(
                     f"All experts must have same number of layers; got {self.num_layers} and {len(expert.blocks)}"
@@ -66,8 +76,25 @@ class MoT(nn.Module):
                     "All experts must use the same attention_backend; "
                     f"got {self.attention_backend} and {expert.attention_backend}"
                 )
+
+        self.double_layers = 0
+        self.single_layers = 0
+        if self.block_protocol == BLOCK_PROTOCOL_FLUX2:
+            self.double_layers = int(getattr(first_expert, "double_layers"))
+            self.single_layers = int(getattr(first_expert, "single_layers"))
+            for name in self.expert_order[1:]:
+                expert = self.mixtures[name]
+                if int(getattr(expert, "double_layers")) != self.double_layers:
+                    raise ValueError("All FLUX.2 experts must have the same double-stage depth.")
+                if int(getattr(expert, "single_layers")) != self.single_layers:
+                    raise ValueError("All FLUX.2 experts must have the same single-stage depth.")
         
-        logger.info(f"Initialized MoT with experts: {self.expert_order}, num_layers={self.num_layers}")
+        logger.info(
+            "Initialized MoT with experts=%s protocol=%s num_layers=%d",
+            self.expert_order,
+            self.block_protocol,
+            self.num_layers,
+        )
         total_params = 0
         for name in self.expert_order:
             expert = self.mixtures[name]
@@ -455,11 +482,11 @@ class MoT(nn.Module):
 
     def forward(
         self,
-        embeds_all: Dict[str, torch.Tensor],
-        attention_mask: torch.Tensor | StructuredAttentionMask,
-        freqs_all: Dict[str, torch.Tensor],
+        embeds_all: Dict[str, object],
+        attention_mask: torch.Tensor | StructuredAttentionMask | dict[str, torch.Tensor],
+        freqs_all: Dict[str, object],
         context_all: Dict[str, Optional[dict]],
-        t_mod_all: Dict[str, torch.Tensor],
+        t_mod_all: Dict[str, object],
     ):
         missing = [k for k in self.expert_order if k not in embeds_all]
         if missing:
@@ -470,6 +497,15 @@ class MoT(nn.Module):
         missing = [k for k in self.expert_order if k not in t_mod_all]
         if missing:
             raise ValueError(f"Missing expert t_mod for {missing}")
+
+        if self.block_protocol == BLOCK_PROTOCOL_FLUX2:
+            return self._forward_flux2(
+                embeds_all=embeds_all,
+                attention_mask=attention_mask,
+                freqs_all=freqs_all,
+                context_all=context_all,
+                t_mod_all=t_mod_all,
+            )
 
         if attention_mask.ndim != 2:
             raise ValueError(f"`attention_mask` must be 2D [S, S], got shape {tuple(attention_mask.shape)}")
@@ -540,3 +576,240 @@ class MoT(nn.Module):
             tokens_all.update(zip(self.expert_order, outputs))
 
         return tokens_all
+
+    @staticmethod
+    def _flux2_flatten_heads(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.transpose(1, 2).reshape(
+            tensor.shape[0], tensor.shape[2], tensor.shape[1] * tensor.shape[3]
+        )
+
+    def _flux2_video_single_io(self, block, x: torch.Tensor, pe: torch.Tensor, modulation) -> dict:
+        from flux2.model import apply_rope
+
+        q, k, v, mlp, gate = block._qkv(x, modulation)
+        q, k = apply_rope(q, k, pe)
+        return {
+            "q": self._flux2_flatten_heads(q),
+            "k": self._flux2_flatten_heads(k),
+            "v": self._flux2_flatten_heads(v),
+            "mlp": mlp,
+            "gate": gate,
+            "residual_x": x,
+        }
+
+    def _forward_flux2(
+        self,
+        embeds_all: Dict[str, object],
+        attention_mask: object,
+        freqs_all: Dict[str, object],
+        context_all: Dict[str, Optional[dict]],
+        t_mod_all: Dict[str, object],
+    ):
+        if not isinstance(attention_mask, dict):
+            raise ValueError("FLUX.2 expects attention_mask={'double_joint', 'single'}.")
+        if set(("double_joint", "single")) - set(attention_mask):
+            raise ValueError("FLUX.2 attention mask needs double_joint and single entries.")
+        video_expert = self.mixtures["video"]
+        action_expert = self.mixtures["action"]
+        video_state = embeds_all["video"]
+        if not isinstance(video_state, dict):
+            raise ValueError("FLUX.2 video tokens must contain txt/img streams.")
+        txt, img = video_state["txt"], video_state["img"]
+        action = embeds_all["action"]
+        if not isinstance(action, torch.Tensor):
+            raise ValueError("FLUX.2 action tokens must be a tensor.")
+
+        video_freqs = freqs_all["video"]
+        txt_pe, img_pe = video_freqs["txt"], video_freqs["img"]
+        action_payload = context_all.get("action") or {}
+        action_ids = action_payload.get("ids")
+        if action_ids is None:
+            raise ValueError("FLUX.2 action context payload must provide position ids.")
+        action_pe = video_expert.transformer.pe_embedder(
+            action_ids.to(device=img.device, dtype=img.dtype)
+        )
+        video_mod = t_mod_all["video"]
+        action_mod = t_mod_all["action"]
+
+        from flux2.model import apply_rope
+
+        for layer_idx in range(self.double_layers):
+            video_block = video_expert.double_blocks[layer_idx]
+            action_block = action_expert.double_blocks[layer_idx]
+            q, k, v, pe, num_txt, residuals = video_block._prepare_qkv(
+                img,
+                txt,
+                img_pe,
+                txt_pe,
+                video_mod["double_img"],
+                video_mod["double_txt"],
+            )
+            q, k = apply_rope(q, k, pe)
+            action_state = action_block.prepare_qkv(action, action_pe, action_mod["double_img"])
+            mixed = self._mixed_attention(
+                torch.cat([self._flux2_flatten_heads(q), action_state["q"]], dim=1),
+                torch.cat([self._flux2_flatten_heads(k), action_state["k"]], dim=1),
+                torch.cat([self._flux2_flatten_heads(v), action_state["v"]], dim=1),
+                attention_mask["double_joint"],
+            )
+            video_attention, action_attention = torch.split(
+                mixed, [txt.shape[1] + img.shape[1], action.shape[1]], dim=1
+            )
+            txt_attention, img_attention = torch.split(
+                video_attention, [num_txt, img.shape[1]], dim=1
+            )
+            img, txt = video_block._apply_residuals(
+                img, txt, img_attention, txt_attention, residuals
+            )
+            action = action_block.apply_post(action_attention, action_state)
+
+        video_stream = torch.cat([txt, img], dim=1)
+        stream_pe = torch.cat([txt_pe, img_pe], dim=2)
+        for layer_idx in range(self.single_layers):
+            video_block = video_expert.single_blocks[layer_idx]
+            action_block = action_expert.single_blocks[layer_idx]
+            video_state = self._flux2_video_single_io(
+                video_block, video_stream, stream_pe, video_mod["single"]
+            )
+            action_state = action_block.prepare_qkv(action, action_pe, action_mod["single"])
+            mixed = self._mixed_attention(
+                torch.cat([video_state["q"], action_state["q"]], dim=1),
+                torch.cat([video_state["k"], action_state["k"]], dim=1),
+                torch.cat([video_state["v"], action_state["v"]], dim=1),
+                attention_mask["single"],
+            )
+            video_attention, action_attention = torch.split(
+                mixed, [video_stream.shape[1], action.shape[1]], dim=1
+            )
+            video_stream = video_block._out(
+                video_state["residual_x"],
+                video_attention,
+                video_state["mlp"],
+                video_state["gate"],
+            )
+            action = action_block.apply_post(action_attention, action_state)
+
+        txt_len = int(txt.shape[1])
+        return {
+            "video": {"txt": video_stream[:, :txt_len], "img": video_stream[:, txt_len:]},
+            "action": action,
+        }
+
+    @torch.no_grad()
+    def prefill_flux2_video_cache(
+        self,
+        video_tokens: dict[str, torch.Tensor],
+        video_freqs: dict[str, torch.Tensor],
+        video_t_mod: dict[str, object],
+        attention_mask: dict[str, torch.Tensor],
+    ) -> dict[str, object]:
+        """Run the fixed FLUX.2 text/image prefix once and retain layer K/V."""
+        if self.block_protocol != BLOCK_PROTOCOL_FLUX2:
+            raise ValueError("`prefill_flux2_video_cache` requires block_protocol='flux2'.")
+        video_expert = self.mixtures["video"]
+        txt = video_tokens["txt"]
+        img = video_tokens["img"]
+        txt_pe = video_freqs["txt"]
+        img_pe = video_freqs["img"]
+
+        from flux2.model import apply_rope
+
+        double_cache = []
+        for layer_idx in range(self.double_layers):
+            block = video_expert.double_blocks[layer_idx]
+            q, k, v, pe_full, num_txt_tokens, mods = block._prepare_qkv(
+                img,
+                txt,
+                img_pe,
+                txt_pe,
+                video_t_mod["double_img"],
+                video_t_mod["double_txt"],
+            )
+            q, k = apply_rope(q, k, pe_full)
+            flat_q = self._flux2_flatten_heads(q)
+            flat_k = self._flux2_flatten_heads(k)
+            flat_v = self._flux2_flatten_heads(v)
+            double_cache.append({"k": flat_k, "v": flat_v})
+            mixed = self._mixed_attention(
+                flat_q, flat_k, flat_v, attention_mask["double_joint"]
+            )
+            txt_attention, img_attention = torch.split(
+                mixed, [num_txt_tokens, img.shape[1]], dim=1
+            )
+            img, txt = block._apply_residuals(
+                img, txt, img_attention, txt_attention, mods
+            )
+
+        video_stream = torch.cat([txt, img], dim=1)
+        stream_pe = torch.cat([txt_pe, img_pe], dim=2)
+        single_cache = []
+        for layer_idx in range(self.single_layers):
+            block = video_expert.single_blocks[layer_idx]
+            state = self._flux2_video_single_io(
+                block, video_stream, stream_pe, video_t_mod["single"]
+            )
+            single_cache.append({"k": state["k"], "v": state["v"]})
+            mixed = self._mixed_attention(
+                state["q"], state["k"], state["v"], attention_mask["single"]
+            )
+            video_stream = block._out(
+                state["residual_x"], mixed, state["mlp"], state["gate"]
+            )
+
+        return {
+            "double": double_cache,
+            "single": single_cache,
+            "txt_len": int(txt.shape[1]),
+            "img_len": int(img.shape[1]),
+        }
+
+    def forward_flux2_action_with_video_cache(
+        self,
+        action_tokens: torch.Tensor,
+        action_ids: torch.Tensor,
+        action_t_mod: dict[str, object],
+        video_kv_cache: dict[str, object],
+        attention_mask: dict[str, torch.Tensor],
+        video_seq_len: int,
+    ) -> torch.Tensor:
+        """Denoise FLUX.2 action tokens against a cached text/image prefix."""
+        if self.block_protocol != BLOCK_PROTOCOL_FLUX2:
+            raise ValueError(
+                "`forward_flux2_action_with_video_cache` requires block_protocol='flux2'."
+            )
+        video_expert = self.mixtures["video"]
+        action_expert = self.mixtures["action"]
+        action = action_tokens
+        action_pe = video_expert.transformer.pe_embedder(
+            action_ids.to(device=action.device, dtype=action.dtype)
+        )
+        action_seq_len = int(action.shape[1])
+        total_seq_len = int(video_seq_len) + action_seq_len
+
+        def _action_rows(mask: torch.Tensor) -> torch.Tensor:
+            if mask.ndim == 2:
+                return mask[video_seq_len:total_seq_len, :total_seq_len]
+            if mask.ndim == 3:
+                return mask[:, video_seq_len:total_seq_len, :total_seq_len]
+            if mask.ndim == 4:
+                return mask[:, :, video_seq_len:total_seq_len, :total_seq_len]
+            raise ValueError(f"Unsupported FLUX.2 attention mask rank: {mask.ndim}")
+
+        double_mask = _action_rows(attention_mask["double_joint"])
+        for layer_idx, cache in enumerate(video_kv_cache["double"]):
+            block = action_expert.double_blocks[layer_idx]
+            state = block.prepare_qkv(action, action_pe, action_t_mod["double_img"])
+            k_cat = torch.cat([cache["k"].to(dtype=state["k"].dtype), state["k"]], dim=1)
+            v_cat = torch.cat([cache["v"].to(dtype=state["v"].dtype), state["v"]], dim=1)
+            mixed = self._mixed_attention(state["q"], k_cat, v_cat, double_mask)
+            action = block.apply_post(mixed, state)
+
+        single_mask = _action_rows(attention_mask["single"])
+        for layer_idx, cache in enumerate(video_kv_cache["single"]):
+            block = action_expert.single_blocks[layer_idx]
+            state = block.prepare_qkv(action, action_pe, action_t_mod["single"])
+            k_cat = torch.cat([cache["k"].to(dtype=state["k"].dtype), state["k"]], dim=1)
+            v_cat = torch.cat([cache["v"].to(dtype=state["v"].dtype), state["v"]], dim=1)
+            mixed = self._mixed_attention(state["q"], k_cat, v_cat, single_mask)
+            action = block.apply_post(mixed, state)
+        return action
