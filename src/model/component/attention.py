@@ -54,8 +54,25 @@ class StructuredAttentionMask:
     def shape(self) -> torch.Size:
         return self.dense.shape
 
+    @property
+    def is_fully_valid(self) -> bool:
+        key_len = self.dense.shape[1]
+        cursor = 0
+        for segment in self.segments:
+            if (
+                segment.query_start != cursor
+                or segment.query_end <= segment.query_start
+                or segment.key_ranges != ((0, key_len),)
+            ):
+                return False
+            cursor = segment.query_end
+        return cursor == self.dense.shape[0]
+
     def to(self, *args, **kwargs) -> "StructuredAttentionMask":
-        return StructuredAttentionMask(self.dense.to(*args, **kwargs), self.segments)
+        dense = self.dense.to(*args, **kwargs)
+        if dense is self.dense:
+            return self
+        return StructuredAttentionMask(dense, self.segments)
 
     def slice(
         self,
@@ -70,6 +87,13 @@ class StructuredAttentionMask:
             raise ValueError("Invalid structured attention query slice.")
         if not (0 <= key_start <= key_end <= self.dense.shape[1]):
             raise ValueError("Invalid structured attention key slice.")
+        if (
+            query_start == 0
+            and query_end == self.dense.shape[0]
+            and key_start == 0
+            and key_end == self.dense.shape[1]
+        ):
+            return self
 
         segments = []
         for segment in self.segments:
@@ -105,21 +129,37 @@ def build_structured_attention_mask(
     if query_len <= 0 or key_len <= 0:
         raise ValueError(f"Attention lengths must be positive, got query={query_len}, key={key_len}.")
 
-    normalized_segments = tuple(segments)
+    normalized_segments = []
     cursor = 0
-    dense = torch.zeros((query_len, key_len), dtype=torch.bool, device=device)
-    for segment in normalized_segments:
+    for segment in segments:
         if segment.query_start != cursor or not (segment.query_start < segment.query_end <= query_len):
             raise ValueError("Attention segments must cover query rows once, contiguously, and in order.")
         previous_key_end = 0
+        merged_key_ranges: list[tuple[int, int]] = []
         for key_start, key_end in segment.key_ranges:
             if not (previous_key_end <= key_start < key_end <= key_len):
                 raise ValueError("Attention key ranges must be ordered, non-overlapping, and in bounds.")
-            dense[segment.query_start : segment.query_end, key_start:key_end] = True
+            if merged_key_ranges and merged_key_ranges[-1][1] == key_start:
+                merged_key_ranges[-1] = (merged_key_ranges[-1][0], key_end)
+            else:
+                merged_key_ranges.append((key_start, key_end))
             previous_key_end = key_end
+        normalized_segments.append(
+            AttentionSegment(
+                query_start=segment.query_start,
+                query_end=segment.query_end,
+                key_ranges=tuple(merged_key_ranges),
+            )
+        )
         cursor = segment.query_end
     if cursor != query_len:
         raise ValueError("Attention segments must cover every query row.")
+
+    normalized_segments = tuple(normalized_segments)
+    dense = torch.zeros((query_len, key_len), dtype=torch.bool, device=device)
+    for segment in normalized_segments:
+        for key_start, key_end in segment.key_ranges:
+            dense[segment.query_start : segment.query_end, key_start:key_end] = True
     return StructuredAttentionMask(dense=dense, segments=normalized_segments)
 
 
@@ -136,8 +176,10 @@ def elide_fully_valid_attention_mask(
     transformer layer. Besides avoiding an unnecessary mask, this lets external
     FlashAttention kernels handle the otherwise-unmasked operation.
     """
-    if mask is None or isinstance(mask, StructuredAttentionMask):
+    if mask is None:
         return mask
+    if isinstance(mask, StructuredAttentionMask):
+        return None if mask.is_fully_valid else mask
     if mask.dtype == torch.bool and mask.numel() > 0 and bool(mask.all().item()):
         return None
     return mask
@@ -227,10 +269,21 @@ def _segmented_flash_attention(
         if not segment.key_ranges:
             outputs.append(torch.zeros_like(q_segment))
             continue
-        key_parts = [k[:, start:end] for start, end in segment.key_ranges]
-        value_parts = [v[:, start:end] for start, end in segment.key_ranges]
-        k_segment = key_parts[0] if len(key_parts) == 1 else torch.cat(key_parts, dim=1)
-        v_segment = value_parts[0] if len(value_parts) == 1 else torch.cat(value_parts, dim=1)
+        first_start, last_end = segment.key_ranges[0][0], segment.key_ranges[-1][1]
+        ranges_are_contiguous = all(
+            previous[1] == current[0]
+            for previous, current in zip(segment.key_ranges, segment.key_ranges[1:])
+        )
+        if ranges_are_contiguous:
+            k_segment = k[:, first_start:last_end]
+            v_segment = v[:, first_start:last_end]
+        else:
+            k_segment = torch.cat(
+                [k[:, start:end] for start, end in segment.key_ranges], dim=1
+            )
+            v_segment = torch.cat(
+                [v[:, start:end] for start, end in segment.key_ranges], dim=1
+            )
         outputs.append(_call_external_flash(backend, q_segment, k_segment, v_segment))
     return outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=1)
 
@@ -243,7 +296,8 @@ def _sdpa_attention(
 ) -> torch.Tensor:
     mask = dense_attention_mask(attention_mask)
     if mask is not None:
-        mask = mask.to(device=q.device)
+        if mask.device != q.device:
+            mask = mask.to(device=q.device)
         if mask.ndim == 2:
             mask = mask.unsqueeze(0).unsqueeze(0)
         elif mask.ndim == 3:
