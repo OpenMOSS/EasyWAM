@@ -285,7 +285,6 @@ def create_easywam_unified(
     action_dit_pretrained_path: str | None = None,
     skip_dit_load_from_pretrain: bool = False,
     video_scheduler=None,
-    action_scheduler=None,
     loss=None,
     lora=None,
     model_dtype: torch.dtype = torch.bfloat16,
@@ -296,7 +295,6 @@ def create_easywam_unified(
     if backbone is not None:
         backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
         video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
         loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
         model = EasyWAMUnified.from_backbone_pretrained(
             backbone=backbone,
@@ -309,9 +307,6 @@ def create_easywam_unified(
             video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
             video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
             video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
-            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
-            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
             loss_lambda_video=float(loss.get("lambda_video", 1.0)),
             video_scheduler_config=video_scheduler,
         )
@@ -330,20 +325,6 @@ def create_easywam_unified(
         video_scheduler = {}
     if not isinstance(video_scheduler, dict):
         raise ValueError(f"`video_scheduler` must be dict-like, got {type(video_scheduler)}")
-
-    if isinstance(action_scheduler, DictConfig):
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True)
-    if action_scheduler is None:
-        raise ValueError("`action_scheduler` is required for EasyWAM-Unified.")
-    if not isinstance(action_scheduler, dict):
-        raise ValueError(f"`action_scheduler` must be dict-like, got {type(action_scheduler)}")
-    required_action_scheduler_keys = {"train_shift", "infer_shift", "num_train_timesteps"}
-    missing_keys = required_action_scheduler_keys - set(action_scheduler.keys())
-    if missing_keys:
-        raise ValueError(
-            f"`action_scheduler` missing required keys: {sorted(missing_keys)}. "
-            "Expected keys: train_shift, infer_shift, num_train_timesteps."
-        )
 
     if isinstance(loss, DictConfig):
         loss = OmegaConf.to_container(loss, resolve=True)
@@ -371,9 +352,6 @@ def create_easywam_unified(
         video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
         video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
         video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-        action_train_shift=float(action_scheduler["train_shift"]),
-        action_infer_shift=float(action_scheduler["infer_shift"]),
-        action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
         video_scheduler_config=video_scheduler,
     )

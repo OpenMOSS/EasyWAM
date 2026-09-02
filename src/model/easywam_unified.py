@@ -40,9 +40,6 @@ class EasyWAMUnified(nn.Module):
         video_train_shift: float = 5.0,
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
-        action_train_shift: float = 5.0,
-        action_infer_shift: float = 5.0,
-        action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
@@ -91,25 +88,13 @@ class EasyWAMUnified(nn.Module):
         self.device = torch.device(device)
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
+        self.infer_shift = float(video_infer_shift)
 
         scheduler_cfg = dict(video_scheduler_config or {})
         if self.backbone_name == "wan22":
-            scheduler_cls = ContinuousFlowMatchScheduler
-            self.train_video_scheduler = scheduler_cls(
+            self.scheduler = ContinuousFlowMatchScheduler(
                 num_train_timesteps=video_num_train_timesteps,
                 shift=video_train_shift,
-            )
-            self.infer_video_scheduler = scheduler_cls(
-                num_train_timesteps=video_num_train_timesteps,
-                shift=video_infer_shift,
-            )
-            self.train_action_scheduler = scheduler_cls(
-                num_train_timesteps=action_num_train_timesteps,
-                shift=action_train_shift,
-            )
-            self.infer_action_scheduler = scheduler_cls(
-                num_train_timesteps=action_num_train_timesteps,
-                shift=action_infer_shift,
             )
         elif self.backbone_name == "cosmos25":
             time_distribution = str(
@@ -117,37 +102,22 @@ class EasyWAMUnified(nn.Module):
             )
             training_weight = str(scheduler_cfg.get("training_weight", "uniform"))
             use_karras_sigmas = bool(scheduler_cfg.get("use_karras_sigmas", True))
-            self.train_video_scheduler = FlowUniPCScheduler(
+            self.scheduler = FlowUniPCScheduler(
                 video_num_train_timesteps,
                 video_train_shift,
-                use_karras_sigmas=False,
+                use_karras_sigmas=use_karras_sigmas,
                 time_distribution=time_distribution,
                 training_weight_method=training_weight,
-            )
-            self.infer_video_scheduler = FlowUniPCScheduler(
-                video_num_train_timesteps,
-                video_infer_shift,
-                use_karras_sigmas=use_karras_sigmas,
-            )
-            self.train_action_scheduler = FlowUniPCScheduler(
-                action_num_train_timesteps,
-                action_train_shift,
-                use_karras_sigmas=False,
-                time_distribution=time_distribution,
-                training_weight_method=training_weight,
-            )
-            self.infer_action_scheduler = FlowUniPCScheduler(
-                action_num_train_timesteps,
-                action_infer_shift,
-                use_karras_sigmas=use_karras_sigmas,
             )
         else:
             raise ValueError(
                 "EasyWAM-Unified supports scheduler families for 'wan22' and "
                 f"'cosmos25', got backbone {self.backbone_name!r}."
             )
-        self.train_scheduler = self.train_video_scheduler
-        self.infer_scheduler = self.infer_video_scheduler
+        # Compatibility aliases refer to the same scheduler object. Unified uses
+        # one schedule for video/action and copies the video timestep to action.
+        self.train_scheduler = self.scheduler
+        self.infer_scheduler = self.scheduler
         self.to(device=self.device, dtype=self.torch_dtype)
 
     @property
@@ -309,9 +279,6 @@ class EasyWAMUnified(nn.Module):
         video_train_shift: float = 5.0,
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
-        action_train_shift: float = 5.0,
-        action_infer_shift: float = 5.0,
-        action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ) -> "EasyWAMUnified":
@@ -340,9 +307,6 @@ class EasyWAMUnified(nn.Module):
             video_train_shift=video_train_shift,
             video_infer_shift=video_infer_shift,
             video_num_train_timesteps=video_num_train_timesteps,
-            action_train_shift=action_train_shift,
-            action_infer_shift=action_infer_shift,
-            action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
             video_scheduler_config=video_scheduler_config,
         )
@@ -372,9 +336,6 @@ class EasyWAMUnified(nn.Module):
         video_train_shift: float = 5.0,
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
-        action_train_shift: float = 5.0,
-        action_infer_shift: float = 5.0,
-        action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
@@ -409,9 +370,6 @@ class EasyWAMUnified(nn.Module):
             video_train_shift=video_train_shift,
             video_infer_shift=video_infer_shift,
             video_num_train_timesteps=video_num_train_timesteps,
-            action_train_shift=action_train_shift,
-            action_infer_shift=action_infer_shift,
-            action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
             video_scheduler_config=video_scheduler_config,
         )
@@ -576,26 +534,22 @@ class EasyWAMUnified(nn.Module):
         clean_first = inputs["first_frame_latents"]
         future_latents = input_latents[:, :, 1:]
         noise_video = torch.randn_like(future_latents)
-        timestep_video = self.train_video_scheduler.sample_training_t(
+        timestep_video = self.scheduler.sample_training_t(
             batch_size=batch_size,
             device=self.device,
             dtype=input_latents.dtype,
         )
-        noisy_future = self.train_video_scheduler.add_noise(future_latents, noise_video, timestep_video)
-        target_video = self.train_video_scheduler.training_target(future_latents, noise_video, timestep_video)
+        noisy_future = self.scheduler.add_noise(future_latents, noise_video, timestep_video)
+        target_video = self.scheduler.training_target(future_latents, noise_video, timestep_video)
         noisy_video = torch.cat([clean_first, noisy_future], dim=2)
 
         action = inputs["action"]
         noise_action = torch.randn_like(action)
-        timestep_action = self.train_action_scheduler.sample_training_t(
-            batch_size=batch_size,
-            device=self.device,
-            dtype=action.dtype,
-        )
-        noisy_action = self.train_action_scheduler.add_noise(
+        timestep_action = timestep_video.to(device=self.device, dtype=action.dtype)
+        noisy_action = self.scheduler.add_noise(
             action, noise_action, timestep_action
         )
-        target_action = self.train_action_scheduler.training_target(
+        target_action = self.scheduler.training_target(
             action, noise_action, timestep_action
         )
 
@@ -615,7 +569,7 @@ class EasyWAMUnified(nn.Module):
             target_video=target_video,
             image_is_pad=inputs["image_is_pad"],
         )
-        video_weight = self.train_video_scheduler.training_weight(timestep_video).to(
+        video_weight = self.scheduler.training_weight(timestep_video).to(
             loss_video_per_sample.device, dtype=loss_video_per_sample.dtype
         )
         loss_video = (loss_video_per_sample * video_weight).mean()
@@ -627,7 +581,7 @@ class EasyWAMUnified(nn.Module):
             action_loss_per_sample = (action_loss_token * valid).sum(dim=1) / valid_sum
         else:
             action_loss_per_sample = action_loss_token.mean(dim=1)
-        action_weight = self.train_action_scheduler.training_weight(timestep_action).to(
+        action_weight = self.scheduler.training_weight(timestep_action).to(
             action_loss_per_sample.device, dtype=action_loss_per_sample.dtype
         )
         loss_action = (action_loss_per_sample * action_weight).mean()
@@ -733,26 +687,15 @@ class EasyWAMUnified(nn.Module):
         state = proprio[:, 0:1].to(device=self.device, dtype=self.torch_dtype)
         context, context_mask = self._prepare_context(prompt, context, context_mask)
 
-        infer_timesteps_video, infer_deltas_video = self.infer_video_scheduler.build_inference_schedule(
+        infer_timesteps, infer_deltas = self.scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
             device=self.device,
             dtype=latents_video.dtype,
-            shift_override=sigma_shift,
+            shift_override=self.infer_shift if sigma_shift is None else sigma_shift,
         )
-        infer_timesteps_action, infer_deltas_action = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=num_inference_steps,
-            device=self.device,
-            dtype=latents_action.dtype,
-            shift_override=sigma_shift,
-        )
-        for step_t_video, step_delta_video, step_t_action, step_delta_action in zip(
-            infer_timesteps_video,
-            infer_deltas_video,
-            infer_timesteps_action,
-            infer_deltas_action,
-        ):
-            timestep_video = step_t_video.unsqueeze(0).to(dtype=latents_video.dtype, device=self.device)
-            timestep_action = step_t_action.unsqueeze(0).to(
+        for step_t, step_delta in zip(infer_timesteps, infer_deltas):
+            timestep_video = step_t.unsqueeze(0).to(dtype=latents_video.dtype, device=self.device)
+            timestep_action = timestep_video.to(
                 dtype=latents_action.dtype, device=self.device
             )
             pred_video, pred_action = self._forward_dit(
@@ -765,8 +708,16 @@ class EasyWAMUnified(nn.Module):
                 context_mask=context_mask,
             )
             pred_video[:, :, 0:1] = 0
-            latents_video = self.infer_video_scheduler.step(pred_video, step_delta_video, latents_video)
-            latents_action = self.infer_action_scheduler.step(pred_action, step_delta_action, latents_action)
+            if isinstance(self.scheduler, FlowUniPCScheduler):
+                latents_video = self.scheduler.step(
+                    pred_video, step_delta, latents_video, stream_id="video"
+                )
+                latents_action = self.scheduler.step(
+                    pred_action, step_delta, latents_action, stream_id="action"
+                )
+            else:
+                latents_video = self.scheduler.step(pred_video, step_delta, latents_video)
+                latents_action = self.scheduler.step(pred_action, step_delta, latents_action)
             latents_video[:, :, 0:1] = first_frame_latents
 
         return {

@@ -53,6 +53,7 @@ class FlowUniPCScheduler:
         self._lower_order_nums = 0
         self._last_sample: torch.Tensor | None = None
         self._this_order = 1
+        self._stream_states: dict[str, tuple] = {}
 
     def set_timesteps(
         self,
@@ -86,7 +87,34 @@ class FlowUniPCScheduler:
         self._lower_order_nums = 0
         self._last_sample = None
         self._this_order = 1
+        self._stream_states.clear()
         return self.timesteps
+
+    def _restore_stream_state(self, state: tuple | None) -> None:
+        if state is None:
+            self._step_index = 0
+            self._model_outputs = [None] * self.solver_order
+            self._lower_order_nums = 0
+            self._last_sample = None
+            self._this_order = 1
+            return
+        (
+            self._step_index,
+            model_outputs,
+            self._lower_order_nums,
+            self._last_sample,
+            self._this_order,
+        ) = state
+        self._model_outputs = list(model_outputs)
+
+    def _capture_stream_state(self) -> tuple:
+        return (
+            self._step_index,
+            list(self._model_outputs),
+            self._lower_order_nums,
+            self._last_sample,
+            self._this_order,
+        )
 
     def build_inference_schedule(
         self,
@@ -234,7 +262,15 @@ class FlowUniPCScheduler:
         )
         return result.to(this_sample.dtype)
 
-    def step(self, model_output: torch.Tensor, timestep, sample: torch.Tensor) -> torch.Tensor:
+    def step(
+        self,
+        model_output: torch.Tensor,
+        timestep,
+        sample: torch.Tensor,
+        stream_id: str | None = None,
+    ) -> torch.Tensor:
+        if stream_id is not None:
+            self._restore_stream_state(self._stream_states.get(str(stream_id)))
         if not self.timesteps.numel():
             raise RuntimeError("Call set_timesteps before step.")
         if self._step_index >= len(self.timesteps):
@@ -259,6 +295,8 @@ class FlowUniPCScheduler:
         previous = self._uni_p_update(sample, self._this_order)
         self._lower_order_nums = min(self.solver_order, self._lower_order_nums + 1)
         self._step_index += 1
+        if stream_id is not None:
+            self._stream_states[str(stream_id)] = self._capture_stream_state()
         return previous
 
     def sample_training_t(self, batch_size: int, device, dtype: torch.dtype) -> torch.Tensor:

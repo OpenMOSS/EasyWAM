@@ -11,10 +11,5 @@ skip_dit_load_from_pretrain: false
 
 video_scheduler: ${model.backbone.video_scheduler}
 
-action_scheduler:
-  train_shift: 5.0
-  infer_shift: 5.0
-  num_train_timesteps: 1000
-
 loss:
   lambda_video: 1.0
