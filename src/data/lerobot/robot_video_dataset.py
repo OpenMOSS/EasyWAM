@@ -20,13 +20,12 @@ from .text_embedding_cache import (
     text_embedding_cache_filename,
 )
 from ..dataset_utils import ResizeSmallestSideAspectPreserving, CenterCrop, Normalize
+from .prompts import DEFAULT_PROMPT
 from utils.logging_config import get_logger
 from utils import misc, pytorch_utils
 from accelerate import PartialState
 logger = get_logger(__name__)
 
-
-DEFAULT_PROMPT = "A video recorded from a robot's point of view executing the following instruction: {task}"
 
 class RobotVideoDataset(torch.utils.data.Dataset):
     def __init__(
@@ -262,12 +261,38 @@ class RobotVideoDataset(torch.utils.data.Dataset):
             "action_is_pad": sample["action_is_pad"],
             "proprio_is_pad": sample["proprio_is_pad"],
         }
+        if "action_dim_is_pad" in sample:
+            data["action_dim_is_pad"] = sample["action_dim_is_pad"]
+        if "proprio_dim_is_pad" in sample:
+            data["proprio_dim_is_pad"] = sample["proprio_dim_is_pad"]
         return data
 
     def _get_cached_text_context(self, prompt: str):
         if self.text_embedding_cache_dir is None:
             raise ValueError("`text_embedding_cache_dir` is not set.")
         hashed = prompt_hash(prompt)
+        if self.text_encoder_id == "qwen3_flux2":
+            cache_path = self.text_embedding_cache_dir / (
+                f"{hashed}.qwen3_flux2_len{int(self.context_len)}.pt"
+            )
+            if not cache_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing FLUX.2 Qwen3 text cache: {cache_path}. "
+                    "Run ImageWAM scripts/flux2/precompute_flux2_qwen3_embeds.py."
+                )
+            payload = torch.load(cache_path, map_location="cpu", weights_only=True)
+            context = payload["text_hidden_states"]
+            context_mask = payload["text_attention_mask"].bool()
+            if context.ndim != 2 or context_mask.ndim != 1:
+                raise ValueError(
+                    "FLUX.2 Qwen3 cache must contain [L,D] hidden states and a [L] mask."
+                )
+            if context.shape[0] != self.context_len or context_mask.shape[0] != self.context_len:
+                raise ValueError(
+                    f"FLUX.2 Qwen3 cache length must be {self.context_len}, got "
+                    f"{context.shape[0]}/{context_mask.shape[0]}."
+                )
+            return context, context_mask
         cache_path = self.text_embedding_cache_dir / text_embedding_cache_filename(
             hashed,
             self.context_len,

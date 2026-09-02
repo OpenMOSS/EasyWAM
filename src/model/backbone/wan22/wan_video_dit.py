@@ -1,8 +1,11 @@
-import torch
-import torch.nn as nn
 import math
 from typing import Any, Dict, Tuple, Optional
+
+import torch
+import torch.nn as nn
 from einops import rearrange
+
+from ..protocol import BLOCK_PROTOCOL_MAIN
 from ...helpers.gradient import gradient_checkpoint_forward
 from ...component.attention import (
     AttentionSegment,
@@ -354,6 +357,8 @@ class Head(nn.Module):
 
 
 class WanVideoDiT(torch.nn.Module):
+    block_protocol = BLOCK_PROTOCOL_MAIN
+
     def __init__(
         self,
         hidden_dim: int,

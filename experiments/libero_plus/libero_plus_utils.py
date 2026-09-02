@@ -104,9 +104,68 @@ def instantiate_suite(benchmark: Any, suite_name: str):
             f"Unknown LIBERO-Plus suite {suite_name!r}. "
             f"Available suites: {sorted(benchmark_dict)}"
         )
-    # The upstream fork prints thousands of task-order indices during construction.
+    suite_class = benchmark_dict[suite_name]
+    # LIBERO-Plus has shipped two compatible benchmark APIs. Newer revisions
+    # expose every perturbation from the default constructor. The paper
+    # revision exposes one category per constructor through `category_value`.
+    # Normalize both to one all-category suite so task manifests stay stable.
     with contextlib.redirect_stdout(io.StringIO()):
-        return benchmark_dict[suite_name]()
+        suite = suite_class()
+    expected_count = LIBERO_PLUS_SUITE_COUNTS.get(suite_name)
+    if expected_count is None or int(suite.n_tasks) == expected_count:
+        return suite
+
+    category_suites = []
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            for label in CATEGORY_LABELS.values():
+                category_suites.append(suite_class(category_value=label))
+    except TypeError:
+        # Let the caller's authoritative count check report the incompatible
+        # installation when this is neither supported API.
+        return suite
+
+    combined_tasks = []
+    seen_names = set()
+    for category_suite in category_suites:
+        for task in category_suite.tasks:
+            task_name = str(task.name)
+            if task_name in seen_names:
+                raise RuntimeError(
+                    f"Duplicate LIBERO-Plus task {task_name!r} while combining categories "
+                    f"for {suite_name}."
+                )
+            seen_names.add(task_name)
+            combined_tasks.append(task)
+    if len(combined_tasks) != expected_count:
+        return suite
+    # The paper revision accidentally shuffles even task_order_index=0 in
+    # get_ids_by_category(), so two fresh processes can assign different task
+    # names to the same integer index. Reconstruct the canonical order from the
+    # classification IDs used by that constructor.
+    classification_path = Path(benchmark.__file__).resolve().parent / "task_classification.json"
+    if classification_path.is_file():
+        with classification_path.open("r", encoding="utf-8") as f:
+            classification = json.load(f)
+        raw_metadata = classification.get(suite_name, [])
+        classification_ids = {
+            str(item["name"]): int(item["id"])
+            for item in raw_metadata
+        }
+        missing_names = sorted(seen_names - set(classification_ids))
+        if missing_names:
+            raise RuntimeError(
+                f"LIBERO-Plus classification is missing combined tasks for {suite_name}: "
+                f"{missing_names[:8]}"
+            )
+        combined_tasks.sort(key=lambda task: classification_ids[str(task.name)])
+    else:
+        # Dependency-light test doubles do not necessarily expose the metadata
+        # file; name order still makes repeated instantiation deterministic.
+        combined_tasks.sort(key=lambda task: str(task.name))
+    suite.tasks = combined_tasks
+    suite.n_tasks = len(combined_tasks)
+    return suite
 
 
 def _resolve_bddl_source_path(task_bddl_path: Path) -> Path:

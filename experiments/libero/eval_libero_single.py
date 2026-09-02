@@ -42,7 +42,7 @@ from experiments.libero.libero_utils import (
 from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
 from utils.pytorch_utils import set_global_seed
-from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
+from data.lerobot.prompts import DEFAULT_PROMPT
 from libero.libero import benchmark
 from experiments.libero.action_ensembler import ActionEnsembler
 from experiments.prompt_context_cache import PromptContextCache

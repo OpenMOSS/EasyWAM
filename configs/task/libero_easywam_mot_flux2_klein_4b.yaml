@@ -1,0 +1,35 @@
+# @package _global_
+
+defaults:
+  - override /data: libero_2cam
+  - override /model: easywam_mot_flux2_klein_4b
+  - _self_
+
+data:
+  train:
+    text_embedding_cache_dir: ???
+    # Match the released ImageWAM LIBERO policy contract.
+    num_frames: 17
+    action_video_freq_ratio: 1
+    context_len: 128
+  val:
+    text_embedding_cache_dir: ???
+
+model:
+  backbone:
+    tokenizer_max_len: 128
+
+batch_size: 12
+num_workers: 8
+lr_scheduler_type: cosine
+learning_rate: 1.0e-4
+max_steps: 30000
+log_every: 100
+save_every: 3000
+# FLUX.2 trains one endpoint image. Closed-loop evaluation uses its cached
+# text/reference-image prefix and action-only denoising path.
+eval_every: 0
+eval_num_inference_steps: 10
+gradient_accumulation_steps: 1
+weight_decay: 1.0e-2
+resume: null

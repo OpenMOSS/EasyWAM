@@ -4,18 +4,11 @@ import inspect
 from pathlib import Path
 
 import torch
-from accelerate import Accelerator
 from hydra.utils import instantiate
 from omegaconf import DictConfig
-from PIL import Image
-import numpy as np
-from einops import repeat
 from omegaconf import OmegaConf
 
-from trainer import Wan22Trainer
 from utils.logging_config import get_logger, setup_logging
-from utils.video_io import save_mp4
-from utils import misc
 
 logger = get_logger(__name__)
 
@@ -173,6 +166,7 @@ def _create_easywam_mot(
             action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
             action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
             loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
             **model_init_kwargs,
         )
         return _apply_video_dit_lora(model, lora)
@@ -495,6 +489,8 @@ def create_easywam_hidden(
 
 
 def build_datasets(data_cfg: DictConfig):
+    from utils import misc
+
     train_ds = instantiate(data_cfg.train)
     if data_cfg.get("val") is None:
         val_ds = train_ds
@@ -509,6 +505,10 @@ def build_datasets(data_cfg: DictConfig):
 
 
 def run_training(cfg: DictConfig):
+    from accelerate import Accelerator
+    from trainer import Wan22Trainer
+    from utils import misc
+
     mixed_precision = _normalize_mixed_precision(cfg.mixed_precision)
     accelerator = Accelerator(
         gradient_accumulation_steps=int(cfg.gradient_accumulation_steps),
@@ -542,6 +542,11 @@ def run_training(cfg: DictConfig):
         accelerator.end_training()
 
 def run_inference(cfg: DictConfig):
+    import numpy as np
+    from einops import repeat
+    from PIL import Image
+    from utils.video_io import save_mp4
+
     setup_logging(log_level=logging.INFO)
     inference_cfg = cfg.inference
     mixed_precision = _normalize_mixed_precision(cfg.mixed_precision)

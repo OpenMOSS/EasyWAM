@@ -9,7 +9,6 @@ from utils.logging_config import get_logger
 
 from .component.action_dit import ActionDiT, StateEncoder
 from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
-from .backbone.wan22.loader import load_wan22_ti2v_5b_components
 from .component.mot import MoT
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
@@ -47,6 +46,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
     ):
         super().__init__()
         self.video_expert = video_expert
@@ -67,11 +67,15 @@ class EasyWAMMoT(torch.nn.Module):
         self.state_dim = None if state_dim is None else int(state_dim)
         self.projector_hidden_dim = int(projector_hidden_dim)
         if self.state_dim is not None:
-            self.state_encoder = StateEncoder(
-                state_dim=self.state_dim,
-                hidden_dim=self.text_dim,
-                projector_hidden_dim=self.projector_hidden_dim,
-            ).to(torch_dtype)
+            if getattr(video_expert, "block_protocol", "main") == "flux2":
+                # ImageWAM FLUX.2 checkpoints used a single linear proprio token.
+                self.state_encoder = nn.Linear(self.state_dim, self.text_dim).to(torch_dtype)
+            else:
+                self.state_encoder = StateEncoder(
+                    state_dim=self.state_dim,
+                    hidden_dim=self.text_dim,
+                    projector_hidden_dim=self.projector_hidden_dim,
+                ).to(torch_dtype)
         else:
             self.state_encoder = None
 
@@ -98,6 +102,7 @@ class EasyWAMMoT(torch.nn.Module):
         self.device = torch.device(device)
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
+        self.loss_lambda_action = float(loss_lambda_action)
 
         self.to(device=self.device, dtype=self.torch_dtype)
 
@@ -124,6 +129,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
         **model_init_kwargs: Any,
     ):
         from .backbone.loader import load_easywam_backbone, normalize_backbone_config
@@ -136,7 +142,20 @@ class EasyWAMMoT(torch.nn.Module):
             skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
         )
         video_expert = components.dit
-        action_expert = ActionDiT.from_pretrained(
+        action_expert_cls = ActionDiT
+        if components.block_protocol == "flux2":
+            from .component.action_dit_flux2 import ActionDiTFlux2
+
+            action_expert_cls = ActionDiTFlux2
+            action_dit_config = dict(action_dit_config)
+            action_dit_config.update(
+                num_heads=int(video_expert.num_heads),
+                attn_head_dim=int(video_expert.attn_head_dim),
+                num_layers_double=int(video_expert.double_layers),
+                num_layers_single=int(video_expert.single_layers),
+                attention_backend=str(video_expert.attention_backend),
+            )
+        action_expert = action_expert_cls.from_pretrained(
             action_dit_config=action_dit_config,
             action_dit_pretrained_path=action_dit_pretrained_path,
             skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
@@ -156,7 +175,7 @@ class EasyWAMMoT(torch.nn.Module):
             vae=components.vae,
             text_encoder=components.text_encoder,
             tokenizer=components.tokenizer,
-            text_dim=int(cfg["text_dim"]),
+            text_dim=int(components.text_dim),
             state_dim=state_dim,
             projector_hidden_dim=projector_hidden_dim,
             device=device,
@@ -168,6 +187,7 @@ class EasyWAMMoT(torch.nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
             **model_init_kwargs,
         )
         model.backbone_name = cfg["name"]
@@ -221,6 +241,8 @@ class EasyWAMMoT(torch.nn.Module):
         loss_lambda_video: float = 1.0,
         **model_init_kwargs: Any,
     ):
+        from .backbone.wan22.loader import load_wan22_ti2v_5b_components
+
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for EasyWAM-MoT.from_wan22_pretrained().")
         if "text_dim" not in video_dit_config:
@@ -294,6 +316,15 @@ class EasyWAMMoT(torch.nn.Module):
         if self.text_encoder is not None:
             self.text_encoder.to(*args, **kwargs)
         self.vae.to(*args, **kwargs)
+        return self
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        # Frozen encoders are feature extractors and must not inherit train mode
+        # when the DiT/action experts enter training.
+        self.vae.eval()
+        if self.text_encoder is not None:
+            self.text_encoder.eval()
         return self
 
     @staticmethod
@@ -379,7 +410,145 @@ class EasyWAMMoT(torch.nn.Module):
             frames.append(Image.fromarray(frame))
         return frames
 
+    @staticmethod
+    def _scheduler_timestep_to_unit(timestep: torch.Tensor, scheduler) -> torch.Tensor:
+        return timestep / float(scheduler.num_train_timesteps)
+
+    @torch.no_grad()
+    def _encode_flux2_image_tokens(
+        self, image: torch.Tensor, *, time_value: float
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        from .backbone.flux2.flux2_video_expert import Flux2VideoExpert
+
+        if image.ndim == 3:
+            image = image.unsqueeze(0)
+        if image.ndim != 4 or image.shape[1] != 3:
+            raise ValueError(f"FLUX.2 image must be [B,3,H,W], got {tuple(image.shape)}")
+        if image.shape[-2] % 16 or image.shape[-1] % 16:
+            raise ValueError("FLUX.2 image height/width must be multiples of 16.")
+        latent = self.vae.encode(
+            image.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        ).to(dtype=self.torch_dtype)
+        tokens = Flux2VideoExpert.pack_latents(latent)
+        ids = Flux2VideoExpert.build_img_ids(
+            int(latent.shape[0]),
+            int(latent.shape[-2]),
+            int(latent.shape[-1]),
+            time_value=time_value,
+            device=tokens.device,
+            dtype=tokens.dtype,
+        )
+        return tokens, ids
+
+    @torch.no_grad()
+    def _encode_flux2_text(self, sample) -> tuple[torch.Tensor, torch.Tensor]:
+        context = sample.get("context", sample.get("text_hidden_states"))
+        mask = sample.get("context_mask", sample.get("text_attention_mask"))
+        if context is not None:
+            if mask is None:
+                raise ValueError("FLUX.2 cached context requires context_mask/text_attention_mask.")
+            return (
+                context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True),
+                mask.to(device=self.device, dtype=torch.bool, non_blocking=True),
+            )
+        prompt = sample.get("instruction", sample.get("prompt", sample.get("task")))
+        if prompt is None:
+            raise ValueError("FLUX.2 requires cached context or instruction/prompt/task.")
+        if self.text_encoder is None:
+            raise ValueError("Online Qwen3 encoding requires backbone.load_text_encoder=true.")
+        context, mask = self.text_encoder(prompt)
+        return (
+            context.to(device=self.device, dtype=self.torch_dtype),
+            mask.to(device=self.device, dtype=torch.bool),
+        )
+
+    def build_inputs_flux2(self, sample):
+        video = sample.get("video")
+        target = sample.get("target_latent")
+        target_ids = sample.get("target_img_ids")
+        if target is None or target_ids is None:
+            target_image = sample.get("next_frame", sample.get("target_image"))
+            if target_image is None and video is not None:
+                if video.ndim != 5:
+                    raise ValueError("FLUX.2 video must be [B,3,T,H,W].")
+                target_image = video[:, :, -1]
+            if target_image is None:
+                raise ValueError("FLUX.2 requires a target image or precomputed target tokens.")
+            target, target_ids = self._encode_flux2_image_tokens(target_image, time_value=0.0)
+        else:
+            target = target.to(device=self.device, dtype=self.torch_dtype)
+            target_ids = target_ids.to(device=self.device, dtype=self.torch_dtype)
+
+        reference = sample.get("ref_image_latents")
+        reference_ids = sample.get("ref_img_ids")
+        if reference is None or reference_ids is None:
+            reference_image = sample.get("current_frame", sample.get("input_image"))
+            if reference_image is None and video is not None:
+                reference_image = video[:, :, 0]
+            if reference_image is None:
+                raise ValueError("FLUX.2 requires a reference image or precomputed reference tokens.")
+            reference, reference_ids = self._encode_flux2_image_tokens(reference_image, time_value=10.0)
+        else:
+            reference = reference.to(device=self.device, dtype=self.torch_dtype)
+            reference_ids = reference_ids.to(device=self.device, dtype=self.torch_dtype)
+
+        context, context_mask = self._encode_flux2_text(sample)
+        proprio = sample.get("proprio")
+        if self.state_encoder is not None:
+            if proprio is None or proprio.ndim != 3:
+                raise ValueError("FLUX.2 with state_dim requires proprio [B,T,D].")
+            context, context_mask = self._append_state_to_context(
+                context, context_mask, proprio[:, 0].to(device=self.device, dtype=self.torch_dtype)
+            )
+        action = sample["action"].to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        action_is_pad = sample.get("action_is_pad")
+        if action_is_pad is not None:
+            action_is_pad = action_is_pad.to(device=self.device, dtype=torch.bool)
+        action_dim_is_pad = sample.get("action_dim_is_pad")
+        if action_dim_is_pad is not None:
+            action_dim_is_pad = action_dim_is_pad.to(device=self.device, dtype=torch.bool)
+        return {
+            "target_latent": target,
+            "target_img_ids": target_ids,
+            "ref_image_latents": reference,
+            "ref_img_ids": reference_ids,
+            "context": context,
+            "context_mask": context_mask,
+            "action": action,
+            "action_is_pad": action_is_pad,
+            "action_dim_is_pad": action_dim_is_pad,
+        }
+
+    @torch.no_grad()
+    def _build_mot_attention_mask_flux2(
+        self,
+        *,
+        batch_size: int,
+        txt_len: int,
+        target_len: int,
+        cond_len: int,
+        action_len: int,
+        device: torch.device,
+        text_attention_mask: torch.Tensor | None,
+    ) -> dict[str, torch.Tensor]:
+        ref_start = txt_len
+        target_start = txt_len + cond_len
+        action_start = target_start + target_len
+        total = action_start + action_len
+        mask = torch.zeros(batch_size, total, total, dtype=torch.bool, device=device)
+        mask[:, :target_start, :target_start] = True
+        mask[:, target_start:action_start, :action_start] = True
+        mask[:, action_start:, :target_start] = True
+        mask[:, action_start:, action_start:] = True
+        if text_attention_mask is not None:
+            if tuple(text_attention_mask.shape) != (batch_size, txt_len):
+                raise ValueError("FLUX.2 text attention mask shape mismatch.")
+            mask[:, :, :ref_start] &= text_attention_mask[:, None, :].to(dtype=torch.bool)
+        return {"double_joint": mask, "single": mask.clone()}
+
     def build_inputs(self, sample):
+        if self.mot.block_protocol == "flux2":
+            return self.build_inputs_flux2(sample)
         video = sample["video"]
         if "context" not in sample or "context_mask" not in sample:
             raise ValueError(
@@ -577,6 +746,8 @@ class EasyWAMMoT(torch.nn.Module):
         return (video_loss_token * valid).sum(dim=1) / valid_sum
 
     def training_loss(self, sample):
+        if self.mot.block_protocol == "flux2":
+            return self._training_loss_flux2(sample)
         inputs = self.build_inputs(sample)
         input_latents = inputs["input_latents"]
         batch_size = input_latents.shape[0]
@@ -690,14 +861,111 @@ class EasyWAMMoT(torch.nn.Module):
         )
         loss_action = (action_loss_per_sample * action_weight).mean()
 
-        loss_total = loss_action + self.loss_lambda_video * loss_video
+        loss_total = self.loss_lambda_action * loss_action + self.loss_lambda_video * loss_video
         loss_dict = {
             "loss_video": loss_video.detach(),
             "loss_action": loss_action.detach(),
-            "weighted_loss_action": loss_action.detach(),
+            "weighted_loss_action": loss_action.detach() * self.loss_lambda_action,
             "weighted_loss_video": loss_video.detach() * self.loss_lambda_video,
         }
         return loss_total, loss_dict
+
+    def _training_loss_flux2(self, sample):
+        inputs = self.build_inputs_flux2(sample)
+        clean_image = inputs["target_latent"]
+        action = inputs["action"]
+        batch_size = int(clean_image.shape[0])
+
+        noise_image = torch.randn_like(clean_image)
+        timestep_image = self.train_video_scheduler.sample_training_t(
+            batch_size, self.device, clean_image.dtype
+        )
+        noisy_image = self.train_video_scheduler.add_noise(clean_image, noise_image, timestep_image)
+        target_image = self.train_video_scheduler.training_target(
+            clean_image, noise_image, timestep_image
+        )
+
+        noise_action = torch.randn_like(action)
+        timestep_action = self.train_action_scheduler.sample_training_t(
+            batch_size, self.device, action.dtype
+        )
+        noisy_action = self.train_action_scheduler.add_noise(action, noise_action, timestep_action)
+        target_action = self.train_action_scheduler.training_target(
+            action, noise_action, timestep_action
+        )
+
+        video_pre = self.video_expert.pre_dit(
+            x=noisy_image,
+            timestep=self._scheduler_timestep_to_unit(
+                timestep_image, self.train_video_scheduler
+            ),
+            context=inputs["context"],
+            context_mask=inputs["context_mask"],
+            ref_image_hidden_states=inputs["ref_image_latents"],
+            target_img_ids=inputs["target_img_ids"],
+            ref_img_ids=inputs["ref_img_ids"],
+        )
+        action_pre = self.action_expert.pre_dit(
+            action_tokens=noisy_action,
+            timestep=self._scheduler_timestep_to_unit(
+                timestep_action, self.train_action_scheduler
+            ),
+        )
+        attention_mask = self._build_mot_attention_mask_flux2(
+            batch_size=batch_size,
+            txt_len=int(video_pre["txt_len"]),
+            target_len=int(video_pre["target_len"]),
+            cond_len=int(video_pre["cond_len"]),
+            action_len=int(action_pre["tokens"].shape[1]),
+            device=noisy_image.device,
+            text_attention_mask=video_pre["text_mask"],
+        )
+        tokens = self.mot(
+            embeds_all={"video": video_pre["tokens"], "action": action_pre["tokens"]},
+            attention_mask=attention_mask,
+            freqs_all={"video": video_pre["freqs"], "action": None},
+            context_all={"video": None, "action": {"ids": action_pre["ids"]}},
+            t_mod_all={"video": video_pre["t_mod"], "action": action_pre["t_mod"]},
+        )
+        pred_image = self.video_expert.post_dit(tokens["video"], video_pre)
+        pred_action = self.action_expert.post_dit(tokens["action"], action_pre)
+
+        image_per_sample = F.mse_loss(
+            pred_image.float(), target_image.float(), reduction="none"
+        ).flatten(1).mean(1)
+        image_weight = self.train_video_scheduler.training_weight(timestep_image).to(
+            device=image_per_sample.device, dtype=image_per_sample.dtype
+        )
+        loss_video = (image_per_sample * image_weight).mean()
+
+        action_error = F.mse_loss(
+            pred_action.float(), target_action.float(), reduction="none"
+        )
+        dim_is_pad = inputs.get("action_dim_is_pad")
+        if dim_is_pad is not None:
+            if dim_is_pad.ndim == 1:
+                dim_is_pad = dim_is_pad.unsqueeze(0)
+            valid_dim = (~dim_is_pad).to(action_error.dtype)[:, None, :]
+            action_error = (action_error * valid_dim).sum(2) / valid_dim.sum(2).clamp(min=1)
+        else:
+            action_error = action_error.mean(2)
+        action_is_pad = inputs.get("action_is_pad")
+        if action_is_pad is not None:
+            valid_step = (~action_is_pad).to(action_error.dtype)
+            action_per_sample = (action_error * valid_step).sum(1) / valid_step.sum(1).clamp(min=1)
+        else:
+            action_per_sample = action_error.mean(1)
+        action_weight = self.train_action_scheduler.training_weight(timestep_action).to(
+            device=action_per_sample.device, dtype=action_per_sample.dtype
+        )
+        loss_action = (action_per_sample * action_weight).mean()
+        loss_total = self.loss_lambda_video * loss_video + self.loss_lambda_action * loss_action
+        return loss_total, {
+            "loss_video": loss_video.detach(),
+            "loss_action": loss_action.detach(),
+            "weighted_loss_video": loss_video.detach() * self.loss_lambda_video,
+            "weighted_loss_action": loss_action.detach() * self.loss_lambda_action,
+        }
 
     @torch.no_grad()
     def _predict_video_noise(
@@ -1105,6 +1373,19 @@ class EasyWAMMoT(torch.nn.Module):
         attention_mode = str(
             getattr(self.video_expert, "video_attention_mask_mode", "")
         )
+        if attention_mode == "flux2_reference_causal":
+            return self._infer_action_flux2(
+                prompt=prompt,
+                input_image=input_image,
+                action_horizon=action_horizon,
+                proprio=proprio,
+                context=context,
+                context_mask=context_mask,
+                num_inference_steps=num_inference_steps,
+                sigma_shift=sigma_shift,
+                seed=seed,
+                rand_device=rand_device,
+            )
         if attention_mode == "bidirectional":
             joint_out = self.infer_joint(
                 prompt=prompt,
@@ -1258,6 +1539,150 @@ class EasyWAMMoT(torch.nn.Module):
         }
 
     @torch.no_grad()
+    def _infer_action_flux2(
+        self,
+        *,
+        prompt: Optional[str],
+        input_image: torch.Tensor,
+        action_horizon: int,
+        proprio: Optional[torch.Tensor],
+        context: Optional[torch.Tensor],
+        context_mask: Optional[torch.Tensor],
+        num_inference_steps: int,
+        sigma_shift: Optional[float],
+        seed: Optional[int],
+        rand_device: str,
+    ) -> dict[str, Any]:
+        if input_image.ndim == 3:
+            input_image = input_image.unsqueeze(0)
+        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+            raise ValueError(
+                f"`input_image` must be [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
+            )
+        height, width = int(input_image.shape[-2]), int(input_image.shape[-1])
+        if height % 16 or width % 16:
+            raise ValueError(
+                f"FLUX.2 image spatial dims must be multiples of 16, got HxW=({height},{width})"
+            )
+
+        use_prompt = prompt is not None
+        use_context = context is not None or context_mask is not None
+        if use_prompt and use_context:
+            raise ValueError("`prompt` and `context/context_mask` are mutually exclusive.")
+        if not use_prompt and not use_context:
+            raise ValueError("Either `prompt` or both `context/context_mask` must be provided.")
+        if use_prompt:
+            context, context_mask = self.encode_prompt(prompt)
+        else:
+            if context is None or context_mask is None:
+                raise ValueError("`context` and `context_mask` must be provided together.")
+            if context.ndim == 2:
+                context = context.unsqueeze(0)
+            if context_mask.ndim == 1:
+                context_mask = context_mask.unsqueeze(0)
+            if context.ndim != 3 or context_mask.ndim != 2:
+                raise ValueError(
+                    f"`context/context_mask` must be [B,L,D]/[B,L], got "
+                    f"{tuple(context.shape)} and {tuple(context_mask.shape)}"
+                )
+            context = context.to(device=self.device, dtype=self.torch_dtype)
+            context_mask = context_mask.to(device=self.device, dtype=torch.bool)
+
+        if self.state_encoder is not None:
+            if proprio is None:
+                raise ValueError("FLUX.2 action inference requires proprio when state_dim is enabled.")
+            if proprio.ndim == 1:
+                proprio = proprio.unsqueeze(0)
+            if proprio.ndim != 2 or proprio.shape != (1, self.state_dim):
+                raise ValueError(
+                    f"`proprio` must be [1,{self.state_dim}], got {tuple(proprio.shape)}"
+                )
+            context, context_mask = self._append_state_to_context(
+                context, context_mask, proprio.to(device=self.device, dtype=self.torch_dtype)
+            )
+        elif proprio is not None:
+            raise ValueError("`proprio` was provided but state_encoder is disabled.")
+
+        input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
+        ref_tokens, ref_img_ids = self._encode_flux2_image_tokens(
+            input_image, time_value=10.0
+        )
+        batch_size = int(ref_tokens.shape[0])
+        empty_target = ref_tokens.new_zeros(batch_size, 0, ref_tokens.shape[-1])
+        empty_target_ids = ref_img_ids.new_zeros(batch_size, 0, ref_img_ids.shape[-1])
+
+        generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+        latents_action = torch.randn(
+            (batch_size, action_horizon, self.action_expert.action_dim),
+            generator=generator,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+        timesteps, deltas = self.infer_action_scheduler.build_inference_schedule(
+            num_inference_steps=num_inference_steps,
+            device=self.device,
+            dtype=latents_action.dtype,
+            shift_override=sigma_shift,
+        )
+
+        video_pre = self.video_expert.pre_dit(
+            x=empty_target,
+            timestep=torch.zeros(batch_size, dtype=ref_tokens.dtype, device=self.device),
+            context=context,
+            context_mask=context_mask,
+            ref_image_hidden_states=ref_tokens,
+            target_img_ids=empty_target_ids,
+            ref_img_ids=ref_img_ids,
+        )
+        prefix_mask = self._build_mot_attention_mask_flux2(
+            batch_size=batch_size,
+            txt_len=int(video_pre["txt_len"]),
+            target_len=0,
+            cond_len=int(video_pre["cond_len"]),
+            action_len=0,
+            device=latents_action.device,
+            text_attention_mask=video_pre["text_mask"],
+        )
+        video_kv_cache = self.mot.prefill_flux2_video_cache(
+            video_tokens=video_pre["tokens"],
+            video_freqs=video_pre["freqs"],
+            video_t_mod=video_pre["t_mod"],
+            attention_mask=prefix_mask,
+        )
+        full_mask = self._build_mot_attention_mask_flux2(
+            batch_size=batch_size,
+            txt_len=int(video_pre["txt_len"]),
+            target_len=0,
+            cond_len=int(video_pre["cond_len"]),
+            action_len=int(latents_action.shape[1]),
+            device=latents_action.device,
+            text_attention_mask=video_pre["text_mask"],
+        )
+        prefix_len = int(video_pre["txt_len"]) + int(video_pre["cond_len"])
+        for step_t, step_delta in zip(timesteps, deltas):
+            action_pre = self.action_expert.pre_dit(
+                action_tokens=latents_action,
+                timestep=self._scheduler_timestep_to_unit(
+                    step_t.expand(batch_size).to(dtype=latents_action.dtype),
+                    self.infer_action_scheduler,
+                ),
+            )
+            action_tokens = self.mot.forward_flux2_action_with_video_cache(
+                action_tokens=action_pre["tokens"],
+                action_ids=action_pre["ids"],
+                action_t_mod=action_pre["t_mod"],
+                video_kv_cache=video_kv_cache,
+                attention_mask=full_mask,
+                video_seq_len=prefix_len,
+            )
+            pred_action = self.action_expert.post_dit(action_tokens, action_pre)
+            latents_action = self.infer_action_scheduler.step(
+                pred_action, step_delta, latents_action
+            )
+
+        return {"action": latents_action[0].detach().to(device="cpu", dtype=torch.float32)}
+
+    @torch.no_grad()
     def infer(
         self,
         prompt: Optional[str],
@@ -1317,13 +1742,21 @@ class EasyWAMMoT(torch.nn.Module):
         torch.save(payload, path)
 
     def load_checkpoint(self, path, optimizer=None, merge_lora: bool = False):
-        from .component.lora import (
-            is_lora_checkpoint,
-            load_lora_model_checkpoint_state,
-            load_standard_state_dict,
-        )
+        payload = torch.load(path, map_location="cpu", mmap=True)
+        imagewam_conversion = None
+        imagewam_load_report = None
+        if "proprio_encoder" in payload:
+            from .backbone.flux2.checkpoint import (
+                audit_mot_state_dict,
+                convert_imagewam_flux2_checkpoint_payload,
+                require_exact_imagewam_coverage,
+            )
 
-        payload = torch.load(path, map_location="cpu")
+            if self.mot.block_protocol != "flux2":
+                raise ValueError("ImageWAM `proprio_encoder` migration is only valid for FLUX.2.")
+            payload, imagewam_conversion = convert_imagewam_flux2_checkpoint_payload(payload)
+            imagewam_load_report = audit_mot_state_dict(self.mot, payload["mot"])
+            require_exact_imagewam_coverage(imagewam_load_report)
         checkpoint_backbone = payload.get("backbone_name")
         if checkpoint_backbone is not None and checkpoint_backbone != getattr(self, "backbone_name", "wan22"):
             raise ValueError(
@@ -1336,20 +1769,42 @@ class EasyWAMMoT(torch.nn.Module):
                 f"Checkpoint model variant {checkpoint_variant!r} does not match current "
                 f"model variant {self.model_variant!r}."
             )
-        is_lora_payload = is_lora_checkpoint(payload)
+        is_lora_payload = payload.get("format") == "trainable_lora"
         if is_lora_payload:
+            from .component.lora import load_lora_model_checkpoint_state
+
             load_lora_model_checkpoint_state(
                 self,
                 payload,
                 merge_after_load=bool(merge_lora),
             )
         elif "mot" in payload:
-            load_standard_state_dict(self.mot, payload["mot"], strict=False)
+            if any(
+                hasattr(module, "_easywam_lora_config")
+                for module in self.mot.modules()
+            ):
+                from .component.lora import load_standard_state_dict
+
+                load_standard_state_dict(
+                    self.mot,
+                    payload["mot"],
+                    strict=imagewam_load_report is not None,
+                )
+            else:
+                self.mot.load_state_dict(
+                    payload["mot"],
+                    strict=imagewam_load_report is not None,
+                )
         elif "dit" in payload:
             logger.warning("Loading legacy `dit` checkpoint into video expert only.")
-            load_standard_state_dict(
-                self.video_expert, payload["dit"], strict=False
-            )
+            if hasattr(self.video_expert, "_easywam_lora_config"):
+                from .component.lora import load_standard_state_dict
+
+                load_standard_state_dict(
+                    self.video_expert, payload["dit"], strict=False
+                )
+            else:
+                self.video_expert.load_state_dict(payload["dit"], strict=False)
         else:
             raise ValueError(f"Checkpoint missing both `mot` and `dit` keys: {path}")
         if not is_lora_payload and self.state_encoder is not None:
@@ -1362,6 +1817,18 @@ class EasyWAMMoT(torch.nn.Module):
 
         if optimizer is not None and "optimizer" in payload:
             optimizer.load_state_dict(payload["optimizer"])
+        if imagewam_load_report is not None:
+            self._last_checkpoint_load_report = {
+                **imagewam_load_report,
+                "conversion": imagewam_conversion,
+                "checkpoint_step": payload.get("step"),
+            }
+            logger.info(
+                "Loaded ImageWAM FLUX.2 checkpoint exactly: tensors=%d coverage=%.8f step=%s",
+                imagewam_load_report["matched_tensors"],
+                imagewam_load_report["numel_coverage"],
+                payload.get("step"),
+            )
         return payload
 
     def forward(self, sample):
