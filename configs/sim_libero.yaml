@@ -31,6 +31,12 @@ EVALUATION:
   progress: false
   timing_enabled: false
   torch_compile: false
+  # reduce-overhead uses CUDA graphs when eligible and is suited to repeated batch-1 inference.
+  torch_compile_mode: reduce-overhead
+  torch_compile_backend: inductor
+  torch_compile_fullgraph: false
+  torch_compile_dynamic: false
+  torch_compile_options: {}
 
   # Action inference
   action_horizon: null

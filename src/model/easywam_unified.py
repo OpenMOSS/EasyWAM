@@ -620,7 +620,7 @@ class EasyWAMUnified(nn.Module):
             context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True),
         )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_joint(
         self,
         prompt: Optional[str],
@@ -637,6 +637,7 @@ class EasyWAMUnified(nn.Module):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
+        decode_video: bool = True,
         **kwargs,
     ) -> dict[str, Any]:
         del action, negative_prompt, text_cfg_scale, kwargs
@@ -720,12 +721,14 @@ class EasyWAMUnified(nn.Module):
                 latents_action = self.scheduler.step(pred_action, step_delta, latents_action)
             latents_video[:, :, 0:1] = first_frame_latents
 
-        return {
-            "video": self._decode_latents(latents_video),
+        result = {
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
         }
+        if decode_video:
+            result["video"] = self._decode_latents(latents_video)
+        return result
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -736,6 +739,7 @@ class EasyWAMUnified(nn.Module):
         context_mask: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> dict[str, Any]:
+        kwargs.pop("decode_video", None)
         out = self.infer_joint(
             prompt=prompt,
             input_image=input_image,
@@ -744,11 +748,12 @@ class EasyWAMUnified(nn.Module):
             proprio=proprio,
             context=context,
             context_mask=context_mask,
+            decode_video=False,
             **kwargs,
         )
         return {"action": out["action"]}
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer(
         self,
         prompt: Optional[str],

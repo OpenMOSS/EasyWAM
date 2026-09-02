@@ -190,7 +190,7 @@ class Cosmos25Core(torch.nn.Module):
         loss = F.mse_loss(prediction[:, :, 1:].float(), target[:, :, 1:].float())
         return loss, {"loss_video": loss.detach()}
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer(
         self,
         input_image: torch.Tensor | Image.Image,

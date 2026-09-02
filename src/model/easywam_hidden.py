@@ -905,7 +905,7 @@ class EasyWAMHidden(nn.Module):
             "context_mask": context_mask,
         }
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -975,7 +975,7 @@ class EasyWAMHidden(nn.Module):
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32)
         }
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_joint(
         self,
         prompt: Optional[str],
@@ -1063,7 +1063,7 @@ class EasyWAMHidden(nn.Module):
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
         }
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer(
         self,
         prompt: Optional[str],

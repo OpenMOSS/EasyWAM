@@ -46,7 +46,7 @@ from data.lerobot.prompts import DEFAULT_PROMPT
 from libero.libero import benchmark
 from experiments.libero.action_ensembler import ActionEnsembler
 from experiments.prompt_context_cache import PromptContextCache
-from model.helpers.inference import configure_inference_compile
+from model.helpers.inference import configure_inference_compile_from_config
 
 OmegaConf.register_new_resolver("eval", eval)
 OmegaConf.register_new_resolver("max", lambda x: max(x))
@@ -435,16 +435,12 @@ def _predict_action_chunk(
         infer_kwargs["num_video_frames"] = _get_num_video_frames(cfg)
 
     infer_started = time.perf_counter()
-    with torch.no_grad():
+    with torch.inference_mode():
         if visualize_future_video:
             pred = model.infer_joint(**infer_kwargs)
             predicted_future_frames = _select_predicted_future_frames(pred["video"], cfg)
         else:
             pred = model.infer_action(**infer_kwargs)
-    if torch.cuda.is_available() and str(model_device).startswith("cuda"):
-        # MuJoCo renders through EGL on the same GPU. Finish every model stream
-        # before handing control back to the isolated rendering process.
-        torch.cuda.synchronize(device=torch.device(model_device))
     timing["inference_seconds"] += time.perf_counter() - infer_started
     action = pred["action"]  # [T, D]
 
@@ -775,10 +771,7 @@ def build_eval_runtime(cfg: DictConfig) -> LiberoEvalRuntime:
     model = instantiate(cfg.model, model_dtype=model_dtype, device=model_device)
     _load_model_checkpoint(model, str(cfg.ckpt))
     model = model.to(model_device).eval()
-    model = configure_inference_compile(
-        model,
-        enabled=bool(cfg.EVALUATION.get("torch_compile", False)),
-    )
+    model = configure_inference_compile_from_config(model, cfg.EVALUATION)
     model._eval_supports_num_video_frames = (
         "num_video_frames" in inspect.signature(model.infer_action).parameters
     )

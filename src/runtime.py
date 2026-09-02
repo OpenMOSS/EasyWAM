@@ -562,12 +562,9 @@ def run_inference(cfg: DictConfig):
         else:
             logger.warning("Checkpoint not found, skipping load: %s", checkpoint_path)
     model.eval()
-    from model.helpers.inference import configure_inference_compile
+    from model.helpers.inference import configure_inference_compile_from_config
 
-    model = configure_inference_compile(
-        model,
-        enabled=bool(inference_cfg.get("torch_compile", False)),
-    )
+    model = configure_inference_compile_from_config(model, inference_cfg)
     
     def center_crop_resize(img: Image, width: int, height: int) -> Image.Image:
         src_w, src_h = img.size

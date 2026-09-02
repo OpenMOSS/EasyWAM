@@ -156,6 +156,11 @@ class WorldActionRobotWinPolicy:
         rand_device: str,
         timing_enabled: bool,
         torch_compile: bool,
+        torch_compile_mode: Optional[str],
+        torch_compile_backend: Optional[str],
+        torch_compile_fullgraph: bool,
+        torch_compile_dynamic: bool,
+        torch_compile_options: Dict[str, Any],
         num_video_frames: int,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
@@ -167,6 +172,11 @@ class WorldActionRobotWinPolicy:
         self.model = configure_inference_compile(
             self.model,
             enabled=torch_compile,
+            mode=torch_compile_mode,
+            backend=torch_compile_backend,
+            fullgraph=torch_compile_fullgraph,
+            dynamic=torch_compile_dynamic,
+            options=torch_compile_options,
         )
 
         self.processor: WAMProcessor = instantiate(processor_cfg).eval()
@@ -271,7 +281,7 @@ class WorldActionRobotWinPolicy:
         if self._supports_num_video_frames:
             infer_kwargs["num_video_frames"] = int(self._num_video_frames)
         infer_t0 = time.perf_counter() if self.timing_enabled else 0.0
-        with torch.no_grad():
+        with torch.inference_mode():
             pred = self.model.infer_action(**infer_kwargs)
         if self.timing_enabled:
             self._timing_rollout["infer_s"] += time.perf_counter() - infer_t0
@@ -402,6 +412,31 @@ def get_model(usr_args: Dict[str, Any]):
     torch_compile = _parse_bool(
         usr_args.get("torch_compile", cfg.EVALUATION.get("torch_compile", False))
     )
+    torch_compile_mode = str(
+        usr_args.get(
+            "torch_compile_mode",
+            cfg.EVALUATION.get("torch_compile_mode", "reduce-overhead"),
+        )
+    )
+    torch_compile_backend = str(
+        usr_args.get(
+            "torch_compile_backend",
+            cfg.EVALUATION.get("torch_compile_backend", "inductor"),
+        )
+    )
+    torch_compile_fullgraph = _parse_bool(
+        usr_args.get(
+            "torch_compile_fullgraph",
+            cfg.EVALUATION.get("torch_compile_fullgraph", False),
+        )
+    )
+    torch_compile_dynamic = _parse_bool(
+        usr_args.get(
+            "torch_compile_dynamic",
+            cfg.EVALUATION.get("torch_compile_dynamic", False),
+        )
+    )
+    torch_compile_options = dict(cfg.EVALUATION.get("torch_compile_options", {}))
 
     policy = WorldActionRobotWinPolicy(
         model_cfg=cfg.model,
@@ -420,6 +455,11 @@ def get_model(usr_args: Dict[str, Any]):
         rand_device=rand_device,
         timing_enabled=timing_enabled,
         torch_compile=torch_compile,
+        torch_compile_mode=torch_compile_mode,
+        torch_compile_backend=torch_compile_backend,
+        torch_compile_fullgraph=torch_compile_fullgraph,
+        torch_compile_dynamic=torch_compile_dynamic,
+        torch_compile_options=torch_compile_options,
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
     )
     return policy

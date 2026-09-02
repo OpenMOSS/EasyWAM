@@ -1172,7 +1172,7 @@ class EasyWAMMoT(torch.nn.Module):
         )
         return len(video_timesteps)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_joint(
         self,
         prompt: Optional[str],
@@ -1189,7 +1189,8 @@ class EasyWAMMoT(torch.nn.Module):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
-        test_action_with_infer_action: bool = True,
+        test_action_with_infer_action: bool = False,
+        decode_video: bool = True,
     ) -> dict[str, Any]:
         self.eval()
         if test_action_with_infer_action:
@@ -1347,12 +1348,12 @@ class EasyWAMMoT(torch.nn.Module):
                     f"Action from infer_joint and infer_action differ with max abs diff {max_abs_diff:.6f}. "
                 )
 
-        return {
-            "video": self._decode_latents(latents_video),
-            "action": action_out,
-        }
+        result = {"action": action_out}
+        if decode_video:
+            result["video"] = self._decode_latents(latents_video)
+        return result
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -1402,6 +1403,7 @@ class EasyWAMMoT(torch.nn.Module):
                 seed=seed,
                 rand_device=rand_device,
                 test_action_with_infer_action=False,
+                decode_video=False,
             )
             return {"action": joint_out["action"]}
         if attention_mode != "first_frame_causal":
@@ -1538,7 +1540,7 @@ class EasyWAMMoT(torch.nn.Module):
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
         }
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _infer_action_flux2(
         self,
         *,
@@ -1682,7 +1684,7 @@ class EasyWAMMoT(torch.nn.Module):
 
         return {"action": latents_action[0].detach().to(device="cpu", dtype=torch.float32)}
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer(
         self,
         prompt: Optional[str],

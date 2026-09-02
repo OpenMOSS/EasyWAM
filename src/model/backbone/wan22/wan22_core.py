@@ -259,7 +259,7 @@ class Wan22Core(torch.nn.Module):
         }
         return loss_total, loss_dict
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer(
         self,
         prompt: str,

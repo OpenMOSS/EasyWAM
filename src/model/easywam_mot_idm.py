@@ -298,7 +298,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         }
         return loss_total, loss_dict
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_joint(
         self,
         prompt: Optional[str],
@@ -315,7 +315,8 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
-        test_action_with_infer_action: bool = True,
+        test_action_with_infer_action: bool = False,
+        decode_video: bool = True,
     ) -> dict[str, Any]:
         del action, negative_prompt, text_cfg_scale, test_action_with_infer_action
         self.eval()
@@ -475,12 +476,14 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
                 pred_action, step_delta_action, latents_action
             )
 
-        return {
-            "video": self._decode_latents(latents_video),
+        result = {
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
         }
+        if decode_video:
+            result["video"] = self._decode_latents(latents_video)
+        return result
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -512,5 +515,6 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             seed=seed,
             rand_device=rand_device,
             test_action_with_infer_action=False,
+            decode_video=False,
         )
         return {"action": out["action"]}

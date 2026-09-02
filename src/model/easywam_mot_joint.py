@@ -66,7 +66,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
             device=device,
         )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_joint(
         self,
         prompt: Optional[str],
@@ -83,7 +83,8 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
-        test_action_with_infer_action: bool = True,
+        test_action_with_infer_action: bool = False,
+        decode_video: bool = True,
     ) -> dict[str, Any]:
         if test_action_with_infer_action:
             logger.warning(
@@ -106,9 +107,10 @@ class EasyWAMMoTJoint(EasyWAMMoT):
             seed=seed,
             rand_device=rand_device,
             test_action_with_infer_action=False,
+            decode_video=decode_video,
         )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -141,5 +143,6 @@ class EasyWAMMoTJoint(EasyWAMMoT):
             seed=seed,
             rand_device=rand_device,
             test_action_with_infer_action=False,
+            decode_video=False,
         )
         return {"action": out["action"]}
