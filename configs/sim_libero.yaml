@@ -30,6 +30,7 @@ EVALUATION:
   video_mode: none
   progress: false
   timing_enabled: false
+  prompt_source: task_language
   torch_compile: false
   # reduce-overhead uses CUDA graphs when eligible and is suited to repeated batch-1 inference.
   torch_compile_mode: reduce-overhead

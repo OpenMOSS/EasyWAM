@@ -10,24 +10,34 @@ import numpy as np
 from libero.libero import get_libero_path
 from utils.video_io import save_mp4
 from experiments.libero.env_process import LiberoEnvProcess
+from experiments.libero.task_language import strip_libero_plus_metadata
 
 DATE = time.strftime("%Y_%m_%d")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
 
 
-def get_libero_env(task, resolution, seed, env_num=1):
+def get_libero_env(task, resolution, seed, env_num=1, prompt_source="task_language"):
     """Initializes and returns the LIBERO environment, along with the task description."""
     if env_num != 1:
         raise ValueError(f"Isolated LIBERO evaluation requires env_num=1, got {env_num}.")
-    task_description = task.language
-    task_bddl_file = str(
+    task_bddl_path = (
         pathlib.Path(get_libero_path("bddl_files"))
         / task.problem_folder
         / task.bddl_file
     )
+    if prompt_source == "task_language":
+        task_description = str(task.language)
+    elif prompt_source == "task_language_without_metadata":
+        task_description = strip_libero_plus_metadata(str(task.language))
+    else:
+        raise ValueError(
+            "Unsupported LIBERO prompt source: "
+            f"{prompt_source!r}. Expected 'task_language' or "
+            "'task_language_without_metadata'."
+        )
     env_args = {
-        "bddl_file_name": task_bddl_file,
+        "bddl_file_name": str(task_bddl_path),
         "camera_heights": resolution,
         "camera_widths": resolution,
         "hard_reset": False,

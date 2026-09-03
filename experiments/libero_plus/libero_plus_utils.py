@@ -13,6 +13,8 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
+from experiments.libero.task_language import resolve_bddl_source_path
+
 
 LIBERO_PLUS_SUITE_COUNTS = {
     "libero_spatial": 2402,
@@ -170,15 +172,7 @@ def instantiate_suite(benchmark: Any, suite_name: str):
 
 def _resolve_bddl_source_path(task_bddl_path: Path) -> Path:
     """Resolve a LIBERO-Plus virtual task filename to its source BDDL file."""
-    if task_bddl_path.is_file():
-        return task_bddl_path
-
-    filename = task_bddl_path.name
-    if "_view_" in filename and "_initstate_" in filename:
-        source_filename = filename.split("_view_", 1)[0] + ".bddl"
-        return task_bddl_path.with_name(source_filename)
-
-    return task_bddl_path
+    return resolve_bddl_source_path(task_bddl_path)
 
 
 def _validate_libero_paths(get_libero_path: Any) -> None:

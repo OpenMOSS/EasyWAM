@@ -657,7 +657,12 @@ def run_single_task(
         "simulation_seconds": 0.0,
     }
     env_started = time.perf_counter()
-    env, task_description = get_libero_env(task, LIBERO_ENV_RESOLUTION, cfg.get("seed"))
+    env, task_description = get_libero_env(
+        task,
+        LIBERO_ENV_RESOLUTION,
+        cfg.get("seed"),
+        prompt_source=str(cfg.EVALUATION.get("prompt_source", "task_language")),
+    )
     timing["environment_initialize_seconds"] = time.perf_counter() - env_started
     prompt_encode_before = prompt_cache.encode_seconds
     visualize_future_video = bool(cfg.EVALUATION.get("visualize_future_video", False))

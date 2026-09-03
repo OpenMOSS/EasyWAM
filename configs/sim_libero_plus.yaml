@@ -24,6 +24,8 @@ EVALUATION:
   visualize_future_video: false
   progress: false
   timing_enabled: false
+  # Preserve task.language while removing only appended perturbation metadata.
+  prompt_source: task_language_without_metadata
   torch_compile: false
   # reduce-overhead uses CUDA graphs when eligible and is suited to repeated batch-1 inference.
   torch_compile_mode: reduce-overhead
