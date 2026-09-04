@@ -1,6 +1,6 @@
 # LIBERO-Plus 使用指南
 
-[English](libero_plus.md) | [返回 README](../README_zh.md)
+[English](libero_plus.md) | [返回 README](../../README_zh.md)
 
 LIBERO-Plus 是鲁棒性评测 benchmark。EasyWAM 直接评测在 LIBERO 上训练得到的 checkpoint，不需要单独的 LIBERO-Plus 训练 task。
 

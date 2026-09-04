@@ -59,7 +59,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | Cosmos-Predict2.5-2B | ✅ |
 | FLUX.2 Klein-4B (ImageWAM-compatible) | ✅ |
 
-See [FLUX.2 / ImageWAM backbone integration](docs/flux2_imagewam_integration.md)
+See [FLUX.2 / ImageWAM backbone integration](docs/instructions/flux2_imagewam_integration.md)
 for checkpoint migration, configuration, and evaluation details.
 
 ### 🧪 Benchmarks
@@ -106,11 +106,11 @@ for checkpoint migration, configuration, and evaluation details.
 
 </details>
 
-For an analysis of these benchmark results, see our blog: [What WAM Architecture Do We Need?](docs/blog01_arch.md) ([中文](docs/blog01_arch_zh.md)).
+For an analysis of these benchmark results, see our blog: [What WAM Architecture Do We Need?](docs/blogs/blog01_arch.md) ([中文](docs/blogs/blog01_arch_zh.md)).
 
 ## ⚡ Efficiency Results
 
-> All efficiency results reported below use **Wan2.2-TI2V-5B** as the backbone.
+> All efficiency results reported below use **Wan2.2-TI2V-5B** as the backbone. **Actual training time may vary with the CPU and GPU configuration; these figures are provided for reference only.** Please refer to the [efficiency configuration guide](docs/configurations/efficiency.md) to choose settings appropriate for your machine and improve training and inference efficiency.
 
 EasyWAM-MoT and FastWAM use the same model architecture, enabling an architecture-matched comparison between the EasyWAM training framework and the original FastWAM codebase. Measured on **8 × NVIDIA H100 GPUs** with a **per-device batch size of 16**, EasyWAM-MoT achieves **121.9 samples/s**, a **2.37×** throughput improvement over FastWAM's 51.5 samples/s. It also reduces data, forward, and backward time per step by **66.0%**, **58.4%**, and **54.7%**, respectively.
 
@@ -123,7 +123,7 @@ EasyWAM-MoT and FastWAM use the same model architecture, enabling an architectur
 | EasyWAM-MoT | **121.9** | **0.0258** | **0.5162** | **0.4842** |
 | FastWAM | 51.5 | 0.0759 | 1.2412 | 1.0680 |
 
-On LIBERO, training for **20,000 steps** takes approximately **6 hours** with EasyWAM, compared with approximately **14 hours** using the original FastWAM codebase—a **57.1% reduction** in overall training time. Actual training time may vary with the CPU and GPU configuration; these figures are provided for reference only.
+On LIBERO, training for **20,000 steps** takes approximately **6 hours** with EasyWAM, compared with approximately **14 hours** using the original FastWAM codebase—a **57.1% reduction** in overall training time.
 
 > 🌟 **Hope:** Training and evaluating World Action Models often requires substantial computational resources. EasyWAM aims to lower this barrier with an efficient and lightweight codebase, enabling researchers to train models, run evaluations, and iterate quickly even with limited compute. Through continuous efficiency improvements, we hope researchers can devote more of their resources to model and algorithm innovation and that more members of the community can participate in WAM research.
 
@@ -251,11 +251,13 @@ The managers default to 8 GPUs. Override `MULTIRUN.num_gpus` and `MULTIRUN.max_t
 
 ## 📚 Documentation
 
-| Benchmark | English | 中文 |
+| Documentation | English | 中文 |
 | --- | --- | --- |
-| LIBERO | [Guide](docs/libero.md) | [使用指南](docs/libero_zh.md) |
-| LIBERO-Plus | [Guide](docs/libero_plus.md) | [使用指南](docs/libero_plus_zh.md) |
-| RoboTwin | [Guide](docs/robotwin.md) | [使用指南](docs/robotwin_zh.md) |
+| Documentation index | [Index](docs/README.md) | [文档索引](docs/README_zh.md) |
+| Configuration | [Guide](docs/configurations/README.md) | [配置指南](docs/configurations/README_zh.md) |
+| LIBERO | [Guide](docs/instructions/libero.md) | [使用指南](docs/instructions/libero_zh.md) |
+| LIBERO-Plus | [Guide](docs/instructions/libero_plus.md) | [使用指南](docs/instructions/libero_plus_zh.md) |
+| RoboTwin | [Guide](docs/instructions/robotwin.md) | [使用指南](docs/instructions/robotwin_zh.md) |
 
 ## 🗂️ Repository Layout
 
@@ -263,6 +265,10 @@ The managers default to 8 GPUs. Override `MULTIRUN.num_gpus` and `MULTIRUN.max_t
 EasyWAM/
 ├── configs/          # Data, model, task, training, and evaluation configs
 ├── docs/             # Repository documents
+│   ├── README.md      # Documentation index
+│   ├── blogs/        # Architecture blogs
+│   ├── configurations/ # Configuration guides
+│   └── instructions/   # Integration and benchmark guides
 ├── experiments/      # Benchmark evaluators
 ├── scripts/          # Training, preprocessing, and caching entrypoints
 ├── src/              # Models, data pipeline, runtime, and trainer

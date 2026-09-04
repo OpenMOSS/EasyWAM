@@ -60,7 +60,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | FLUX.2 Klein-4B（兼容 ImageWAM） | ✅ |
 
 checkpoint 迁移、配置和评测方式请参阅
-[FLUX.2 / ImageWAM backbone 接入文档](docs/flux2_imagewam_integration.md)。
+[FLUX.2 / ImageWAM backbone 接入文档](docs/instructions/flux2_imagewam_integration.md)。
 
 ### 🧪 Benchmark
 
@@ -106,11 +106,11 @@ checkpoint 迁移、配置和评测方式请参阅
 
 </details>
 
-我们撰写了一篇 blog，对上述实验结果进行分析：[什么样的 WAM 架构是我们需要的？](docs/blog01_arch_zh.md)（[English](docs/blog01_arch.md)）。
+我们撰写了一篇 blog，对上述实验结果进行分析：[什么样的 WAM 架构是我们需要的？](docs/blogs/blog01_arch_zh.md)（[English](docs/blogs/blog01_arch.md)）。
 
 ## ⚡ 效率结果
 
-> 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。
+> 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。**实际训练时长会随 CPU 和 GPU 配置而变化，以上数据仅供参考。** 请参阅[效率配置指南](docs/configurations/efficiency_zh.md)，根据自己的机器选择合适的配置，以提升训练与推理效率。
 
 EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一致的条件下对比 EasyWAM 训练框架与 FastWAM 原始代码框架。在 **8 × NVIDIA H100 GPUs**、**per-device batch size 为 16** 的配置下，EasyWAM-MoT 的吞吐量达到 **121.9 samples/s**，是 FastWAM（51.5 samples/s）的 **2.37 倍**；每 step 的数据读取、前向传播和反向传播耗时分别降低 **66.0%**、**58.4%** 和 **54.7%**。
 
@@ -123,7 +123,7 @@ EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一�
 | EasyWAM-MoT | **121.9** | **0.0258** | **0.5162** | **0.4842** |
 | FastWAM | 51.5 | 0.0759 | 1.2412 | 1.0680 |
 
-在 LIBERO 数据集上训练 **20,000 steps**，EasyWAM 约需 **6 小时**，而使用 FastWAM 原始代码框架约需 **14 小时**，整体训练时长缩短约 **57.1%**。实际训练时长会随 CPU 和 GPU 配置而变化，以上数据仅供参考。
+在 LIBERO 数据集上训练 **20,000 steps**，EasyWAM 约需 **6 小时**，而使用 FastWAM 原始代码框架约需 **14 小时**，整体训练时长缩短约 **57.1%**。
 
 > 🌟 **愿景：** World Action Model 的训练与评测通常需要大量计算资源。EasyWAM 希望通过高效且轻量的代码框架降低这一研究门槛，让研究者即使在计算资源有限的情况下，也能完成模型训练与评测、快速验证想法并持续迭代。通过不断优化效率，我们希望研究者能够将更多资源投入模型与算法创新，也让更多社区成员参与到 WAM 研究中。
 
@@ -251,11 +251,13 @@ manager 默认使用 8 张 GPU。可通过 `MULTIRUN.num_gpus` 和 `MULTIRUN.max
 
 ## 📚 文档
 
-| Benchmark | English | 中文 |
+| 文档 | English | 中文 |
 | --- | --- | --- |
-| LIBERO | [Guide](docs/libero.md) | [使用指南](docs/libero_zh.md) |
-| LIBERO-Plus | [Guide](docs/libero_plus.md) | [使用指南](docs/libero_plus_zh.md) |
-| RoboTwin | [Guide](docs/robotwin.md) | [使用指南](docs/robotwin_zh.md) |
+| 文档索引 | [Index](docs/README.md) | [文档索引](docs/README_zh.md) |
+| 配置 | [Guide](docs/configurations/README.md) | [配置指南](docs/configurations/README_zh.md) |
+| LIBERO | [Guide](docs/instructions/libero.md) | [使用指南](docs/instructions/libero_zh.md) |
+| LIBERO-Plus | [Guide](docs/instructions/libero_plus.md) | [使用指南](docs/instructions/libero_plus_zh.md) |
+| RoboTwin | [Guide](docs/instructions/robotwin.md) | [使用指南](docs/instructions/robotwin_zh.md) |
 
 ## 🗂️ 项目结构
 
@@ -263,6 +265,10 @@ manager 默认使用 8 张 GPU。可通过 `MULTIRUN.num_gpus` 和 `MULTIRUN.max
 EasyWAM/
 ├── configs/          # 数据、模型、task、训练及评测配置
 ├── docs/             # 项目文档
+│   ├── README.md      # 文档索引
+│   ├── blogs/        # 架构博客
+│   ├── configurations/ # 配置指南
+│   └── instructions/   # 集成与 Benchmark 使用指南
 ├── experiments/      # Benchmark 评测器
 ├── scripts/          # 训练、预处理和缓存入口
 ├── src/              # 模型、数据管线、runtime 和 trainer

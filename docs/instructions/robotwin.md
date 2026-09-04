@@ -1,6 +1,6 @@
 # RoboTwin Guide
 
-[中文](robotwin_zh.md) | [Back to README](../README.md)
+[中文](robotwin_zh.md) | [Back to README](../../README.md)
 
 This guide covers RoboTwin 2.0 data preparation, training, and evaluation in EasyWAM.
 

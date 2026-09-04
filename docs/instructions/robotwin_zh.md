@@ -1,6 +1,6 @@
 # RoboTwin 使用指南
 
-[English](robotwin.md) | [返回 README](../README_zh.md)
+[English](robotwin.md) | [返回 README](../../README_zh.md)
 
 本文介绍 EasyWAM 中 RoboTwin 2.0 的数据准备、训练与评测流程。
 

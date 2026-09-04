@@ -1,6 +1,6 @@
 # LIBERO 使用指南
 
-[English](libero.md) | [返回 README](../README_zh.md)
+[English](libero.md) | [返回 README](../../README_zh.md)
 
 本文介绍 EasyWAM 中 LIBERO 的数据准备、训练与评测流程。
 

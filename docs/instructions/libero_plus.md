@@ -1,6 +1,6 @@
 # LIBERO-Plus Guide
 
-[中文](libero_plus_zh.md) | [Back to README](../README.md)
+[中文](libero_plus_zh.md) | [Back to README](../../README.md)
 
 LIBERO-Plus is a robustness evaluation benchmark. EasyWAM evaluates a checkpoint trained on LIBERO; there is no separate LIBERO-Plus training task.
 

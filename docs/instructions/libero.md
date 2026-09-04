@@ -1,6 +1,6 @@
 # LIBERO Guide
 
-[中文](libero_zh.md) | [Back to README](../README.md)
+[中文](libero_zh.md) | [Back to README](../../README.md)
 
 This guide covers LIBERO data preparation, training, and evaluation in EasyWAM.
 
