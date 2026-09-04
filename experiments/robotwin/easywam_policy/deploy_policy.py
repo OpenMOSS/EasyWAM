@@ -27,7 +27,7 @@ from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
 from experiments.prompt_context_cache import PromptContextCache
-from model.helpers.inference import configure_inference_compile
+from model.helpers.inference import configure_inference_compile, configure_model_execution
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +162,18 @@ class WorldActionRobotWinPolicy:
         torch_compile_dynamic: bool,
         torch_compile_options: Dict[str, Any],
         num_video_frames: int,
+        vae_micro_batch_size: int | None = 1,
+        inference_cross_kv_reuse: bool = True,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
         model_cfg_copy.load_text_encoder = True
 
         self.model = instantiate(model_cfg_copy, model_dtype=model_dtype, device=device)
+        self.model = configure_model_execution(
+            self.model,
+            vae_micro_batch_size=vae_micro_batch_size,
+            inference_cross_kv_reuse=inference_cross_kv_reuse,
+        )
         self.model.load_checkpoint(checkpoint_path, merge_lora=True)
         self.model = self.model.to(device).eval()
         self.model = configure_inference_compile(
@@ -461,6 +468,8 @@ def get_model(usr_args: Dict[str, Any]):
         torch_compile_dynamic=torch_compile_dynamic,
         torch_compile_options=torch_compile_options,
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
+        vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
+        inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
     )
     return policy
 

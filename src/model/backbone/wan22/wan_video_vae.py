@@ -1071,6 +1071,15 @@ class WanVideoVAE(nn.Module):
         self.upsampling_factor = 8
         self.temporal_downsample_factor = 4
         self.z_dim = z_dim
+        self.micro_batch_size: int | None = 1
+
+    def set_micro_batch_size(self, value: int | None) -> None:
+        if value is not None and (isinstance(value, bool) or int(value) <= 0):
+            raise ValueError("VAE micro batch size must be a positive integer or None.")
+        self.micro_batch_size = None if value is None else int(value)
+
+    def _chunk_size(self, batch_size: int) -> int:
+        return batch_size if self.micro_batch_size is None else min(self.micro_batch_size, batch_size)
 
 
     def single_encode(self, video, device):
@@ -1086,27 +1095,25 @@ class WanVideoVAE(nn.Module):
 
 
     def encode(self, videos, device):
-        # videos = [video.to("cpu") for video in videos]
-        hidden_states = []
-        for video in videos:
-            video = video.unsqueeze(0)
-            hidden_state = self.single_encode(video, device)
-            hidden_state = hidden_state.squeeze(0)
-            hidden_states.append(hidden_state)
-        hidden_states = torch.stack(hidden_states)
-        return hidden_states
+        if isinstance(videos, (list, tuple)):
+            videos = torch.stack(tuple(videos))
+        chunk_size = self._chunk_size(int(videos.shape[0]))
+        outputs = [
+            self.single_encode(videos[start : start + chunk_size], device)
+            for start in range(0, videos.shape[0], chunk_size)
+        ]
+        return outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=0)
 
 
     def decode(self, hidden_states, device):
-        hidden_states = [hidden_state.to("cpu") for hidden_state in hidden_states]
-        videos = []
-        for hidden_state in hidden_states:
-            hidden_state = hidden_state.unsqueeze(0)
-            video = self.single_decode(hidden_state, device)
-            video = video.squeeze(0)
-            videos.append(video)
-        videos = torch.stack(videos)
-        return videos
+        if isinstance(hidden_states, (list, tuple)):
+            hidden_states = torch.stack(tuple(hidden_states))
+        chunk_size = self._chunk_size(int(hidden_states.shape[0]))
+        outputs = [
+            self.single_decode(hidden_states[start : start + chunk_size].to("cpu"), device)
+            for start in range(0, hidden_states.shape[0], chunk_size)
+        ]
+        return outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=0)
 
 
     @staticmethod

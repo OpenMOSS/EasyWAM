@@ -180,7 +180,15 @@ def elide_fully_valid_attention_mask(
         return mask
     if isinstance(mask, StructuredAttentionMask):
         return None if mask.is_fully_valid else mask
-    if mask.dtype == torch.bool and mask.numel() > 0 and bool(mask.all().item()):
+    # Never inspect a CUDA tensor from Python here: `.item()` would serialize the
+    # host with every denoising step. Common callers normalize masks while they
+    # are still on CPU; externally supplied CUDA masks stay explicit.
+    if (
+        mask.device.type == "cpu"
+        and mask.dtype == torch.bool
+        and mask.numel() > 0
+        and bool(mask.all().item())
+    ):
         return None
     return mask
 

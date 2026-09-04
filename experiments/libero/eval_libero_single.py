@@ -46,7 +46,7 @@ from data.lerobot.prompts import DEFAULT_PROMPT
 from libero.libero import benchmark
 from experiments.libero.action_ensembler import ActionEnsembler
 from experiments.prompt_context_cache import PromptContextCache
-from model.helpers.inference import configure_inference_compile_from_config
+from model.helpers.inference import configure_inference_compile_from_config, configure_model_execution
 
 OmegaConf.register_new_resolver("eval", eval)
 OmegaConf.register_new_resolver("max", lambda x: max(x))
@@ -774,6 +774,11 @@ def build_eval_runtime(cfg: DictConfig) -> LiberoEvalRuntime:
     model_device = _resolve_eval_device(cfg)
     model_dtype = _mixed_precision_to_model_dtype(cfg.get("mixed_precision", "bf16"))
     model = instantiate(cfg.model, model_dtype=model_dtype, device=model_device)
+    model = configure_model_execution(
+        model,
+        vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
+        inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
+    )
     _load_model_checkpoint(model, str(cfg.ckpt))
     model = model.to(model_device).eval()
     model = configure_inference_compile_from_config(model, cfg.EVALUATION)

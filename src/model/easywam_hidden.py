@@ -8,6 +8,7 @@ from PIL import Image
 from utils.logging_config import get_logger
 
 from .component.action_dit import ActionDiT, StateEncoder
+from .component.attention import elide_fully_valid_attention_mask
 from .helpers.gradient import gradient_checkpoint_forward
 from .backbone.wan22.loader import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
@@ -172,13 +173,17 @@ class EasyWAMHidden(nn.Module):
         image_is_pad: Optional[torch.Tensor] = None,
         temporal_downsample_factor: int = 1,
         return_prediction: bool = True,
+        projected_context: Optional[torch.Tensor] = None,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> tuple[Optional[torch.Tensor], torch.Tensor, Optional[torch.Tensor]]:
         video_pre = self.video_dit.pre_dit(
             x=x,
             timestep=timestep,
-            context=context,
+            context=context if projected_context is None else projected_context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+            context_is_projected=projected_context is not None,
+            cross_kv_cache=cross_kv_cache,
         )
         tokens = video_pre["tokens"]
         self_attn_mask = (
@@ -236,6 +241,8 @@ class EasyWAMHidden(nn.Module):
         state: torch.Tensor,
         video_hidden: torch.Tensor,
         video_token_mask: Optional[torch.Tensor] = None,
+        projected_context: Optional[torch.Tensor] = None,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> torch.Tensor:
         if state.ndim == 2:
             state = state.unsqueeze(1)
@@ -244,12 +251,20 @@ class EasyWAMHidden(nn.Module):
                 f"`state` must be [B,S,{self.state_dim}], got {tuple(state.shape)}"
             )
 
-        video_context = self.dit["video_context_projector"](video_hidden)
+        video_context = (
+            self.action_dit.project_context(
+                self.dit["video_context_projector"](video_hidden)
+            )
+            if projected_context is None
+            else projected_context
+        )
         action_pre = self.action_dit.pre_dit(
             action_tokens=action,
             timestep=timestep,
             context=video_context,
             context_mask=video_token_mask,
+            context_is_projected=True,
+            cross_kv_cache=cross_kv_cache,
         )
         state_tokens = self.dit["state_encoder"](
             state.to(device=action.device, dtype=action.dtype)
@@ -271,7 +286,8 @@ class EasyWAMHidden(nn.Module):
                 -1, tokens.shape[1], -1
             )
 
-        for block in self.action_dit.blocks:
+        for layer_index, block in enumerate(self.action_dit.blocks):
+            context_kv = None if cross_kv_cache is None else cross_kv_cache[layer_index]
             if self.action_dit.use_gradient_checkpointing:
                 tokens = gradient_checkpoint_forward(
                     block,
@@ -281,6 +297,7 @@ class EasyWAMHidden(nn.Module):
                     action_pre["t_mod"],
                     freqs,
                     context_mask=context_attn_mask,
+                    context_kv=context_kv,
                 )
             else:
                 tokens = block(
@@ -289,6 +306,7 @@ class EasyWAMHidden(nn.Module):
                     action_pre["t_mod"],
                     freqs,
                     context_mask=context_attn_mask,
+                    context_kv=context_kv,
                 )
         return self.action_dit.action_decoder(tokens[:, state_len:])
 
@@ -644,12 +662,14 @@ class EasyWAMHidden(nn.Module):
         input_latents = self._encode_video_latents(input_video)
         first_frame_latents = input_latents[:, :, 0:1]
 
+        context_mask = elide_fully_valid_attention_mask(context_mask)
         context = context.to(
             device=self.device, dtype=self.torch_dtype, non_blocking=True
         )
-        context_mask = context_mask.to(
-            device=self.device, dtype=torch.bool, non_blocking=True
-        )
+        if context_mask is not None:
+            context_mask = context_mask.to(
+                device=self.device, dtype=torch.bool, non_blocking=True
+            )
         action = action.to(
             device=self.device, dtype=self.torch_dtype, non_blocking=True
         )
@@ -948,6 +968,17 @@ class EasyWAMHidden(nn.Module):
             dtype=inputs["latents_video"].dtype,
             shift_override=sigma_shift,
         )
+        video_context = (
+            self.video_dit.project_context(inputs["context"])
+            if hasattr(self.video_dit, "project_context")
+            else inputs["context"]
+        )
+        video_cross_kv = (
+            self.video_dit.build_cross_attention_kv_cache(video_context)
+            if bool(getattr(self, "inference_cross_kv_reuse", False))
+            and hasattr(self.video_dit, "build_cross_attention_kv_cache")
+            else None
+        )
         _, video_hidden, video_token_mask = self.forward_video(
             x=inputs["latents_video"],
             timestep=video_timesteps[0].unsqueeze(0),
@@ -957,6 +988,24 @@ class EasyWAMHidden(nn.Module):
                 getattr(self.video_dit, "fuse_vae_embedding_in_latents", False)
             ),
             return_prediction=False,
+            projected_context=video_context,
+            cross_kv_cache=video_cross_kv,
+        )
+
+        action_context = None
+        if (
+            "video_context_projector" in self.dit
+            and "action_dit" in self.dit
+            and hasattr(self.action_dit, "project_context")
+        ):
+            action_context = self.action_dit.project_context(
+                self.dit["video_context_projector"](video_hidden)
+            )
+        action_cross_kv = (
+            self.action_dit.build_cross_attention_kv_cache(action_context)
+            if bool(getattr(self, "inference_cross_kv_reuse", False))
+            and action_context is not None
+            else None
         )
 
         action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
@@ -973,6 +1022,8 @@ class EasyWAMHidden(nn.Module):
                 state=inputs["state"],
                 video_hidden=video_hidden,
                 video_token_mask=video_token_mask,
+                projected_context=action_context,
+                cross_kv_cache=action_cross_kv,
             )
             latents_action = self.infer_action_scheduler.step(
                 pred_action, step_delta, latents_action
@@ -1028,8 +1079,16 @@ class EasyWAMHidden(nn.Module):
 
         latents_video = inputs["latents_video"]
         latents_action = inputs["latents_action"]
+        video_context = self.video_dit.project_context(inputs["context"])
+        video_cross_kv = (
+            self.video_dit.build_cross_attention_kv_cache(video_context)
+            if bool(getattr(self, "inference_cross_kv_reuse", False))
+            else None
+        )
         cached_hidden = None
         cached_mask = None
+        action_context = None
+        action_cross_kv = None
         for step_t_video, step_delta_video, step_t_action, step_delta_action in zip(
             video_timesteps, video_deltas, action_timesteps, action_deltas
         ):
@@ -1042,16 +1101,27 @@ class EasyWAMHidden(nn.Module):
                     getattr(self.video_dit, "fuse_vae_embedding_in_latents", False)
                 ),
                 return_prediction=True,
+                projected_context=video_context,
+                cross_kv_cache=video_cross_kv,
             )
             if cached_hidden is None:
                 cached_hidden = current_hidden
                 cached_mask = current_mask
+                action_context = self.action_dit.project_context(
+                    self.dit["video_context_projector"](cached_hidden)
+                )
+                if bool(getattr(self, "inference_cross_kv_reuse", False)):
+                    action_cross_kv = self.action_dit.build_cross_attention_kv_cache(
+                        action_context
+                    )
             pred_action = self.forward_action(
                 action=latents_action,
                 timestep=step_t_action.unsqueeze(0),
                 state=inputs["state"],
                 video_hidden=cached_hidden,
                 video_token_mask=cached_mask,
+                projected_context=action_context,
+                cross_kv_cache=action_cross_kv,
             )
             if pred_video is None:
                 raise RuntimeError("Joint inference requires a video prediction.")

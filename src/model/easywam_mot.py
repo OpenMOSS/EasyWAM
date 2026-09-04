@@ -8,7 +8,12 @@ from PIL import Image
 from utils.logging_config import get_logger
 
 from .component.action_dit import ActionDiT, StateEncoder
-from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
+from .component.attention import (
+    AttentionSegment,
+    StructuredAttentionMask,
+    build_structured_attention_mask,
+    elide_fully_valid_attention_mask,
+)
 from .component.mot import MoT
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
@@ -363,9 +368,9 @@ class EasyWAMMoT(torch.nn.Module):
     def _append_state_to_context(
         self,
         context: torch.Tensor,
-        context_mask: torch.Tensor,
+        context_mask: Optional[torch.Tensor],
         state: Optional[torch.Tensor],
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.state_encoder is None or state is None:
             return context, context_mask
         if state.ndim != 2:
@@ -377,6 +382,8 @@ class EasyWAMMoT(torch.nn.Module):
         state_token = self.state_encoder(
             state.to(device=self.device, dtype=context.dtype).unsqueeze(1)
         ).to(dtype=context.dtype) # [B, 1, D]
+        if context_mask is None:
+            return torch.cat([context, state_token], dim=1), None
         state_mask = torch.ones((context_mask.shape[0], 1), dtype=torch.bool, device=context_mask.device)
         return (
             torch.cat([context, state_token], dim=1),
@@ -623,8 +630,10 @@ class EasyWAMMoT(torch.nn.Module):
             raise ValueError(
                 f"`context/context_mask` must be [B,L,D]/[B,L], got {tuple(context.shape)} and {tuple(context_mask.shape)}"
             )
+        context_mask = elide_fully_valid_attention_mask(context_mask)
         context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if context_mask is not None:
+            context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
         if self.state_encoder is not None:
             if proprio is None:
                 raise ValueError("`sample['proprio']` is required when `state_dim` is enabled.")
@@ -970,6 +979,27 @@ class EasyWAMMoT(torch.nn.Module):
         }
 
     @torch.no_grad()
+    def _prepare_inference_cross_attention(
+        self,
+        context: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]],
+        Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]],
+    ]:
+        video_context = self.video_expert.project_context(context)
+        action_context = self.action_expert.project_context(context)
+        if not bool(getattr(self, "inference_cross_kv_reuse", False)):
+            return video_context, action_context, None, None
+        return (
+            video_context,
+            action_context,
+            self.video_expert.build_cross_attention_kv_cache(video_context),
+            self.action_expert.build_cross_attention_kv_cache(action_context),
+        )
+
+    @torch.no_grad()
     def _predict_video_noise(
         self,
         latents_video: torch.Tensor,
@@ -977,14 +1007,18 @@ class EasyWAMMoT(torch.nn.Module):
         context: torch.Tensor,
         context_mask: torch.Tensor,
         fuse_vae_embedding_in_latents: bool,
+        projected_context: Optional[torch.Tensor] = None,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> torch.Tensor:
         """Run standalone video denoising through the shared staged backbone API."""
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
             timestep=timestep_video,
-            context=context,
+            context=context if projected_context is None else projected_context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+            context_is_projected=projected_context is not None,
+            cross_kv_cache=cross_kv_cache,
         )
         video_tokens = video_pre["tokens"]
         attention_mask = None
@@ -1014,19 +1048,27 @@ class EasyWAMMoT(torch.nn.Module):
         context_mask: torch.Tensor,
         fuse_vae_embedding_in_latents: bool,
         gt_action: Optional[torch.Tensor] = None,
+        video_context: Optional[torch.Tensor] = None,
+        action_context: Optional[torch.Tensor] = None,
+        video_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        action_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
             timestep=timestep_video,
-            context=context,
+            context=context if video_context is None else video_context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+            context_is_projected=video_context is not None,
+            cross_kv_cache=video_cross_kv_cache,
         )
         action_pre = self.action_expert.pre_dit(
             action_tokens=latents_action,
             timestep=timestep_action,
-            context=context,
+            context=context if action_context is None else action_context,
             context_mask=context_mask,
+            context_is_projected=action_context is not None,
+            cross_kv_cache=action_cross_kv_cache,
         )
 
         attention_mask = self._build_mot_attention_mask(
@@ -1050,10 +1092,12 @@ class EasyWAMMoT(torch.nn.Module):
                 "video": {
                     "context": video_pre["context"],
                     "mask": video_pre["context_mask"],
+                    "kv_cache": video_pre["cross_kv_cache"],
                 },
                 "action": {
                     "context": action_pre["context"],
                     "mask": action_pre["context_mask"],
+                    "kv_cache": action_pre["cross_kv_cache"],
                 },
             },
             t_mod_all={
@@ -1135,12 +1179,16 @@ class EasyWAMMoT(torch.nn.Module):
         video_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor | StructuredAttentionMask,
         video_seq_len: int,
+        action_context: Optional[torch.Tensor] = None,
+        action_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> torch.Tensor:
         action_pre = self.action_expert.pre_dit(
             action_tokens=latents_action,
             timestep=timestep_action,
-            context=context,
+            context=context if action_context is None else action_context,
             context_mask=context_mask,
+            context_is_projected=action_context is not None,
+            cross_kv_cache=action_cross_kv_cache,
         )
         action_tokens = self.mot.forward_action_with_video_cache(
             action_tokens=action_pre["tokens"],
@@ -1149,6 +1197,7 @@ class EasyWAMMoT(torch.nn.Module):
             action_context_payload={
                 "context": action_pre["context"],
                 "mask": action_pre["context_mask"],
+                "kv_cache": action_pre["cross_kv_cache"],
             },
             video_kv_cache=video_kv_cache,
             attention_mask=attention_mask,
@@ -1302,6 +1351,9 @@ class EasyWAMMoT(torch.nn.Module):
                 context_mask=context_mask,
                 state=proprio,
             )
+        video_context, action_context, video_cross_kv_cache, action_cross_kv_cache = (
+            self._prepare_inference_cross_attention(context)
+        )
 
         infer_timesteps_video, infer_deltas_video = self.infer_video_scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -1334,6 +1386,10 @@ class EasyWAMMoT(torch.nn.Module):
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_flag,
                 gt_action=action,
+                video_context=video_context,
+                action_context=action_context,
+                video_cross_kv_cache=video_cross_kv_cache,
+                action_cross_kv_cache=action_cross_kv_cache,
             )
             pred_video = pred_video_posi
             pred_action = pred_action_posi
@@ -1479,6 +1535,9 @@ class EasyWAMMoT(torch.nn.Module):
                 context_mask=context_mask,
                 state=proprio,
             )
+        video_context, action_context, _, action_cross_kv_cache = (
+            self._prepare_inference_cross_attention(context)
+        )
 
         timestep_video = torch.zeros(
             (first_frame_latents.shape[0],),
@@ -1488,9 +1547,10 @@ class EasyWAMMoT(torch.nn.Module):
         video_pre = self.video_expert.pre_dit(
             x=first_frame_latents,
             timestep=timestep_video,
-            context=context,
+            context=video_context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=fuse_flag,
+            context_is_projected=True,
         )
         video_seq_len = int(video_pre["tokens"].shape[1])
         attention_mask = self._build_mot_attention_mask(
@@ -1533,6 +1593,8 @@ class EasyWAMMoT(torch.nn.Module):
                 video_kv_cache=video_kv_cache,
                 attention_mask=attention_mask,
                 video_seq_len=video_seq_len,
+                action_context=action_context,
+                action_cross_kv_cache=action_cross_kv_cache,
             )
             pred_action = pred_action_posi
 

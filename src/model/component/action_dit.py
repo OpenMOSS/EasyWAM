@@ -304,12 +304,24 @@ class ActionDiT(nn.Module):
         )
         return action_expert.to(device=device, dtype=torch_dtype)
 
+    def project_context(self, context: torch.Tensor) -> torch.Tensor:
+        return self.text_embedding(context)
+
+    def build_cross_attention_kv_cache(
+        self, projected_context: torch.Tensor
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
+        return tuple(
+            block.cross_attn.project_kv(projected_context) for block in self.blocks
+        )
+
     def pre_dit(
         self,
         action_tokens: torch.Tensor,
         timestep: torch.Tensor,
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor] = None,
+        context_is_projected: bool = False,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> Dict[str, Any]:
         if action_tokens.ndim != 3:
             raise ValueError(
@@ -340,11 +352,7 @@ class ActionDiT(nn.Module):
                 raise ValueError("During training, action timestep length must match batch_size.")
             timestep = timestep.expand(batch_size)
 
-        if context_mask is None:
-            context_mask = torch.ones(
-                (batch_size, context.shape[1]), dtype=torch.bool, device=context.device
-            )
-        else:
+        if context_mask is not None:
             if context_mask.ndim != 2:
                 raise ValueError(f"`context_mask` must be 2D [B, L], got shape {tuple(context_mask.shape)}")
             if context_mask.shape[0] != batch_size or context_mask.shape[1] != context.shape[1]:
@@ -362,7 +370,7 @@ class ActionDiT(nn.Module):
         t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
 
         tokens = self.action_encoder(action_tokens)
-        context_emb = self.text_embedding(context)
+        context_emb = context if context_is_projected else self.project_context(context)
         context_mask = elide_fully_valid_attention_mask(context_mask)
         context_attn_mask = (
             None
@@ -378,6 +386,7 @@ class ActionDiT(nn.Module):
             "t_mod": t_mod,
             "context": context_emb,
             "context_mask": context_attn_mask,
+            "cross_kv_cache": cross_kv_cache,
             "meta": {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
@@ -406,7 +415,9 @@ class ActionDiT(nn.Module):
         freqs = pre_state["freqs"]
         context_mask = pre_state["context_mask"]
 
-        for block in self.blocks:
+        cross_kv_cache = pre_state.get("cross_kv_cache")
+        for layer_index, block in enumerate(self.blocks):
+            context_kv = None if cross_kv_cache is None else cross_kv_cache[layer_index]
             if self.use_gradient_checkpointing:
                 x = gradient_checkpoint_forward(
                     block,
@@ -416,8 +427,16 @@ class ActionDiT(nn.Module):
                     t_mod,
                     freqs,
                     context_mask=context_mask,
+                    context_kv=context_kv,
                 )
             else:
-                x = block(x, context, t_mod, freqs, context_mask=context_mask)
+                x = block(
+                    x,
+                    context,
+                    t_mod,
+                    freqs,
+                    context_mask=context_mask,
+                    context_kv=context_kv,
+                )
 
         return self.post_dit(x, pre_state)

@@ -143,11 +143,14 @@ class CosmosAttention(nn.Module):
         context: Optional[torch.Tensor] = None,
         rope: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
         attention_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
+        projected_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
         source = x if context is None else context
         q = self._norm_heads(self.q_proj(x), self.q_norm)
-        k = self._norm_heads(self.k_proj(source), self.k_norm)
-        v = self.v_proj(source)
+        if projected_kv is None:
+            k, v = self.project_kv(source)
+        else:
+            k, v = projected_kv
         if self.is_selfattn and rope is not None:
             q = self.apply_rope(q, rope)
             k = self.apply_rope(k, rope)
@@ -155,6 +158,12 @@ class CosmosAttention(nn.Module):
             attention_mask = attention_mask[:, None, None, :]
         result = run_attention(q, k, v, self.num_heads, attention_mask=attention_mask, backend=self.backend)
         return self.output_proj(result)
+
+    def project_kv(self, source: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return (
+            self._norm_heads(self.k_proj(source), self.k_norm),
+            self.v_proj(source),
+        )
 
 
 class CosmosFeedForward(nn.Module):
@@ -270,6 +279,7 @@ class CosmosTransformerBlock(nn.Module):
         state: dict,
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor],
+        context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
         x = state["x"]
         flat_shape = state["flat_shape"]
@@ -294,6 +304,7 @@ class CosmosTransformerBlock(nn.Module):
             normalized.reshape(flat_shape),
             context=context,
             attention_mask=context_mask,
+            projected_kv=context_kv,
         ).reshape(x.shape)
         x = torch.addcmul(
             x, align_modulation(cross_mod[2]).to(x.dtype), attended.to(x.dtype)
@@ -322,6 +333,7 @@ class CosmosTransformerBlock(nn.Module):
         context_mask: Optional[torch.Tensor],
         self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
         modulation_indices: Optional[torch.Tensor] = None,
+        context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
         q, k, v, state = self.prepare_mixed_attention(
             x, timestep_embedding, adaln_lora, rope, modulation_indices
@@ -331,7 +343,9 @@ class CosmosTransformerBlock(nn.Module):
             attention_mask=self_attn_mask,
             backend=self.self_attn.backend,
         )
-        return self.finish_mixed_attention(attended, state, context, context_mask)
+        return self.finish_mixed_attention(
+            attended, state, context, context_mask, context_kv=context_kv
+        )
 
     def forward(
         self,
@@ -452,6 +466,16 @@ class Cosmos25VideoDiT(nn.Module):
             )
         return self.crossattn_proj(context.to(dtype=self.crossattn_proj[0].weight.dtype))
 
+    def project_context(self, context: torch.Tensor) -> torch.Tensor:
+        return self.project_text_context(context)
+
+    def build_cross_attention_kv_cache(
+        self, projected_context: torch.Tensor
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
+        return tuple(
+            block.cross_attn.project_kv(projected_context) for block in self.blocks
+        )
+
     @staticmethod
     def _timestep_features(timesteps: torch.Tensor, dim: int) -> torch.Tensor:
         if timesteps.ndim == 1:
@@ -500,6 +524,9 @@ class Cosmos25VideoDiT(nn.Module):
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor] = None,
         fuse_vae_embedding_in_latents: bool = True,
+        context_is_projected: bool = False,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        freqs_override: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
         **_: object,
     ) -> dict:
         if x.ndim != 5 or x.shape[1] != self.config.in_channels - 2:
@@ -517,14 +544,18 @@ class Cosmos25VideoDiT(nn.Module):
         hidden_5d = self.x_embedder(torch.cat((x, condition_mask, padding_mask), dim=1))
         _, tf, ph, pw, dim = hidden_5d.shape
         tokens = hidden_5d.reshape(b, tf * ph * pw, dim)
-        context = self.project_text_context(context).to(dtype=tokens.dtype)
+        context = (
+            context if context_is_projected else self.project_context(context)
+        ).to(dtype=tokens.dtype)
         # Native Cosmos cross-attention is mask-free, which also preserves FA4.
         del context_mask
         context_mask = None
         features = self._timestep_features(timestep, self.config.hidden_size).to(tokens.dtype)
         frame_t, frame_adaln = self.t_embedder[1](features)
         frame_t = self.t_embedding_norm(frame_t)
-        rope = self.pos_embedder(tf, ph, pw, tokens.device)
+        rope = freqs_override
+        if rope is None:
+            rope = self.pos_embedder(tf, ph, pw, tokens.device)
         return {
             "tokens": tokens,
             "freqs": rope,
@@ -532,6 +563,7 @@ class Cosmos25VideoDiT(nn.Module):
             "t_mod": {"embedding": frame_t, "adaln_lora": frame_adaln},
             "context": context,
             "context_mask": context_mask,
+            "cross_kv_cache": cross_kv_cache,
             "meta": {"grid_size": (tf, ph, pw), "tokens_per_frame": ph * pw, "batch_size": b,
                      "frame_adaln": frame_adaln},
         }
@@ -548,6 +580,11 @@ class Cosmos25VideoDiT(nn.Module):
             tokens, mod["embedding"], pre_state["context"], mod["adaln_lora"],
             pre_state["freqs"], pre_state["context_mask"], self_attn_mask,
             mod.get("token_to_timestep"),
+            context_kv=(
+                None
+                if pre_state.get("cross_kv_cache") is None
+                else pre_state["cross_kv_cache"][layer_index]
+            ),
         )
 
     def post_dit(self, tokens: torch.Tensor, pre_state: dict) -> torch.Tensor:
@@ -580,9 +617,21 @@ class Cosmos25VideoDiT(nn.Module):
         state_tokens: torch.Tensor,
         timestep_state: torch.Tensor,
         context: torch.Tensor,
-        context_mask: torch.Tensor,
+        context_mask: Optional[torch.Tensor],
+        context_is_projected: bool = False,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        freqs_override: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> dict:
-        video = self.pre_dit(x, timestep_video, context, context_mask, True)
+        video = self.pre_dit(
+            x,
+            timestep_video,
+            context,
+            context_mask,
+            True,
+            context_is_projected=context_is_projected,
+            cross_kv_cache=cross_kv_cache,
+            freqs_override=freqs_override,
+        )
         video_len = video["tokens"].shape[1]
         parts = [video["tokens"], action_tokens, state_tokens]
         tokens = torch.cat(parts, dim=1)

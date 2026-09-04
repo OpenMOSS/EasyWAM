@@ -11,6 +11,37 @@ from utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def configure_model_execution(
+    model: torch.nn.Module,
+    *,
+    vae_micro_batch_size: int | None = 1,
+    inference_cross_kv_reuse: bool = True,
+) -> torch.nn.Module:
+    """Apply ordinary runtime settings shared by training and evaluation."""
+    if vae_micro_batch_size is not None:
+        if isinstance(vae_micro_batch_size, bool) or int(vae_micro_batch_size) <= 0:
+            raise ValueError("vae_micro_batch_size must be a positive integer or null.")
+        vae_micro_batch_size = int(vae_micro_batch_size)
+    vae = getattr(model, "vae", None)
+    if vae is not None:
+        setter = getattr(vae, "set_micro_batch_size", None)
+        if callable(setter):
+            setter(vae_micro_batch_size)
+        else:
+            vae.micro_batch_size = vae_micro_batch_size
+    try:
+        model.inference_cross_kv_reuse = bool(inference_cross_kv_reuse)
+    except AttributeError:
+        # Some lightweight test/proxy objects intentionally do not allow attributes.
+        pass
+    logger.info(
+        "Model execution settings: vae_micro_batch_size=%s inference_cross_kv_reuse=%s",
+        "full" if vae_micro_batch_size is None else vae_micro_batch_size,
+        bool(inference_cross_kv_reuse),
+    )
+    return model
+
+
 def configure_inference_compile(
     model: torch.nn.Module,
     enabled: bool = False,

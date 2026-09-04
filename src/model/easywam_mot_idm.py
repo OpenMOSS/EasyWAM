@@ -401,6 +401,9 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
                 context_mask=context_mask,
                 state=proprio,
             )
+        video_context, action_context, video_cross_kv_cache, action_cross_kv_cache = (
+            self._prepare_inference_cross_attention(context)
+        )
 
         infer_timesteps_video, infer_deltas_video = self.infer_video_scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -418,6 +421,8 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
                 context=context,
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_flag,
+                projected_context=video_context,
+                cross_kv_cache=video_cross_kv_cache,
             )
             latents_video = self.infer_video_scheduler.step(
                 pred_video, step_delta_video, latents_video
@@ -430,9 +435,11 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         video_pre_cond = self.video_expert.pre_dit(
             x=latents_video,
             timestep=timestep_video_cond,
-            context=context,
+            context=video_context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=fuse_flag,
+            context_is_projected=True,
+            cross_kv_cache=video_cross_kv_cache,
         )
         video_seq_len = int(video_pre_cond["tokens"].shape[1])
         attention_mask = self._build_mot_attention_mask(
@@ -448,6 +455,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             video_context_payload={
                 "context": video_pre_cond["context"],
                 "mask": video_pre_cond["context_mask"],
+                "kv_cache": video_pre_cond["cross_kv_cache"],
             },
             video_attention_mask=attention_mask.slice(0, video_seq_len, 0, video_seq_len),
         )
@@ -471,6 +479,8 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
                 video_kv_cache=video_kv_cache,
                 attention_mask=attention_mask,
                 video_seq_len=video_seq_len,
+                action_context=action_context,
+                action_cross_kv_cache=action_cross_kv_cache,
             )
             latents_action = self.infer_action_scheduler.step(
                 pred_action, step_delta_action, latents_action

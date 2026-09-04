@@ -532,6 +532,12 @@ def run_training(cfg: DictConfig):
 
     model_dtype = _mixed_precision_to_model_dtype(mixed_precision)
     model = instantiate(cfg.model, model_dtype=model_dtype, device=str(accelerator.device))
+    from model.helpers.inference import configure_model_execution
+    model = configure_model_execution(
+        model,
+        vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
+        inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
+    )
     train_ds, val_ds = build_datasets(cfg.data)
 
     trainer = EasyWAMTrainer(
@@ -558,6 +564,12 @@ def run_inference(cfg: DictConfig):
     model_dtype = _mixed_precision_to_model_dtype(mixed_precision)
 
     model = instantiate(cfg.model, model_dtype=model_dtype, device=str(inference_cfg.device))
+    from model.helpers.inference import configure_model_execution
+    model = configure_model_execution(
+        model,
+        vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
+        inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
+    )
     checkpoint_path = inference_cfg.get("checkpoint_path")
     if checkpoint_path:
         ckpt = Path(checkpoint_path)

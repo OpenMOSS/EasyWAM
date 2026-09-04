@@ -31,8 +31,17 @@ class CosmosVideoVAE(nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
         self.model = model
+        self.micro_batch_size: int | None = 1
         self.register_buffer("latent_mean", torch.tensor(COSMOS_LATENT_MEAN), persistent=False)
         self.register_buffer("latent_std", torch.tensor(COSMOS_LATENT_STD), persistent=False)
+
+    def set_micro_batch_size(self, value: int | None) -> None:
+        if value is not None and (isinstance(value, bool) or int(value) <= 0):
+            raise ValueError("VAE micro batch size must be a positive integer or None.")
+        self.micro_batch_size = None if value is None else int(value)
+
+    def _chunk_size(self, batch_size: int) -> int:
+        return batch_size if self.micro_batch_size is None else min(self.micro_batch_size, batch_size)
 
     @classmethod
     def from_pretrained(
@@ -79,8 +88,12 @@ class CosmosVideoVAE(nn.Module):
             raise ValueError(f"video frame count must satisfy T % 4 == 1, got {video.shape[2]}")
         if video.shape[3] % 8 or video.shape[4] % 8:
             raise ValueError("video height and width must be divisible by 8.")
-        outputs = [self.model.encode(item[None], self._scale)[0] for item in video]
-        result = torch.stack(outputs)
+        chunk_size = self._chunk_size(int(video.shape[0]))
+        outputs = [
+            self.model.encode(video[start : start + chunk_size], self._scale)
+            for start in range(0, video.shape[0], chunk_size)
+        ]
+        result = outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=0)
         if input_was_list:
             return [item for item in result]
         return result
@@ -98,8 +111,12 @@ class CosmosVideoVAE(nn.Module):
             latents = latents.to(device=device)
         if latents.ndim != 5 or latents.shape[1] != self.latent_channels:
             raise ValueError(f"latents must be [B,16,T,H,W], got {tuple(latents.shape)}")
-        outputs = [self.model.decode(item[None], self._scale)[0] for item in latents]
-        result = torch.stack(outputs).clamp(-1, 1)
+        chunk_size = self._chunk_size(int(latents.shape[0]))
+        outputs = [
+            self.model.decode(latents[start : start + chunk_size], self._scale)
+            for start in range(0, latents.shape[0], chunk_size)
+        ]
+        result = (outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=0)).clamp(-1, 1)
         if input_was_list:
             return [item for item in result]
         return result

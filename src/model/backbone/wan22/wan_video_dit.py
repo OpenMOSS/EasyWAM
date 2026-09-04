@@ -233,10 +233,18 @@ class CrossAttention(nn.Module):
             
         # self.attn = AttentionModule(self.num_heads)
 
-    def forward(self, x: torch.Tensor, ctx: torch.Tensor, ctx_mask: Optional[torch.Tensor] = None):
+    def project_kv(self, ctx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project static cross-attention context once for inference reuse."""
+        return self.norm_k(self.k(ctx)), self.v(ctx)
+
+    def forward_with_projected_kv(
+        self,
+        x: torch.Tensor,
+        projected_kv: tuple[torch.Tensor, torch.Tensor],
+        ctx_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         q = self.norm_q(self.q(x))
-        k = self.norm_k(self.k(ctx))
-        v = self.v(ctx)
+        k, v = projected_kv
         x = run_attention(
             q=q,
             k=k,
@@ -246,6 +254,17 @@ class CrossAttention(nn.Module):
             backend=self.attention_backend,
         )
         return self.o(x)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        ctx: torch.Tensor,
+        ctx_mask: Optional[torch.Tensor] = None,
+        projected_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
+    ):
+        if projected_kv is None:
+            projected_kv = self.project_kv(ctx)
+        return self.forward_with_projected_kv(x, projected_kv, ctx_mask)
 
 
 class GateModule(nn.Module):
@@ -292,6 +311,7 @@ class DiTBlock(nn.Module):
         freqs,
         context_mask=None,
         self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
+        context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ):
         if isinstance(context_mask, torch.Tensor) and context_mask.dim() == 3:
             context_mask = context_mask.unsqueeze(1) # (B, 1, seq_len, context_len), 1 for heads
@@ -308,7 +328,9 @@ class DiTBlock(nn.Module):
             )
         input_x = modulate(self.norm1(x), shift_msa, scale_msa)
         x = self.gate(x, gate_msa, self.self_attn(input_x, freqs, self_attn_mask=self_attn_mask))
-        x = x + self.cross_attn(self.norm3(x), context, ctx_mask=context_mask)
+        x = x + self.cross_attn(
+            self.norm3(x), context, ctx_mask=context_mask, projected_kv=context_kv
+        )
         input_x = modulate(self.norm2(x), shift_mlp, scale_mlp)
         x = self.gate(x, gate_mlp, self.ffn(input_x))
         return x
@@ -451,6 +473,16 @@ class WanVideoDiT(torch.nn.Module):
         self.use_gradient_checkpointing = use_gradient_checkpointing
         if self.use_gradient_checkpointing:
             logger.info("Using gradient checkpointing for DiT blocks. This will save memory but use more computation.")
+
+    def project_context(self, context: torch.Tensor) -> torch.Tensor:
+        return self.text_embedding(context)
+
+    def build_cross_attention_kv_cache(
+        self, projected_context: torch.Tensor
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
+        return tuple(
+            block.cross_attn.project_kv(projected_context) for block in self.blocks
+        )
             
 
     def patchify(self, x: torch.Tensor, control_camera_latents_input: Optional[torch.Tensor] = None):
@@ -474,7 +506,7 @@ class WanVideoDiT(torch.nn.Module):
         timestep: torch.Tensor,
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         if x.ndim != 5:
             raise ValueError(f"`latents` must be 5D [B, C, T, H, W], got shape {tuple(x.shape)}")
         num_latent_frames = x.shape[2]
@@ -482,9 +514,7 @@ class WanVideoDiT(torch.nn.Module):
             raise ValueError(f"`context` must be 3D [B, L, D], got shape {tuple(context.shape)}")
         if timestep.ndim != 1:
             raise ValueError(f"`timestep` must be 1D [B] or [1], got shape {tuple(timestep.shape)}")
-        if context_mask is None:
-            context_mask = torch.ones((context.shape[0], context.shape[1]), dtype=torch.bool, device=context.device)
-        else:
+        if context_mask is not None:
             if context_mask.ndim != 2:
                 raise ValueError(f"`context_mask` must be 2D [B, L], got shape {tuple(context_mask.shape)}")
             if context_mask.shape[0] != context.shape[0] or context_mask.shape[1] != context.shape[1]:
@@ -587,6 +617,9 @@ class WanVideoDiT(torch.nn.Module):
         context_mask: Optional[torch.Tensor] = None,
         fuse_vae_embedding_in_latents: bool = False,
         control_camera_latents_input: Optional[torch.Tensor] = None,
+        context_is_projected: bool = False,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        freqs_override: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         x, timestep, context_mask = self._validate_forward_inputs(
             x=x,
@@ -627,17 +660,19 @@ class WanVideoDiT(torch.nn.Module):
         x = self.patchify(x, control_camera_latents_input=control_camera_latents_input)
         f, h, w = x.shape[2:]
 
-        context = self.text_embedding(context) # (B, L, dim)
+        context = context if context_is_projected else self.project_context(context)
         if context_mask is not None:
             context_mask = context_mask.unsqueeze(1).expand(-1, f * h * w, -1) # (B, seq_len, L)
 
         x_tokens = rearrange(x, "b c f h w -> b (f h w) c").contiguous()
 
-        freqs = torch.cat([
-            self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
-            self.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
-            self.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
-        ], dim=-1).reshape(f * h * w, 1, -1).to(x_tokens.device)
+        freqs = freqs_override
+        if freqs is None:
+            freqs = torch.cat([
+                self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
+                self.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
+                self.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
+            ], dim=-1).reshape(f * h * w, 1, -1).to(x_tokens.device)
 
         return {
             "tokens": x_tokens,
@@ -646,6 +681,7 @@ class WanVideoDiT(torch.nn.Module):
             "t_mod": t_mod,
             "context": context,
             "context_mask": context_mask,
+            "cross_kv_cache": cross_kv_cache,
             "meta": {
                 "grid_size": (f, h, w),
                 "tokens_per_frame": tokens_per_frame,
@@ -668,7 +704,10 @@ class WanVideoDiT(torch.nn.Module):
         state_tokens: torch.Tensor,
         timestep_state: torch.Tensor,
         context: torch.Tensor,
-        context_mask: torch.Tensor,
+        context_mask: Optional[torch.Tensor],
+        context_is_projected: bool = False,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        freqs_override: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         """Prepare heterogeneous tokens using the native Wan staged representation."""
         video = self.pre_dit(
@@ -677,6 +716,9 @@ class WanVideoDiT(torch.nn.Module):
             context=context,
             context_mask=context_mask,
             fuse_vae_embedding_in_latents=True,
+            context_is_projected=context_is_projected,
+            cross_kv_cache=cross_kv_cache,
+            freqs_override=freqs_override,
         )
         video_len = video["tokens"].shape[1]
         action_len = action_tokens.shape[1]
@@ -772,6 +814,11 @@ class WanVideoDiT(torch.nn.Module):
             pre_state["freqs"],
             context_mask=pre_state["context_mask"],
             self_attn_mask=self_attn_mask,
+            context_kv=(
+                None
+                if pre_state.get("cross_kv_cache") is None
+                else pre_state["cross_kv_cache"][layer_index]
+            ),
         )
 
     def forward(

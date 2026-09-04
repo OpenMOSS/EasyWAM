@@ -37,6 +37,12 @@ max_grad_norm: 1.0
 weight_decay: 0.0
 resume: null
 
+# execution
+# 1 preserves per-sample VAE execution; null processes the full batch.
+vae_micro_batch_size: null
+# Reuse static cross-attention projections only within one inference call.
+inference_cross_kv_reuse: true
+
 # wandb
 wandb:
   enabled: false

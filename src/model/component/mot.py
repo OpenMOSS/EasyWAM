@@ -139,6 +139,23 @@ class MoT(nn.Module):
         )
 
     @staticmethod
+    def _context_for_layer(
+        context_payload: Optional[dict], layer_index: int
+    ) -> Optional[dict]:
+        if context_payload is None:
+            return None
+        kv_cache = context_payload.get("kv_cache")
+        if kv_cache is None:
+            return context_payload
+        if len(kv_cache) <= layer_index:
+            raise ValueError("Cross-attention KV cache does not cover every transformer layer.")
+        return {
+            "context": context_payload.get("context"),
+            "mask": context_payload.get("mask"),
+            "kv": kv_cache[layer_index],
+        }
+
+    @staticmethod
     def _apply_expert_post_block(
         block,
         residual_x: torch.Tensor,
@@ -155,9 +172,15 @@ class MoT(nn.Module):
             context = context_payload.get("context")
             if context is not None:
                 context_mask = context_payload.get("mask")
+                context_kv = context_payload.get("kv")
                 if context_mask is not None and context_mask.dim() == 3:
                     context_mask = context_mask.unsqueeze(1)
-                x = x + block.cross_attn(block.norm3(x), context, ctx_mask=context_mask)
+                x = x + block.cross_attn(
+                    block.norm3(x),
+                    context,
+                    ctx_mask=context_mask,
+                    projected_kv=context_kv,
+                )
 
         mlp_input = _modulate(block.norm2(x), shift_mlp, scale_mlp)
         x = block.gate(x, gate_mlp, block.ffn(mlp_input))
@@ -259,8 +282,13 @@ class MoT(nn.Module):
         if hasattr(block, "finish_mixed_attention"):
             context = None if context_payload is None else context_payload.get("context")
             context_mask = None if context_payload is None else context_payload.get("mask")
+            context_kv = None if context_payload is None else context_payload.get("kv")
+            if context_kv is None:
+                return block.finish_mixed_attention(
+                    mixed_slice, residual_x, context, context_mask
+                )
             return block.finish_mixed_attention(
-                mixed_slice, residual_x, context, context_mask
+                mixed_slice, residual_x, context, context_mask, context_kv=context_kv
             )
 
         def _post_fn(
@@ -371,7 +399,7 @@ class MoT(nn.Module):
                 scale_mlp=scale_mlp,
                 gate_mlp=gate_mlp,
                 mixed_slice=mixed,
-                context_payload=video_context_payload,
+                context_payload=self._context_for_layer(video_context_payload, layer_idx),
             )
             kv_cache.append({"k": k, "v": v})
         return kv_cache
@@ -476,7 +504,7 @@ class MoT(nn.Module):
                 scale_mlp=scale_mlp,
                 gate_mlp=gate_mlp,
                 mixed_slice=mixed,
-                context_payload=action_context_payload,
+                context_payload=self._context_for_layer(action_context_payload, layer_idx),
             )
         return x
 
@@ -561,7 +589,9 @@ class MoT(nn.Module):
                         scale_mlp=scale_mlp,
                         gate_mlp=gate_mlp,
                         mixed_slice=mixed[:, start:end, :],
-                        context_payload=context_all.get(name),
+                        context_payload=self._context_for_layer(
+                            context_all.get(name), layer_index
+                        ),
                     ))
                     start = end
                 return tuple(outputs)

@@ -12,6 +12,7 @@ from .component.attention import (
     AttentionSegment,
     StructuredAttentionMask,
     build_structured_attention_mask,
+    elide_fully_valid_attention_mask,
 )
 from .backbone.wan22.loader import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
@@ -183,6 +184,8 @@ class EasyWAMUnified(nn.Module):
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor] = None,
         fuse_vae_embedding_in_latents: bool = True,
+        projected_context: Optional[torch.Tensor] = None,
+        cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         del fuse_vae_embedding_in_latents
         if x.ndim != 5:
@@ -211,9 +214,8 @@ class EasyWAMUnified(nn.Module):
             raise ValueError("Video/action timestep batch size must match input batch size.")
         timestep_state = timestep_action
 
-        if context_mask is None:
-            context_mask = torch.ones((batch_size, context.shape[1]), dtype=torch.bool, device=context.device)
-        context_mask = context_mask.to(device=x.device, dtype=torch.bool)
+        if context_mask is not None:
+            context_mask = context_mask.to(device=x.device, dtype=torch.bool)
 
         action_tokens = self.dit["action_encoder"](action)
         state_tokens = self.dit["state_encoder"](
@@ -232,8 +234,10 @@ class EasyWAMUnified(nn.Module):
             timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
             state_tokens=state_tokens,
             timestep_state=timestep_state.to(device=x.device, dtype=x.dtype),
-            context=context,
+            context=context if projected_context is None else projected_context,
             context_mask=context_mask,
+            context_is_projected=projected_context is not None,
+            cross_kv_cache=cross_kv_cache,
         )
         tokens = pre["tokens"]
         video_len = int(pre["meta"]["video_len"])
@@ -487,8 +491,10 @@ class EasyWAMUnified(nn.Module):
         input_latents = self._encode_video_latents(input_video)
         first_frame_latents = input_latents[:, :, 0:1]
 
+        context_mask = elide_fully_valid_attention_mask(context_mask)
         context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if context_mask is not None:
+            context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
         action = action.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
         state = state[:, 0:1].to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
 
@@ -693,6 +699,12 @@ class EasyWAMUnified(nn.Module):
         latents_video[:, :, 0:1] = first_frame_latents
         state = proprio[:, 0:1].to(device=self.device, dtype=self.torch_dtype)
         context, context_mask = self._prepare_context(prompt, context, context_mask)
+        projected_context = self.video_dit.project_context(context)
+        cross_kv_cache = None
+        if bool(getattr(self, "inference_cross_kv_reuse", False)):
+            cross_kv_cache = self.video_dit.build_cross_attention_kv_cache(
+                projected_context
+            )
 
         infer_timesteps, infer_deltas = self.scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -713,6 +725,8 @@ class EasyWAMUnified(nn.Module):
                 state=state,
                 context=context,
                 context_mask=context_mask,
+                projected_context=projected_context,
+                cross_kv_cache=cross_kv_cache,
             )
             pred_video[:, :, 0:1] = 0
             if isinstance(self.scheduler, FlowUniPCScheduler):
