@@ -42,6 +42,7 @@ class EasyWAMHidden(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
     ):
         super().__init__()
         self.backbone_name = getattr(video_dit, "backbone_name", "wan22")
@@ -89,6 +90,7 @@ class EasyWAMHidden(nn.Module):
         self.device = torch.device(device)
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
+        self.loss_lambda_action = float(loss_lambda_action)
 
         self.train_video_scheduler = ContinuousFlowMatchScheduler(
             num_train_timesteps=video_num_train_timesteps,
@@ -347,6 +349,7 @@ class EasyWAMHidden(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
     ) -> "EasyWAMHidden":
         from .backbone.loader import load_easywam_backbone, normalize_backbone_config
 
@@ -386,6 +389,7 @@ class EasyWAMHidden(nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
         )
         model.backbone_name = cfg["name"]
         if cfg["name"] == "cosmos25":
@@ -439,6 +443,7 @@ class EasyWAMHidden(nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
     ) -> "EasyWAMHidden":
         if video_dit_config is None or action_dit_config is None:
             raise ValueError(
@@ -492,6 +497,7 @@ class EasyWAMHidden(nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
         )
         model.model_paths = {
             "video_dit": components.dit_path,
@@ -814,11 +820,11 @@ class EasyWAMHidden(nn.Module):
         )
         loss_action = (action_loss_per_sample * action_weight).mean()
 
-        loss_total = loss_action + self.loss_lambda_video * loss_video
+        loss_total = self.loss_lambda_action * loss_action + self.loss_lambda_video * loss_video
         return loss_total, {
             "loss_video": loss_video.detach(),
             "loss_action": loss_action.detach(),
-            "weighted_loss_action": loss_action.detach(),
+            "weighted_loss_action": loss_action.detach() * self.loss_lambda_action,
             "weighted_loss_video": loss_video.detach() * self.loss_lambda_video,
         }
 

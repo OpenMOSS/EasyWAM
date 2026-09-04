@@ -289,11 +289,11 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         )
         loss_action = (action_loss_per_sample * action_weight).mean()
 
-        loss_total = loss_action + self.loss_lambda_video * loss_video
+        loss_total = self.loss_lambda_action * loss_action + self.loss_lambda_video * loss_video
         loss_dict = {
             "loss_video": loss_video.detach(),
             "loss_action": loss_action.detach(),
-            "weighted_loss_action": loss_action.detach(),
+            "weighted_loss_action": loss_action.detach() * self.loss_lambda_action,
             "weighted_loss_video": loss_video.detach() * self.loss_lambda_video,
         }
         return loss_total, loss_dict

@@ -41,6 +41,7 @@ class EasyWAMUnified(nn.Module):
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
         super().__init__()
@@ -88,6 +89,7 @@ class EasyWAMUnified(nn.Module):
         self.device = torch.device(device)
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
+        self.loss_lambda_action = float(loss_lambda_action)
         self.infer_shift = float(video_infer_shift)
 
         scheduler_cfg = dict(video_scheduler_config or {})
@@ -280,6 +282,7 @@ class EasyWAMUnified(nn.Module):
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ) -> "EasyWAMUnified":
         from .backbone.loader import load_easywam_backbone, normalize_backbone_config
@@ -308,6 +311,7 @@ class EasyWAMUnified(nn.Module):
             video_infer_shift=video_infer_shift,
             video_num_train_timesteps=video_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
             video_scheduler_config=video_scheduler_config,
         )
         model.backbone_name = cfg["name"]
@@ -337,6 +341,7 @@ class EasyWAMUnified(nn.Module):
         video_infer_shift: float = 5.0,
         video_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
         if video_dit_config is None:
@@ -371,6 +376,7 @@ class EasyWAMUnified(nn.Module):
             video_infer_shift=video_infer_shift,
             video_num_train_timesteps=video_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
             video_scheduler_config=video_scheduler_config,
         )
         model.model_paths = {
@@ -586,11 +592,11 @@ class EasyWAMUnified(nn.Module):
         )
         loss_action = (action_loss_per_sample * action_weight).mean()
 
-        loss_total = loss_action + self.loss_lambda_video * loss_video
+        loss_total = self.loss_lambda_action * loss_action + self.loss_lambda_video * loss_video
         loss_dict = {
             "loss_video": loss_video.detach(),
             "loss_action": loss_action.detach(),
-            "weighted_loss_action": loss_action.detach(),
+            "weighted_loss_action": loss_action.detach() * self.loss_lambda_action,
             "weighted_loss_video": loss_video.detach() * self.loss_lambda_video,
         }
         return loss_total, loss_dict

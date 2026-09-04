@@ -239,6 +239,7 @@ def _create_easywam_mot(
         action_infer_shift=float(action_scheduler["infer_shift"]),
         action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        loss_lambda_action=float(loss.get("lambda_action", 1.0)),
         **model_init_kwargs,
     )
     return _apply_video_dit_lora(model, lora)
@@ -302,6 +303,7 @@ def create_easywam_unified(
             video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
             video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
             loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
             video_scheduler_config=video_scheduler,
         )
         return _apply_video_dit_lora(model, lora)
@@ -347,6 +349,7 @@ def create_easywam_unified(
         video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
         video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        loss_lambda_action=float(loss.get("lambda_action", 1.0)),
         video_scheduler_config=video_scheduler,
     )
     return _apply_video_dit_lora(model, lora)
@@ -402,6 +405,7 @@ def create_easywam_hidden(
             action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
             action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
             loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
         )
         return _apply_video_dit_lora(model, lora)
 
@@ -484,6 +488,7 @@ def create_easywam_hidden(
         action_infer_shift=float(action_scheduler["infer_shift"]),
         action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        loss_lambda_action=float(loss.get("lambda_action", 1.0)),
     )
     return _apply_video_dit_lora(model, lora)
 

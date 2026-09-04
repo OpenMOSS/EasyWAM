@@ -33,3 +33,4 @@ action_scheduler:
 
 loss:
   lambda_video: 1.0
+  lambda_action: 1.0

@@ -239,6 +239,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_infer_shift: float = 5.0,
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
+        loss_lambda_action: float = 1.0,
         **model_init_kwargs: Any,
     ):
         from .backbone.wan22.loader import load_wan22_ti2v_5b_components
@@ -297,6 +298,7 @@ class EasyWAMMoT(torch.nn.Module):
             action_infer_shift=action_infer_shift,
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
+            loss_lambda_action=loss_lambda_action,
             **model_init_kwargs,
         )
         model.model_paths = {
