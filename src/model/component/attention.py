@@ -14,6 +14,7 @@ logger = get_logger(__name__)
 ATTENTION_BACKENDS = ("sdpa", "fa2", "fa3", "fa4", "auto")
 AUTO_ATTENTION_BACKENDS = ("fa4", "fa3", "fa2", "sdpa")
 _FLASH_KERNELS: dict[str, Callable] = {}
+_FLASH_VARLEN_KERNELS: dict[str, Callable] = {}
 _LOGGED_SELECTIONS: set[tuple[str, str]] = set()
 
 
@@ -39,6 +40,50 @@ class AttentionSegment:
     query_start: int
     query_end: int
     key_ranges: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class KeyPaddingMask:
+    valid: torch.Tensor
+    indices: torch.Tensor
+    cu_seqlens: torch.Tensor
+    max_seqlen: int
+
+    @classmethod
+    def from_tensor(cls, mask: torch.Tensor) -> "KeyPaddingMask":
+        if mask.ndim != 2:
+            raise ValueError(f"Key padding mask must be [B, K], got {tuple(mask.shape)}.")
+        valid = mask.to(dtype=torch.bool)
+        lengths = valid.sum(dim=1, dtype=torch.int32)
+        if bool((lengths == 0).any().item()):
+            raise ValueError("Every sequence must contain at least one valid key token.")
+        indices = torch.nonzero(valid.reshape(-1), as_tuple=False).flatten()
+        cu_seqlens = F.pad(torch.cumsum(lengths, dim=0, dtype=torch.int32), (1, 0))
+        return cls(valid, indices, cu_seqlens, int(lengths.max().item()))
+
+    @property
+    def ndim(self) -> int:
+        return 2
+
+    @property
+    def shape(self) -> torch.Size:
+        return self.valid.shape
+
+    @property
+    def is_fully_valid(self) -> bool:
+        return self.indices.numel() == self.valid.numel()
+
+    def dim(self) -> int:
+        return 2
+
+    def to(self, *args, **kwargs) -> "KeyPaddingMask":
+        valid = self.valid.to(*args, **kwargs)
+        device = valid.device
+        indices = self.indices.to(device=device)
+        cu_seqlens = self.cu_seqlens.to(device=device)
+        if valid is self.valid and indices is self.indices and cu_seqlens is self.cu_seqlens:
+            return self
+        return KeyPaddingMask(valid, indices, cu_seqlens, self.max_seqlen)
 
 
 @dataclass(frozen=True)
@@ -163,13 +208,19 @@ def build_structured_attention_mask(
     return StructuredAttentionMask(dense=dense, segments=normalized_segments)
 
 
-def dense_attention_mask(mask: Optional[torch.Tensor | StructuredAttentionMask]) -> Optional[torch.Tensor]:
-    return mask.dense if isinstance(mask, StructuredAttentionMask) else mask
+def dense_attention_mask(
+    mask: Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask],
+) -> Optional[torch.Tensor]:
+    if isinstance(mask, StructuredAttentionMask):
+        return mask.dense
+    if isinstance(mask, KeyPaddingMask):
+        return mask.valid[:, None, None, :]
+    return mask
 
 
 def elide_fully_valid_attention_mask(
-    mask: Optional[torch.Tensor | StructuredAttentionMask],
-) -> Optional[torch.Tensor | StructuredAttentionMask]:
+    mask: Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask],
+) -> Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask]:
     """Drop a boolean all-True mask because it imposes no attention constraint.
 
     Call this once while preparing an attention payload rather than once per
@@ -179,6 +230,8 @@ def elide_fully_valid_attention_mask(
     if mask is None:
         return mask
     if isinstance(mask, StructuredAttentionMask):
+        return None if mask.is_fully_valid else mask
+    if isinstance(mask, KeyPaddingMask):
         return None if mask.is_fully_valid else mask
     # Never inspect a CUDA tensor from Python here: `.item()` would serialize the
     # host with every denoising step. Common callers normalize masks while they
@@ -200,7 +253,11 @@ def _load_flash_kernel(backend: str) -> Callable:
         if backend == "fa2":
             kernel = import_module("flash_attn").flash_attn_func
         elif backend == "fa3":
-            kernel = import_module("flash_attn_interface").flash_attn_func
+            try:
+                module = import_module("flash_attn_interface")
+            except ImportError:
+                module = import_module("flash_attn_3.flash_attn_interface")
+            kernel = module.flash_attn_func
         elif backend == "fa4":
             kernel = import_module("flash_attn.cute").flash_attn_func
         else:
@@ -211,6 +268,29 @@ def _load_flash_kernel(backend: str) -> Callable:
             f"attention_backend={backend!r} requires {package} and its flash_attn_func API."
         ) from exc
     _FLASH_KERNELS[backend] = kernel
+    return kernel
+
+
+def _load_flash_varlen_kernel(backend: str) -> Callable:
+    if backend in _FLASH_VARLEN_KERNELS:
+        return _FLASH_VARLEN_KERNELS[backend]
+    try:
+        if backend == "fa2":
+            kernel = import_module("flash_attn").flash_attn_varlen_func
+        elif backend == "fa3":
+            try:
+                module = import_module("flash_attn_interface")
+            except ImportError:
+                module = import_module("flash_attn_3.flash_attn_interface")
+            kernel = module.flash_attn_varlen_func
+        elif backend == "fa4":
+            kernel = import_module("flash_attn.cute").flash_attn_varlen_func
+        else:
+            raise ValueError(f"No external variable-length kernel for backend: {backend}")
+    except (ImportError, AttributeError) as exc:
+        package = {"fa2": "flash-attn", "fa3": "flash_attn_interface", "fa4": "flash-attn-4"}[backend]
+        raise ImportError(f"{package} does not provide flash_attn_varlen_func.") from exc
+    _FLASH_VARLEN_KERNELS[backend] = kernel
     return kernel
 
 
@@ -264,6 +344,71 @@ def _call_external_flash(
     return output
 
 
+def _call_external_flash_varlen(
+    backend: str,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    mask: KeyPaddingMask,
+) -> torch.Tensor:
+    batch_size, query_len, num_heads, head_dim = q.shape
+    if mask.shape != k.shape[:2]:
+        raise ValueError(
+            f"Key padding mask shape must match K/V [B, K], got {tuple(mask.shape)} "
+            f"and {tuple(k.shape[:2])}."
+        )
+    packed_q = q.reshape(batch_size * query_len, num_heads, head_dim)
+    flat_k = k.reshape(-1, num_heads, head_dim)
+    flat_v = v.reshape(-1, num_heads, head_dim)
+    packed_k = flat_k.index_select(0, mask.indices)
+    packed_v = flat_v.index_select(0, mask.indices)
+    cu_seqlens_q = torch.arange(
+        0,
+        (batch_size + 1) * query_len,
+        query_len,
+        dtype=torch.int32,
+        device=q.device,
+    )
+    kernel = _load_flash_varlen_kernel(backend)
+    if backend == "fa2":
+        output = kernel(
+            packed_q,
+            packed_k,
+            packed_v,
+            cu_seqlens_q,
+            mask.cu_seqlens,
+            query_len,
+            mask.max_seqlen,
+            dropout_p=0.0,
+            causal=False,
+        )
+    elif backend == "fa3":
+        output = kernel(
+            packed_q,
+            packed_k,
+            packed_v,
+            cu_seqlens_q,
+            mask.cu_seqlens,
+            query_len,
+            mask.max_seqlen,
+            causal=False,
+        )
+    else:
+        output = kernel(
+            packed_q,
+            packed_k,
+            packed_v,
+            cu_seqlens_q=cu_seqlens_q,
+            cu_seqlens_k=mask.cu_seqlens,
+            max_seqlen_q=query_len,
+            max_seqlen_k=mask.max_seqlen,
+            causal=False,
+        )
+    if isinstance(output, tuple):
+        output = output[0]
+    return output.reshape(batch_size, query_len, num_heads, -1)
+
+
 def _segmented_flash_attention(
     backend: str,
     q: torch.Tensor,
@@ -300,7 +445,7 @@ def _sdpa_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    attention_mask: Optional[torch.Tensor | StructuredAttentionMask],
+    attention_mask: Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask],
 ) -> torch.Tensor:
     mask = dense_attention_mask(attention_mask)
     if mask is not None:
@@ -329,7 +474,7 @@ def run_attention(
     k: torch.Tensor,
     v: torch.Tensor,
     num_heads: int,
-    attention_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
+    attention_mask: Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask] = None,
     backend: str = "sdpa",
 ) -> torch.Tensor:
     if q.ndim != 3 or k.ndim != 3 or v.ndim != 3:
@@ -338,6 +483,11 @@ def run_attention(
         raise ValueError("q/k/v batch and hidden dimensions must match.")
     if q.shape[2] % num_heads != 0:
         raise ValueError(f"Attention width {q.shape[2]} is not divisible by num_heads={num_heads}.")
+    if isinstance(attention_mask, KeyPaddingMask):
+        if attention_mask.is_fully_valid:
+            attention_mask = None
+        elif attention_mask.valid.device != q.device:
+            attention_mask = attention_mask.to(device=q.device)
 
     head_dim = q.shape[2] // num_heads
     q_heads = q.reshape(q.shape[0], q.shape[1], num_heads, head_dim)
@@ -346,13 +496,25 @@ def run_attention(
     requested = normalize_attention_backend(backend)
     selected = _resolve_backend(requested, q_heads)
     use_external = selected != "sdpa" and (
-        attention_mask is None or isinstance(attention_mask, StructuredAttentionMask)
+        attention_mask is None
+        or isinstance(attention_mask, (StructuredAttentionMask, KeyPaddingMask))
     )
+    if use_external and isinstance(attention_mask, KeyPaddingMask):
+        try:
+            _load_flash_varlen_kernel(selected)
+        except ImportError:
+            use_external = False
     execution_backend = selected if use_external else "sdpa"
+    if use_external and isinstance(attention_mask, KeyPaddingMask):
+        execution_backend = f"{selected}-varlen"
     _log_selection(requested, execution_backend)
 
     if use_external and attention_mask is None:
         output = _call_external_flash(selected, q_heads, k_heads, v_heads)
+    elif use_external and isinstance(attention_mask, KeyPaddingMask):
+        output = _call_external_flash_varlen(
+            selected, q_heads, k_heads, v_heads, attention_mask
+        )
     elif use_external and isinstance(attention_mask, StructuredAttentionMask):
         output = _segmented_flash_attention(selected, q_heads, k_heads, v_heads, attention_mask)
     else:

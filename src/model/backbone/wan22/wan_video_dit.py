@@ -9,6 +9,7 @@ from ..protocol import BLOCK_PROTOCOL_MAIN
 from ...helpers.gradient import gradient_checkpoint_forward
 from ...component.attention import (
     AttentionSegment,
+    KeyPaddingMask,
     StructuredAttentionMask,
     build_structured_attention_mask,
     elide_fully_valid_attention_mask,
@@ -571,6 +572,8 @@ class WanVideoDiT(torch.nn.Module):
             context_mask=context_mask,
         )
         context_mask = elide_fully_valid_attention_mask(context_mask)
+        if isinstance(context_mask, torch.Tensor):
+            context_mask = KeyPaddingMask.from_tensor(context_mask)
 
         batch_size = x.shape[0]
         patch_h = int(self.patch_size[1])
@@ -604,9 +607,6 @@ class WanVideoDiT(torch.nn.Module):
         f, h, w = x.shape[2:]
 
         context = context if context_is_projected else self.project_context(context)
-        if context_mask is not None:
-            context_mask = context_mask.unsqueeze(1).expand(-1, f * h * w, -1) # (B, seq_len, L)
-
         x_tokens = rearrange(x, "b c f h w -> b (f h w) c").contiguous()
 
         freqs = freqs_override
@@ -715,7 +715,11 @@ class WanVideoDiT(torch.nn.Module):
                 )
             )
         else:
-            compact = original_context_mask[:, 0, :]
+            compact = (
+                original_context_mask.valid
+                if isinstance(original_context_mask, KeyPaddingMask)
+                else original_context_mask[:, 0, :]
+            )
             joint = compact.unsqueeze(1).expand(-1, tokens.shape[1], -1).clone()
             if state_len:
                 joint[:, -state_len:, :] = False

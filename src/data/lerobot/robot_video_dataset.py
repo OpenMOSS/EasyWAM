@@ -305,7 +305,6 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         context = payload["context"]
         context_mask = payload["mask"].bool()
         context[~context_mask] = 0
-        context_mask = torch.ones_like(context_mask)
         return context, context_mask
 
     def __getitem__(self, idx):

@@ -358,11 +358,6 @@ class EasyWAMMoT(torch.nn.Module):
         ids = ids.to(self.device)
         mask = mask.to(self.device, dtype=torch.bool)
         prompt_emb = self.text_encoder(ids, mask)
-        # Preserve the checkpoint's all-valid mask behavior after zeroing padding.
-        seq_lens = mask.gt(0).sum(dim=1).long()
-        for i, v in enumerate(seq_lens):
-            prompt_emb[i, v:] = 0
-        mask = torch.ones_like(mask)
         return prompt_emb.to(device=self.device), mask
 
     def _append_state_to_context(

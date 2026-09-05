@@ -107,6 +107,7 @@ class Cosmos25TextEncoder(nn.Module):
         attention_mask = attention_mask.to(device)
         outputs = self.model(
             input_ids=input_ids,
+            attention_mask=attention_mask,
             output_hidden_states=True,
             return_dict=True,
             use_cache=False,
@@ -133,7 +134,7 @@ class Cosmos25TextEncoder(nn.Module):
             )
         if self._projector is not None:
             context = self._projector(context)
-        model_mask = torch.ones_like(attention_mask, dtype=torch.bool)
+        model_mask = attention_mask.to(torch.bool)
         if return_token_mask:
             return context, model_mask, attention_mask.to(torch.bool)
         return context, model_mask

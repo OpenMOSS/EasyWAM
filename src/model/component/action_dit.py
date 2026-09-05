@@ -14,7 +14,7 @@ from ..backbone.wan22.wan_video_dit import (
     sinusoidal_embedding_1d,
     precompute_freqs_cis,
 )
-from .attention import elide_fully_valid_attention_mask, require_attention_backend
+from .attention import KeyPaddingMask, elide_fully_valid_attention_mask, require_attention_backend
 
 logger = get_logger(__name__)
 
@@ -375,7 +375,7 @@ class ActionDiT(nn.Module):
         context_attn_mask = (
             None
             if context_mask is None
-            else context_mask.unsqueeze(1).expand(-1, seq_len, -1)
+            else KeyPaddingMask.from_tensor(context_mask)
         )
         freqs = self.freqs[:seq_len].view(seq_len, 1, -1).to(tokens.device)
 

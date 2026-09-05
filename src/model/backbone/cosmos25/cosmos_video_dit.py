@@ -13,8 +13,10 @@ from torch.utils.checkpoint import checkpoint
 from ..protocol import BLOCK_PROTOCOL_MAIN
 from ...component.attention import (
     AttentionSegment,
+    KeyPaddingMask,
     StructuredAttentionMask,
     build_structured_attention_mask,
+    elide_fully_valid_attention_mask,
     normalize_attention_backend,
     run_attention,
 )
@@ -547,9 +549,9 @@ class Cosmos25VideoDiT(nn.Module):
         context = (
             context if context_is_projected else self.project_context(context)
         ).to(dtype=tokens.dtype)
-        # Native Cosmos cross-attention is mask-free, which also preserves FA4.
-        del context_mask
-        context_mask = None
+        context_mask = elide_fully_valid_attention_mask(context_mask)
+        if isinstance(context_mask, torch.Tensor):
+            context_mask = KeyPaddingMask.from_tensor(context_mask)
         features = self._timestep_features(timestep, self.config.hidden_size).to(tokens.dtype)
         frame_t, frame_adaln = self.t_embedder[1](features)
         frame_t = self.t_embedding_norm(frame_t)
@@ -676,7 +678,12 @@ class Cosmos25VideoDiT(nn.Module):
                 )
             )
         else:
-            joint_context_mask = context_mask.to(torch.bool)[:, None].expand(-1, tokens.shape[1], -1).clone()
+            compact_context_mask = (
+                video["context_mask"].valid
+                if isinstance(video["context_mask"], KeyPaddingMask)
+                else context_mask.to(torch.bool)
+            )
+            joint_context_mask = compact_context_mask[:, None].expand(-1, tokens.shape[1], -1).clone()
             if state_tokens.shape[1]:
                 joint_context_mask[:, -state_tokens.shape[1]:] = False
         video["tokens"] = tokens

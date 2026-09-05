@@ -5,7 +5,7 @@ from typing import Any
 import torch
 
 
-TEXT_EMBEDDING_CACHE_VERSION = 2
+TEXT_EMBEDDING_CACHE_VERSION = 3
 DEFAULT_TEXT_ENCODER_ID = "wan22ti2v5b"
 
 
@@ -67,7 +67,8 @@ def validate_text_embedding_payload(
     if "format_version" in payload and int(payload["format_version"]) != TEXT_EMBEDDING_CACHE_VERSION:
         raise ValueError(
             "Text embedding cache format version mismatch: "
-            f"expected {TEXT_EMBEDDING_CACHE_VERSION}, got {payload['format_version']}."
+            f"expected {TEXT_EMBEDDING_CACHE_VERSION}, got {payload['format_version']}. "
+            "Regenerate text embeddings with overwrite=true."
         )
     if "encoder_id" in payload and str(payload["encoder_id"]) != str(expected_encoder_id):
         raise ValueError(
