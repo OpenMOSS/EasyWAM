@@ -231,8 +231,12 @@ def load_tasks(local_dir: Path) -> tuple[dict[int, str], dict[str, int]]:
             f"or the dataframe index: {path}"
         )
 
-    tasks = {int(index): str(task) for index, task in zip(frame["task_index"], task_names, strict=True)}
-    if len(tasks) != len(frame):
+    task_rows = [
+        (int(index), str(task))
+        for index, task in zip(frame["task_index"], task_names, strict=True)
+    ]
+    tasks = dict(sorted(task_rows))
+    if len(tasks) != len(task_rows):
         raise ValueError(f"LeRobot v3 task metadata contains duplicate task indices: {path}")
     return tasks, {task: index for index, task in tasks.items()}
 

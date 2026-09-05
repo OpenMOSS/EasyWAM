@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import re
@@ -13,6 +12,7 @@ from omegaconf import DictConfig, ListConfig
 from tqdm import tqdm
 
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
+from data.lerobot.lerobot.datasets.utils import load_info, load_tasks, load_tasks_v21
 from data.lerobot.text_embedding_cache import (
     build_text_embedding_payload,
     prompt_hash,
@@ -121,24 +121,24 @@ def _read_unique_prompts(dataset_dirs: list[str]) -> list[str]:
     total_task_rows = 0
 
     for ds_dir in dataset_dirs:
-        tasks_path = Path(ds_dir) / "meta" / "tasks.jsonl"
-        if not tasks_path.exists():
-            raise FileNotFoundError(f"Missing tasks file: {tasks_path}")
+        root = Path(ds_dir)
+        version = str(load_info(root).get("codebase_version"))
+        if version == "v3.0":
+            tasks, _ = load_tasks(root)
+        elif version == "v2.1":
+            tasks, _ = load_tasks_v21(root)
+        else:
+            raise ValueError(
+                f"Unsupported LeRobot dataset version {version!r} at {root}; "
+                "expected v3.0 or v2.1."
+            )
 
-        with tasks_path.open("r", encoding="utf-8") as f:
-            for line_idx, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                record = json.loads(line)
-                if "task" not in record:
-                    raise KeyError(f"Missing `task` field at {tasks_path}:{line_idx}")
-                task = str(record["task"])
-                prompt = DEFAULT_PROMPT.format(task=task)
-                total_task_rows += 1
-                if prompt not in seen:
-                    seen.add(prompt)
-                    prompts.append(prompt)
+        for task in tasks.values():
+            prompt = DEFAULT_PROMPT.format(task=str(task))
+            total_task_rows += 1
+            if prompt not in seen:
+                seen.add(prompt)
+                prompts.append(prompt)
 
     logger.info(
         "Loaded %d task rows from %d datasets, deduplicated to %d prompts.",
@@ -205,7 +205,7 @@ def main(cfg: DictConfig):
             raise ValueError("No `dataset_dirs` found under `cfg.data`.")
         prompts = _read_unique_prompts(dataset_dirs)
     if not prompts:
-        logger.warning("No prompts found from tasks.jsonl; nothing to do.")
+        logger.warning("No prompts found in the configured datasets; nothing to do.")
         return
 
     if torch.cuda.is_available():
@@ -362,9 +362,7 @@ def main(cfg: DictConfig):
                     hashed = prompt_hash(prompt)
                     context_i = context[i].detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
                     mask_i = mask[i].detach().to(device="cpu", dtype=torch.bool).contiguous()
-                    if backbone_name != "cosmos25":
-                        context_i[~mask_i] = 0
-                        mask_i = torch.ones_like(mask_i)
+                    context_i[~mask_i] = 0
                     payload = build_text_embedding_payload(
                         context=context_i,
                         mask=mask_i,
