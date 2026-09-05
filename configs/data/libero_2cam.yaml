@@ -1,28 +1,24 @@
 train:
   _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/libero_mujoco3.3.2/libero_spatial_no_noops_lerobot
-    - ./data/libero_mujoco3.3.2/libero_object_no_noops_lerobot
-    - ./data/libero_mujoco3.3.2/libero_goal_no_noops_lerobot
-    - ./data/libero_mujoco3.3.2/libero_10_no_noops_lerobot
+    - ./data/libero-lerobot-v3.0/libero_spatial
+    - ./data/libero-lerobot-v3.0/libero_object
+    - ./data/libero-lerobot-v3.0/libero_goal
+    - ./data/libero-lerobot-v3.0/libero_10
   shape_meta:
     images:
       - key: image
-      # - key: observation.images.image
         raw_shape: [3, 512, 512]
         shape: [3, 224, 224]
       - key: wrist_image
-      # - key: observation.images.wrist_image
         raw_shape: [3, 512, 512]
         shape: [3, 224, 224]
     action:
       - key: default
-      # - key: action
         raw_shape: 7 # before transform
         shape: 7 # after transform
     state:
       - key: default
-      # - key: observation.state
         raw_shape: 8 # before transform
         shape: 8 # after transform
   num_frames: 33
@@ -44,10 +40,7 @@ train:
     delta_action_dim_mask:
       default: [true, true, true, true, true, true, false] # eef poses are delta, gripper is not
 
-    # action & state normalization
     action_state_transforms: null
-    # action_state_transforms:
-    #   - _target_: data.lerobot.transforms.libero.LiberoTransform
     use_stepwise_action_norm: False
     norm_default_mode: min/max
     norm_exception_mode: null

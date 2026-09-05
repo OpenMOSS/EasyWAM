@@ -1,7 +1,7 @@
 train:
   _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/robotwin2.0/robotwin2.0
+    - ./data/robotwin2.0-lerobot-v3.0
   shape_meta:
     images:
       - key: cam_high
@@ -28,7 +28,7 @@ train:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: true
-  pretrained_norm_stats: ./data/robotwin2.0/dataset_stats.json
+  pretrained_norm_stats: ./data/robotwin2.0-lerobot-v3.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:
@@ -39,10 +39,7 @@ train:
     action_output_dim: 14
     proprio_output_dim: 14
 
-    # action & state normalization
     action_state_transforms: null
-    # action_state_transforms:
-    #   - _target_: data.lerobot.transforms.libero.LiberoTransform
     use_stepwise_action_norm: False
     norm_default_mode: "z-score"
     norm_exception_mode: null
@@ -65,7 +62,7 @@ train:
 val:
   _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/robotwin2.0/robotwin2.0/
+    - ./data/robotwin2.0-lerobot-v3.0/
   shape_meta:
     images:
       - key: cam_high
@@ -92,7 +89,7 @@ val:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: false
-  pretrained_norm_stats: ./data/robotwin2.0/dataset_stats.json
+  pretrained_norm_stats: ./data/robotwin2.0-lerobot-v3.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:
@@ -103,10 +100,7 @@ val:
     action_output_dim: 14
     proprio_output_dim: 14
 
-    # action & state normalization
     action_state_transforms: null
-    # action_state_transforms:
-    #   - _target_: data.lerobot.transforms.libero.LiberoTransform
     use_stepwise_action_norm: False
     norm_default_mode: "z-score"
     norm_exception_mode: null

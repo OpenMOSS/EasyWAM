@@ -17,16 +17,25 @@ cat robotwin2.0.tar.gz.part-* | tar -xzf -
 cd ../..
 ```
 
+将解压得到的 LeRobot v2.1 数据转换为 v3.0（原目录会保留）：
+
+```bash
+python scripts/convert_lerobot_v21_to_v30.py \
+  --output-root data --suffix=-lerobot-v3.0 \
+  data/robotwin2.0/robotwin2.0
+```
+
 默认的 `configs/data/robotwin.yaml` 使用以下目录：
 
 ```text
-data/robotwin2.0/
+data/robotwin2.0-lerobot-v3.0/
+├── data/
 ├── dataset_stats.json
-└── robotwin2.0/
-    ├── data/
-    ├── meta/
-    └── videos/
+├── meta/
+└── videos/
 ```
+
+加载器仍兼容 v2.1 路径，已有自定义配置无需立即迁移。
 
 数据管线会把 high camera 和两个 wrist camera 组合为 384×320 视频，保留全部 33 个 action/state 时间步，并稀疏解码 9 帧视频。
 
@@ -56,7 +65,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
   task=robotwin_easywam_mot_cosmos25
 ```
 
-默认数据配置从 `data/robotwin2.0/dataset_stats.json` 加载归一化统计。如果使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
+默认数据配置从 `data/robotwin2.0-lerobot-v3.0/dataset_stats.json` 加载归一化统计。如果使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
 
 ## 评测
 
@@ -66,7 +75,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
-  EVALUATION.dataset_stats_path=./data/robotwin2.0/dataset_stats.json \
+  EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
   MULTIRUN.max_tasks_per_gpu=2
 ```

@@ -17,6 +17,8 @@
 | 归一化 | `norm_default_mode`、`norm_exception_mode`、`use_stepwise_action_norm`、可选 transform |
 | 数据划分 | `val_set_proportion`、`is_training_set`、`skip_padding_as_possible` |
 
+`dataset_dirs` 支持本地 LeRobot v3.0 数据集和旧版 v2.1 数据集。加载器会根据每个目录的 `meta/info.json` 独立识别格式，因此同一次训练可以混用两个版本。新数据推荐使用 v3.0；当前加载器不负责 Hub 流式读取/下载，也不提供数据录制或格式转换。
+
 `num_frames` 是 action/state 序列长度，`action_video_freq_ratio` 从该序列稀疏选择视频时间点。例如，仓库中的 33 步数据配合比例 `4`，对应 32 个未来动作和包括观测帧在内的 9 帧视频。修改任意一项都会改变训练张量形状，并且必须与评测 horizon 兼容。
 
 每个图像条目包含源 `raw_shape` 和 transform 后的 `shape`。Resize transform、`shape`、最终 `video_size`、相机拼接方式和 `num_output_cameras` 必须描述同一个布局。LIBERO 横向拼接两个 224×224 相机；RoboTwin 使用三相机组合方式。

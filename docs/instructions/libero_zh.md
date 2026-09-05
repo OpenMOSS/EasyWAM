@@ -23,15 +23,26 @@ done
 cd ../..
 ```
 
+将下载得到的 LeRobot v2.1 数据转换为 v3.0（原目录会保留）：
+
+```bash
+python scripts/convert_lerobot_v21_to_v30.py \
+  --output-root data/libero-lerobot-v3.0 --suffix '' \
+  --strip-source-suffix _no_noops_lerobot \
+  data/libero_mujoco3.3.2/libero_{spatial,object,goal,10}_no_noops_lerobot
+```
+
 默认的 `configs/data/libero_2cam.yaml` 使用以下目录：
 
 ```text
-data/libero_mujoco3.3.2/
-├── libero_10_no_noops_lerobot/
-├── libero_goal_no_noops_lerobot/
-├── libero_object_no_noops_lerobot/
-└── libero_spatial_no_noops_lerobot/
+data/libero-lerobot-v3.0/
+├── libero_10/
+├── libero_goal/
+├── libero_object/
+└── libero_spatial/
 ```
+
+加载器仍兼容 v2.1 路径，已有自定义配置无需立即迁移。
 
 数据管线会在 224 px 分辨率下横向拼接 agent 和 wrist 两个相机，保留全部 33 个 action/state 时间步，同时仅解码 `[0, 4, ..., 32]` 对应的 9 帧视频。
 

@@ -17,16 +17,25 @@ cat robotwin2.0.tar.gz.part-* | tar -xzf -
 cd ../..
 ```
 
+Convert the extracted LeRobot v2.1 dataset to v3.0 (the source directory is preserved):
+
+```bash
+python scripts/convert_lerobot_v21_to_v30.py \
+  --output-root data --suffix=-lerobot-v3.0 \
+  data/robotwin2.0/robotwin2.0
+```
+
 The default `configs/data/robotwin.yaml` expects:
 
 ```text
-data/robotwin2.0/
+data/robotwin2.0-lerobot-v3.0/
+├── data/
 ├── dataset_stats.json
-└── robotwin2.0/
-    ├── data/
-    ├── meta/
-    └── videos/
+├── meta/
+└── videos/
 ```
+
+The loader remains compatible with v2.1 paths for existing custom configurations.
 
 The pipeline combines the high camera and two wrist cameras into a 384×320 video. It retains all 33 action/state steps and decodes 9 sparse video timestamps.
 
@@ -56,7 +65,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
   task=robotwin_easywam_mot_cosmos25
 ```
 
-The default data config loads normalization statistics from `data/robotwin2.0/dataset_stats.json`. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.
+The default data config loads normalization statistics from `data/robotwin2.0-lerobot-v3.0/dataset_stats.json`. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.
 
 ## Evaluation
 
@@ -66,7 +75,7 @@ Run all tasks listed by RoboTwin's `_eval_step_limit.yml`:
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
-  EVALUATION.dataset_stats_path=./data/robotwin2.0/dataset_stats.json \
+  EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
   MULTIRUN.max_tasks_per_gpu=2
 ```

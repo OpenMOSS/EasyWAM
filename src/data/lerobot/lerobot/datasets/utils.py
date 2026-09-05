@@ -13,11 +13,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import contextlib
 import importlib.resources
 import io
 import json
-import logging
 from collections.abc import Iterator
 from itertools import accumulate
 from pathlib import Path
@@ -29,32 +27,25 @@ import array
 import datasets
 import jsonlines
 import numpy as np
-import packaging.version
+import pandas as pd
+import pyarrow.parquet as pq
 import torch
 from datasets.table import embed_table_storage
 from huggingface_hub import DatasetCard, DatasetCardData, HfApi
-from huggingface_hub.errors import RevisionNotFoundError
 from PIL import Image as PILImage
 from torchvision import transforms
 
 from functools import partial
 
-# from lerobot.configs.types import DictLike, FeatureType, PolicyFeature
-# from lerobot.datasets.backward_compatibility import (
-#     V21_MESSAGE,
-#     BackwardCompatibilityError,
-#     ForwardCompatibilityError,
-# )
-# from lerobot.robots import Robot
-# from lerobot.utils.utils import is_valid_numpy_dtype_string
-
 DEFAULT_CHUNK_SIZE = 1000  # Max number of episodes per chunk
 
 INFO_PATH = "meta/info.json"
-EPISODES_PATH = "meta/episodes.jsonl"
 STATS_PATH = "meta/stats.json"
-EPISODES_STATS_PATH = "meta/episodes_stats.jsonl"
-TASKS_PATH = "meta/tasks.jsonl"
+TASKS_PATH = "meta/tasks.parquet"
+EPISODES_DIR = "meta/episodes"
+V21_EPISODES_PATH = "meta/episodes.jsonl"
+V21_EPISODES_STATS_PATH = "meta/episodes_stats.jsonl"
+V21_TASKS_PATH = "meta/tasks.jsonl"
 
 ANNOTATION_PATHS = {
     "subtask": "annotations/subtask_annotations.jsonl",
@@ -66,8 +57,8 @@ ANNOTATION_PATHS = {
     "eef_direction": "annotations/eef_direction_annotation.jsonl",
 }
 
-DEFAULT_VIDEO_PATH = "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
-DEFAULT_PARQUET_PATH = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
+V21_DEFAULT_VIDEO_PATH = "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
+V21_DEFAULT_PARQUET_PATH = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
 DEFAULT_IMAGE_PATH = "images/{image_key}/episode_{episode_index:06d}/frame_{frame_index:06d}.jpeg"
 
 DATASET_CARD_TEMPLATE = """
@@ -122,18 +113,6 @@ def unflatten_dict(d: dict, sep: str = "/") -> dict:
             d = d[part]
         d[parts[-1]] = value
     return outdict
-
-
-# def get_nested_item(obj: DictLike, flattened_key: str, sep: str = "/") -> Any:
-#     split_keys = flattened_key.split(sep)
-#     getter = obj[split_keys[0]]
-#     if len(split_keys) == 1:
-#         return getter
-
-#     for key in split_keys[1:]:
-#         getter = getter[key]
-
-#     return getter
 
 
 def serialize_dict(stats: dict[str, torch.Tensor | np.ndarray | dict]) -> dict:
@@ -217,19 +196,83 @@ def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
     return cast_stats_to_numpy(stats)
 
 
-def write_task(task_index: int, task: dict, local_dir: Path):
+def write_task_v21(task_index: int, task: dict, local_dir: Path):
     task_dict = {
         "task_index": task_index,
         "task": task,
     }
-    append_jsonlines(task_dict, local_dir / TASKS_PATH)
+    append_jsonlines(task_dict, local_dir / V21_TASKS_PATH)
 
 
-def load_tasks(local_dir: Path) -> tuple[dict, dict]:
-    tasks = load_jsonlines(local_dir / TASKS_PATH)
+def load_tasks_v21(local_dir: Path) -> tuple[dict, dict]:
+    """Load task metadata from a LeRobot v2.1 JSONL file."""
+    tasks = load_jsonlines(local_dir / V21_TASKS_PATH)
     tasks = {item["task_index"]: item["task"] for item in sorted(tasks, key=lambda x: x["task_index"])}
     task_to_task_index = {task: task_index for task_index, task in tasks.items()}
     return tasks, task_to_task_index
+
+
+def load_tasks(local_dir: Path) -> tuple[dict[int, str], dict[str, int]]:
+    """Load the v3 task table without relying on its physical row order."""
+    path = local_dir / TASKS_PATH
+    frame = pd.read_parquet(path)
+    if "task_index" not in frame.columns:
+        raise ValueError(f"LeRobot v3 task metadata is missing 'task_index': {path}")
+
+    if "task" in frame.columns:
+        task_names = frame["task"].tolist()
+    elif not isinstance(frame.index, pd.RangeIndex):
+        task_names = frame.index.tolist()
+    elif "__index_level_0__" in frame.columns:
+        task_names = frame["__index_level_0__"].tolist()
+    else:
+        raise ValueError(
+            "LeRobot v3 task metadata must store task text in a 'task' column "
+            f"or the dataframe index: {path}"
+        )
+
+    tasks = {int(index): str(task) for index, task in zip(frame["task_index"], task_names, strict=True)}
+    if len(tasks) != len(frame):
+        raise ValueError(f"LeRobot v3 task metadata contains duplicate task indices: {path}")
+    return tasks, {task: index for index, task in tasks.items()}
+
+
+def load_episodes(local_dir: Path) -> dict[int, dict]:
+    """Load all relational v3 episode metadata shards."""
+    episodes_dir = local_dir / EPISODES_DIR
+    files = sorted(episodes_dir.rglob("*.parquet"))
+    if not files:
+        raise FileNotFoundError(f"No LeRobot v3 episode metadata found under {episodes_dir}")
+
+    episodes: dict[int, dict] = {}
+    required = {
+        "episode_index",
+        "length",
+        "data/chunk_index",
+        "data/file_index",
+        "dataset_from_index",
+        "dataset_to_index",
+    }
+    for path in files:
+        table = pq.read_table(path)
+        missing = required.difference(table.column_names)
+        if missing:
+            raise ValueError(f"LeRobot v3 episode metadata {path} is missing columns: {sorted(missing)}")
+        for episode in table.to_pylist():
+            episode_index = int(episode["episode_index"])
+            if episode_index in episodes:
+                raise ValueError(f"Duplicate LeRobot v3 episode_index {episode_index} in {path}")
+            episode["episode_index"] = episode_index
+            episode["length"] = int(episode["length"])
+            episode["dataset_from_index"] = int(episode["dataset_from_index"])
+            episode["dataset_to_index"] = int(episode["dataset_to_index"])
+            if episode["dataset_to_index"] - episode["dataset_from_index"] != episode["length"]:
+                raise ValueError(
+                    f"LeRobot v3 episode {episode_index} has inconsistent length and dataset offsets"
+                )
+            episodes[episode_index] = episode
+
+    return dict(sorted(episodes.items()))
 
 def load_annotations(local_dir: Path) -> dict[str, dict[int, str]]:
     annotations = {}
@@ -239,36 +282,30 @@ def load_annotations(local_dir: Path) -> dict[str, dict[int, str]]:
         annotations[key] = anno
     return annotations
 
-def write_episode(episode: dict, local_dir: Path):
-    append_jsonlines(episode, local_dir / EPISODES_PATH)
+def write_episode_v21(episode: dict, local_dir: Path):
+    append_jsonlines(episode, local_dir / V21_EPISODES_PATH)
 
 
-def load_episodes(local_dir: Path) -> dict:
-    episodes = load_jsonlines(local_dir / EPISODES_PATH)
+def load_episodes_v21(local_dir: Path) -> dict:
+    """Load episode metadata from a LeRobot v2.1 JSONL file."""
+    episodes = load_jsonlines(local_dir / V21_EPISODES_PATH)
     return {item["episode_index"]: item for item in sorted(episodes, key=lambda x: x["episode_index"])}
 
 
-def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path):
+def write_episode_stats_v21(episode_index: int, episode_stats: dict, local_dir: Path):
     # We wrap episode_stats in a dictionary since `episode_stats["episode_index"]`
     # is a dictionary of stats and not an integer.
     episode_stats = {"episode_index": episode_index, "stats": serialize_dict(episode_stats)}
-    append_jsonlines(episode_stats, local_dir / EPISODES_STATS_PATH)
+    append_jsonlines(episode_stats, local_dir / V21_EPISODES_STATS_PATH)
 
 
-def load_episodes_stats(local_dir: Path) -> dict:
-    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH)
+def load_episodes_stats_v21(local_dir: Path) -> dict:
+    """Load per-episode statistics from a LeRobot v2.1 JSONL file."""
+    episodes_stats = load_jsonlines(local_dir / V21_EPISODES_STATS_PATH)
     return {
         item["episode_index"]: cast_stats_to_numpy(item["stats"])
         for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
     }
-
-
-def backward_compatible_episodes_stats(
-    stats: dict[str, dict[str, np.ndarray]], episodes: list[int]
-) -> dict[str, dict[str, np.ndarray]]:
-    return dict.fromkeys(episodes, stats)
-
-
 def load_image_as_numpy(
     fpath: str | Path, dtype: np.dtype = np.float32, channel_first: bool = True
 ) -> np.ndarray:
@@ -301,93 +338,6 @@ def hf_transform_to_torch(items_dict: dict[torch.Tensor | None]):
         else:
             items_dict[key] = [x if isinstance(x, str) else torch.tensor(x) for x in items_dict[key]]
     return items_dict
-
-
-def is_valid_version(version: str) -> bool:
-    try:
-        packaging.version.parse(version)
-        return True
-    except packaging.version.InvalidVersion:
-        return False
-
-
-# def check_version_compatibility(
-#     repo_id: str,
-#     version_to_check: str | packaging.version.Version,
-#     current_version: str | packaging.version.Version,
-#     enforce_breaking_major: bool = True,
-# ) -> None:
-#     v_check = (
-#         packaging.version.parse(version_to_check)
-#         if not isinstance(version_to_check, packaging.version.Version)
-#         else version_to_check
-#     )
-#     v_current = (
-#         packaging.version.parse(current_version)
-#         if not isinstance(current_version, packaging.version.Version)
-#         else current_version
-#     )
-#     if v_check.major < v_current.major and enforce_breaking_major:
-#         raise BackwardCompatibilityError(repo_id, v_check)
-#     elif v_check.minor < v_current.minor:
-#         logging.warning(V21_MESSAGE.format(repo_id=repo_id, version=v_check))
-
-
-def get_repo_versions(repo_id: str) -> list[packaging.version.Version]:
-    """Returns available valid versions (branches and tags) on given repo."""
-    api = HfApi()
-    repo_refs = api.list_repo_refs(repo_id, repo_type="dataset")
-    repo_refs = [b.name for b in repo_refs.branches + repo_refs.tags]
-    repo_versions = []
-    for ref in repo_refs:
-        with contextlib.suppress(packaging.version.InvalidVersion):
-            repo_versions.append(packaging.version.parse(ref))
-
-    return repo_versions
-
-
-# def get_safe_version(repo_id: str, version: str | packaging.version.Version) -> str:
-#     """
-#     Returns the version if available on repo or the latest compatible one.
-#     Otherwise, will throw a `CompatibilityError`.
-#     """
-#     target_version = (
-#         packaging.version.parse(version) if not isinstance(version, packaging.version.Version) else version
-#     )
-#     hub_versions = get_repo_versions(repo_id)
-
-#     if not hub_versions:
-#         raise RevisionNotFoundError(
-#             f"""Your dataset must be tagged with a codebase version.
-#             Assuming _version_ is the codebase_version value in the info.json, you can run this:
-#             ```python
-#             from huggingface_hub import HfApi
-
-#             hub_api = HfApi()
-#             hub_api.create_tag("{repo_id}", tag="_version_", repo_type="dataset")
-#             ```
-#             """
-#         )
-
-#     if target_version in hub_versions:
-#         return f"v{target_version}"
-
-#     compatibles = [
-#         v for v in hub_versions if v.major == target_version.major and v.minor <= target_version.minor
-#     ]
-#     if compatibles:
-#         return_version = max(compatibles)
-#         if return_version < target_version:
-#             logging.warning(f"Revision {version} for {repo_id} not found, using version v{return_version}")
-#         return f"v{return_version}"
-
-#     lower_major = [v for v in hub_versions if v.major < target_version.major]
-#     if lower_major:
-#         raise BackwardCompatibilityError(repo_id, max(lower_major))
-
-#     upper_versions = [v for v in hub_versions if v > target_version]
-#     assert len(upper_versions) > 0
-#     raise ForwardCompatibilityError(repo_id, min(upper_versions))
 
 
 def get_hf_features_from_features(features: dict) -> datasets.Features:
@@ -470,48 +420,7 @@ def build_dataset_frame(
     return frame
 
 
-# def get_features_from_robot(robot: Robot, use_videos: bool = True) -> dict:
-#     camera_ft = {}
-#     if robot.cameras:
-#         camera_ft = {
-#             key: {"dtype": "video" if use_videos else "image", **ft}
-#             for key, ft in robot.camera_features.items()
-#         }
-#     return {**robot.motor_features, **camera_ft, **DEFAULT_FEATURES}
-
-
-# def dataset_to_policy_features(features: dict[str, dict]) -> dict[str, PolicyFeature]:
-#     # TODO(aliberts): Implement "type" in dataset features and simplify this
-#     policy_features = {}
-#     for key, ft in features.items():
-#         shape = ft["shape"]
-#         if ft["dtype"] in ["image", "video"]:
-#             type = FeatureType.VISUAL
-#             if len(shape) != 3:
-#                 raise ValueError(f"Number of dimensions of {key} != 3 (shape={shape})")
-
-#             names = ft["names"]
-#             # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0 for ported datasets.
-#             if names[2] in ["channel", "channels"]:  # (h, w, c) -> (c, h, w)
-#                 shape = (shape[2], shape[0], shape[1])
-#         elif key == "observation.environment_state":
-#             type = FeatureType.ENV
-#         elif key.startswith("observation"):
-#             type = FeatureType.STATE
-#         elif key.startswith("action"):
-#             type = FeatureType.ACTION
-#         else:
-#             continue
-
-#         policy_features[key] = PolicyFeature(
-#             type=type,
-#             shape=shape,
-#         )
-
-#     return policy_features
-
-
-def create_empty_dataset_info(
+def create_empty_dataset_info_v21(
     codebase_version: str,
     fps: int,
     features: dict,
@@ -529,8 +438,8 @@ def create_empty_dataset_info(
         "chunks_size": DEFAULT_CHUNK_SIZE,
         "fps": fps,
         "splits": {},
-        "data_path": DEFAULT_PARQUET_PATH,
-        "video_path": DEFAULT_VIDEO_PATH if use_videos else None,
+        "data_path": V21_DEFAULT_PARQUET_PATH,
+        "video_path": V21_DEFAULT_VIDEO_PATH if use_videos else None,
         "features": features,
     }
 
@@ -727,34 +636,7 @@ def create_lerobot_dataset_card(
 
 
 class IterableNamespace(SimpleNamespace):
-    """
-    A namespace object that supports both dictionary-like iteration and dot notation access.
-    Automatically converts nested dictionaries into IterableNamespaces.
-
-    This class extends SimpleNamespace to provide:
-    - Dictionary-style iteration over keys
-    - Access to items via both dot notation (obj.key) and brackets (obj["key"])
-    - Dictionary-like methods: items(), keys(), values()
-    - Recursive conversion of nested dictionaries
-
-    Args:
-        dictionary: Optional dictionary to initialize the namespace
-        **kwargs: Additional keyword arguments passed to SimpleNamespace
-
-    Examples:
-        >>> data = {"name": "Alice", "details": {"age": 25}}
-        >>> ns = IterableNamespace(data)
-        >>> ns.name
-        'Alice'
-        >>> ns.details.age
-        25
-        >>> list(ns.keys())
-        ['name', 'details']
-        >>> for key, value in ns.items():
-        ...     print(f"{key}: {value}")
-        name: Alice
-        details: IterableNamespace(age=25)
-    """
+    """Namespace with mapping access and recursive conversion of dictionaries."""
 
     def __init__(self, dictionary: dict[str, Any] = None, **kwargs):
         super().__init__(**kwargs)
@@ -810,19 +692,15 @@ def validate_features_presence(actual_features: set[str], expected_features: set
     return error_message
 
 def is_valid_numpy_dtype_string(dtype_str: str) -> bool:
-    """
-    Return True if a given string can be converted to a numpy dtype.
-    """
+    """Return whether a string names a NumPy dtype."""
     try:
-        # Attempt to convert the string to a numpy dtype
         np.dtype(dtype_str)
         return True
     except TypeError:
-        # If a TypeError is raised, the string is not a valid dtype
         return False
 def validate_feature_dtype_and_shape(name: str, feature: dict, value: np.ndarray | PILImage.Image | str | bytes):
     if isinstance(value, bytes) or isinstance(value, array.array): # ROS 1 and 2
-        #TODO fix bytes
+        # Encoded ROS image payloads are validated when decoded.
         return ""
     expected_dtype = feature["dtype"]
     expected_shape = feature["shape"]
@@ -885,7 +763,6 @@ def validate_episode_buffer(episode_buffer: dict, total_episodes: int, features:
         raise ValueError("task key not found in episode_buffer")
 
     if episode_buffer["episode_index"] != total_episodes:
-        # TODO(aliberts): Add option to use existing episode_index
         raise NotImplementedError(
             "You might have manually provided the episode_buffer with an episode_index that doesn't "
             "match the total number of episodes already in the dataset. This is not supported for now."

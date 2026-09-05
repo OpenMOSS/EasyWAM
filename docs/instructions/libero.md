@@ -23,15 +23,26 @@ done
 cd ../..
 ```
 
+Convert the downloaded LeRobot v2.1 datasets to v3.0 (the source directories are preserved):
+
+```bash
+python scripts/convert_lerobot_v21_to_v30.py \
+  --output-root data/libero-lerobot-v3.0 --suffix '' \
+  --strip-source-suffix _no_noops_lerobot \
+  data/libero_mujoco3.3.2/libero_{spatial,object,goal,10}_no_noops_lerobot
+```
+
 The default `configs/data/libero_2cam.yaml` expects:
 
 ```text
-data/libero_mujoco3.3.2/
-├── libero_10_no_noops_lerobot/
-├── libero_goal_no_noops_lerobot/
-├── libero_object_no_noops_lerobot/
-└── libero_spatial_no_noops_lerobot/
+data/libero-lerobot-v3.0/
+├── libero_10/
+├── libero_goal/
+├── libero_object/
+└── libero_spatial/
 ```
+
+The loader remains compatible with v2.1 paths for existing custom configurations.
 
 The pipeline concatenates the agent and wrist cameras at 224 px resolution. It retains all 33 action/state steps while decoding only the 9 video timestamps `[0, 4, ..., 32]`.
 

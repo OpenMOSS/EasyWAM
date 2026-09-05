@@ -17,6 +17,8 @@ This guide covers the non-model portions of the composed Hydra configuration. De
 | Normalization | `norm_default_mode`, `norm_exception_mode`, `use_stepwise_action_norm`, optional transforms |
 | Split behavior | `val_set_proportion`, `is_training_set`, `skip_padding_as_possible` |
 
+`dataset_dirs` supports local LeRobot v3.0 and v2.1 datasets. The format is detected independently from each directory's `meta/info.json`, so a single run may mix both versions. v3.0 is recommended for new data; Hub streaming/downloading and dataset recording or conversion are not provided by this loader.
+
 `num_frames` is the action/state sequence length. `action_video_freq_ratio` sparsely selects video timestamps from that sequence; for example, the checked-in 33-step datasets with ratio `4` use 32 future actions and 9 video frames including the observation frame. Changing either value changes the training tensor shapes and must remain compatible with evaluation horizons.
 
 Each image entry has a source `raw_shape` and a post-transform `shape`. The transform resize, `shape`, final `video_size`, camera concatenation mode, and `num_output_cameras` must describe the same layout. LIBERO concatenates two 224×224 cameras horizontally; RoboTwin uses its three-camera composition.
