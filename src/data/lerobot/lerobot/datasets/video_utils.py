@@ -103,27 +103,19 @@ def decode_video_frames_torchvision(
     """
     video_path = str(video_path)
 
-    # set backend
     keyframes_only = False
     torchvision.set_video_backend(backend)
     if backend == "pyav":
         keyframes_only = True  # pyav doesn't support accurate seek
 
-    # set a video stream reader
-    # TODO(rcadene): also load audio stream at the same time
     reader = torchvision.io.VideoReader(video_path, "video")
 
-    # set the first and last requested timestamps
-    # Note: previous timestamps are usually loaded, since we need to access the previous key frame
     first_ts = min(timestamps)
     last_ts = max(timestamps)
 
-    # access closest key frame of the first requested frame
-    # Note: closest key frame timestamp is usually smaller than `first_ts` (e.g. key frame can be the first frame of the video)
-    # for details on what `seek` is doing see: https://pyav.basswood-io.com/docs/stable/api/container.html?highlight=inputcontainer#av.container.InputContainer.seek
+    # Seeking starts at the preceding keyframe, so earlier frames may be decoded.
     reader.seek(first_ts, keyframes_only=keyframes_only)
 
-    # load all frames until last requested frame
     loaded_frames = []
     loaded_ts = []
     for frame in reader:
@@ -406,18 +398,7 @@ def encode_video_frames_ffmpeg(
 
 @dataclass
 class VideoFrame:
-    # TODO(rcadene, lhoestq): move to Hugging Face `datasets` repo
-    """
-    Provides a type for a dataset containing video frames.
-
-    Example:
-
-    ```python
-    data_dict = [{"image": {"path": "videos/episode_0.mp4", "timestamp": 0.3}}]
-    features = {"image": VideoFrame()}
-    Dataset.from_dict(data_dict, features=Features(features))
-    ```
-    """
+    """Hugging Face dataset feature containing a video path and timestamp."""
 
     pa_type: ClassVar[Any] = pa.struct({"path": pa.string(), "timestamp": pa.float32()})
     _type: str = field(default="VideoFrame", init=False, repr=False)

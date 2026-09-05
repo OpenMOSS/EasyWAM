@@ -100,7 +100,6 @@ class BaseProcessor(ABC):
         Returns:
             List[str], processed instructions
         """
-        # if single instruction, convert to list
         if "coarse_task" in data:
             high_level_instruction = data["coarse_task"]
         else:
@@ -155,32 +154,7 @@ class BaseProcessor(ABC):
         return batch
 
     def preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Preprocess the data for the policy model.
-        
-        Args:
-            Data: Dict[str, Any], lerobot sample in raw mcap obtained from dataset __getitem__:
-                - "action": Optional, Dict[str, torch.Tensor] -> [action_horizon, action_dim]
-                - "state": Dict[str, torch.Tensor] -> [num_obs_steps, state_dim]
-                - "images": Dict[str, torch.Tensor] -> [num_obs_steps, C, H, W]
-                - "action_is_pad": Optional, torch.Tensor -> [action_horizon,]
-                - "state_is_pad": torch.Tensor -> [num_obs_steps,]
-                - "image_is_pad": torch.Tensor -> [num_obs_steps,]
-                - "idx": int, sample index
-                
-        Returns:
-            Sample: Dict[str, Any], which can collated:
-                - "input_ids": torch.Tensor -> [max_image_text_tokens,]
-                - "attention_mask": torch.Tensor -> [max_image_text_tokens,]
-                - "pixel_values": torch.Tensor -> [num_input_cameras, C, H, W]
-                - "image_is_pad": torch.Tensor -> [num_obs_steps,]
-                - "proprio": torch.Tensor -> [num_obs_steps, proprio_dim]
-                - "state_is_pad": torch.Tensor -> [num_obs_steps,]
-                - "action": Optional, torch.Tensor -> [action_horizon, action_dim]
-                - "action_is_pad": Optional, torch.Tensor -> [action_horizon,]
-                - "gt_action: Optional, deepcopy of input action for open loop eval, which is left untouched
-                - "idx": int, sample index
-        """
+        """Transform a dataset sample into the tensors consumed by the policy."""
         sample = {}
         # 1. instruction
         sample["instruction"] = self.augment_instruction(data)
@@ -228,7 +202,6 @@ class BaseProcessor(ABC):
             sample["action_dim_is_pad"] = data["action_dim_is_pad"] # [action_dim,]
             assert sample["action"].shape[-1] == self.action_output_dim
         
-        # TODO: rename all "state" into "proprio"
         sample["proprio"] = data["state"] # [num_obs_steps, proprio_dim]
         sample["proprio_is_pad"] = data["state_is_pad"] # [num_obs_steps,]
         sample["proprio_dim_is_pad"] = data["state_dim_is_pad"] # [proprio_dim,]

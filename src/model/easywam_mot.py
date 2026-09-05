@@ -358,7 +358,7 @@ class EasyWAMMoT(torch.nn.Module):
         ids = ids.to(self.device)
         mask = mask.to(self.device, dtype=torch.bool)
         prompt_emb = self.text_encoder(ids, mask)
-        # FIXME: original implementation's zero padding is visible in cross-attn.
+        # Preserve the checkpoint's all-valid mask behavior after zeroing padding.
         seq_lens = mask.gt(0).sum(dim=1).long()
         for i, v in enumerate(seq_lens):
             prompt_emb[i, v:] = 0
@@ -1862,7 +1862,7 @@ class EasyWAMMoT(torch.nn.Module):
                     strict=imagewam_load_report is not None,
                 )
         elif "dit" in payload:
-            logger.warning("Loading legacy `dit` checkpoint into video expert only.")
+            logger.warning("Loading an older `dit` checkpoint into the video expert only.")
             if hasattr(self.video_expert, "_easywam_lora_config"):
                 from .component.lora import load_standard_state_dict
 

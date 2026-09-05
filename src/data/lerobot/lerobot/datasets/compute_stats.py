@@ -86,7 +86,7 @@ def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], featu
     ep_stats = {}
     for key, data in episode_data.items():
         if features[key]["dtype"] == "string":
-            continue  # HACK: we should receive np.arrays of strings
+            continue  # String features do not have numerical statistics.
         elif features[key]["dtype"] in ["image", "video"]:
             if is_compute_episode_stats_image:
                 ep_ft_array = sample_images(data)  # data is a list of image paths

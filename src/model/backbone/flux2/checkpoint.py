@@ -14,7 +14,7 @@ def convert_imagewam_flux2_checkpoint_payload(
         raise ValueError("ImageWAM FLUX.2 checkpoint must contain a mapping at `mot`.")
     if "state_encoder" in payload and "proprio_encoder" in payload:
         raise ValueError(
-            "Checkpoint contains both `state_encoder` and legacy `proprio_encoder`; "
+            "Checkpoint contains both `state_encoder` and older `proprio_encoder`; "
             "refusing an ambiguous state-adapter migration."
         )
 

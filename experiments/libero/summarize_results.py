@@ -41,7 +41,6 @@ def summarize_results(output_dir):
     Args:
         output_dir: Root directory containing result files.
     """
-    # Store statistics for each suite
     suite_stats = defaultdict(lambda: {
         'total_tasks': 0,
         'total_trials': 0,
@@ -52,23 +51,19 @@ def summarize_results(output_dir):
         'psnr_count': 0
     })
     
-    # Store detailed per-task results
     task_results = {}
     has_psnr_metric = False
     
-    # Iterate over all suite directories
     for suite in ["libero_spatial", "libero_object", "libero_goal", "libero_10", "libero_90"]:
         suite_dir = os.path.join(output_dir, suite)
         if not os.path.exists(suite_dir):
             continue
             
-        # Read all result files
         seen_task_ids = set()
         for filename in sorted(os.listdir(suite_dir)):
             if not filename.startswith('gpu') or not filename.endswith('_results.json'):
                 continue
                 
-            # Extract task ID from the filename
             parts = filename.split('_')
             try:
                 task_id = int(parts[1].replace('task', ''))
@@ -81,7 +76,6 @@ def summarize_results(output_dir):
                 result = json.load(f)
             seen_task_ids.add(task_id)
             
-            # Create the task identifier (suite_taskid)
             task_key = f"{suite}_{task_id}"
                 
             stats = suite_stats[suite]
@@ -96,7 +90,6 @@ def summarize_results(output_dir):
                     stats['psnr_sum'] += float(result['future_video_psnr_mean'])
                     stats['psnr_count'] += 1
             
-            # Store detailed task results
             task_result = {
                 'success_rate': result['successes'] / result['total_episodes'] * 100,
                 'duration': result['duration'],
@@ -112,7 +105,6 @@ def summarize_results(output_dir):
                 )
             task_results[task_key] = task_result
     
-    # Print summary results
     print("\n=== Evaluation Results Summary ===")
     print("\nStatistics for each task suite:")
     
@@ -122,7 +114,6 @@ def summarize_results(output_dir):
     overall_psnr_sum = 0.0
     overall_psnr_count = 0
     
-    # Prepare DataFrame rows
     df_data = {
         'Task Suite': [],
         'Success Rate (%)': [],
@@ -159,7 +150,6 @@ def summarize_results(output_dir):
                 else:
                     print("- Average future-video PSNR: N/A")
             
-            # Append to DataFrame rows
             df_data['Task Suite'].append(suite)
             df_data['Success Rate (%)'].append(f"{success_rate:.2f}")
             df_data['Average Time (s)'].append(f"{avg_time:.2f}")
@@ -195,7 +185,6 @@ def summarize_results(output_dir):
             else:
                 print("- Average future-video PSNR: N/A")
         
-        # Add an overall summary row
         df_data['Task Suite'].append('Overall')
         df_data['Success Rate (%)'].append(f"{avg_success_rate:.2f}")
         df_data['Average Time (s)'].append(f"{avg_task_time:.2f}")
@@ -205,22 +194,17 @@ def summarize_results(output_dir):
                 f"{overall_avg_psnr:.4f}" if overall_avg_psnr is not None else "N/A"
             )
     
-    # Create and save the DataFrame
     df = pd.DataFrame(df_data)
     
-    # Use the last checkpoint path component as the title
     ckpt_path = os.environ.get('CKPT', '')
     title = os.path.basename(ckpt_path) if ckpt_path else 'Results'
     
-    # Transpose the DataFrame and use Task Suite as column names
     df = df.set_index('Task Suite').T
     
-    # Add a title line to the CSV file
     with open(os.path.join(output_dir, 'summary.csv'), 'w') as f:
         f.write(f"{title}\n")  # Write the title
         df.to_csv(f)
     
-    # Create the per-task success-rate CSV
     task_success_data = {
         'Task': [],
         'Description': [],
@@ -229,17 +213,14 @@ def summarize_results(output_dir):
     if has_psnr_metric:
         task_success_data['Future Video PSNR (dB)'] = []
     
-    # Group tasks by suite
     suite_tasks = defaultdict(list)
     for task in task_results:
         suite = task.split('_')[0] + '_' + task.split('_')[1]
         suite_tasks[suite].append(task)
     
-    # Sort tasks within each suite
     for suite in suite_tasks:
         suite_tasks[suite].sort(key=lambda x: int(x.split('_')[-1]))
     
-    # Fill per-task success-rate rows
     for suite in sorted(suite_tasks.keys()):
         for task in suite_tasks[suite]:
             result = task_results[task]
@@ -268,11 +249,9 @@ def summarize_results(output_dir):
                 stats['psnr_sum'] / stats['psnr_count'] if stats['psnr_count'] > 0 else None
             )
     
-    # Create and save the task success-rate DataFrame
     task_success_df = pd.DataFrame(task_success_data)
     task_success_df.to_csv(os.path.join(output_dir, 'task_success_rates.csv'), index=False)
     
-    # Save the detailed JSON summary
     summary_file = os.path.join(output_dir, 'summary.json')
     overall_stats = {
         'average_success_rate': total_success_rate/total_suites if total_suites > 0 else 0,
@@ -301,11 +280,9 @@ def summarize_results(output_dir):
     print(f"Summary CSV: {os.path.join(output_dir, 'summary.csv')}")
     print(f"Task success rates CSV: {os.path.join(output_dir, 'task_success_rates.csv')}")
     
-    # Print the task success-rate table
     print("\n=== Task Success Rates ===")
     print(task_success_df.to_string(index=False))
 
-    # Print the transposed summary table
     print("\n=== Results Table ===")
     print(df.to_string(index=False))
 

@@ -174,8 +174,6 @@ class T5RelativeEmbedding(nn.Module):
 
     def forward(self, lq, lk):
         device = self.embedding.weight.device
-        # rel_pos = torch.arange(lk).unsqueeze(0).to(device) - \
-        #     torch.arange(lq).unsqueeze(1).to(device)
         rel_pos = torch.arange(lk, device=device).unsqueeze(0) - \
             torch.arange(lq, device=device).unsqueeze(1)
         rel_pos = self._relative_position_bucket(rel_pos)
@@ -255,9 +253,7 @@ class WanTextEncoder(torch.nn.Module):
         ])
         self.norm = T5LayerNorm(dim)
 
-        # Skip costly random init when loading pretrained checkpoints.
-        # Verified: checkpoint fully covers this module (missing/unexpected keys are both 0).
-        # self.apply(init_weights)
+        # Checkpoint loading fully initializes this module.
 
     def forward(self, ids, mask=None):
         x = self.token_embedding(ids)

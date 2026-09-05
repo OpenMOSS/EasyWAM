@@ -41,19 +41,16 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         self,
         dataset_dirs: List[str],
 
-        # shapes
         shape_meta: Dict[str, Any],
         action_size: int = 1, 
         past_action_size: int = 0, # Excludes the current frame
         obs_size: int = 1, # should be 
         past_obs_size: int = 0,
 
-        # train vs val
         val_set_proportion: float = 0.05, 
         is_training_set: bool = False,
         seed: int = 42,
 
-        # sampling
         global_sample_stride: int = 1,
         image_obs_indices: Optional[Sequence[int]] = None,
     ):
@@ -117,7 +114,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         else:
             for meta in metas:
                 split_idx = int(meta.total_episodes * (1 - val_set_proportion))
-                # random shuffle episode indices before splitting
                 episode_indices = list(range(meta.total_episodes))
                 rng = np.random.default_rng(seed)
                 rng.shuffle(episode_indices)
@@ -132,7 +128,8 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             delta_timestamps=delta_timestamps,
         )
         
-        # HACK: lerobot 3.0 will fix this
+        # Convert each reader's local episode offsets into the concatenated
+        # multi-dataset index space. This works for both v2.1 and v3.0.
         episode_data_index = []
         end_index = 0
         for dataset in self.multi_dataset._datasets:
@@ -161,7 +158,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         state: torch.Tensor = lerobot_sample[lerobot_key]
         if state.ndim == 1: # for shape of 1, like gripper
             state = state.unsqueeze(-1)
-        # state = state[..., :-1, :]  # use state_{t} as observation_t
         assert state.shape[-1] == raw_shape, f"State '{key}' shape {state.shape[-1]} mismatch with meta {raw_shape}."
         return state
     
@@ -171,8 +167,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         if image.ndim == 3: # time dim will lost when obs_size is 1
             image = image.unsqueeze(0)        
         image = (image * 255).to(torch.uint8) # (1, 3, H, W)
-        # For config simplication
-        # assert image.shape[1:] == raw_shape, f"Image '{key}' shape {image.shape[1:]} mismatch with {raw_shape}."
         return image
     
     def _split_lerobot_sample(self, lerobot_sample) -> Dict[str, Any]:
@@ -230,7 +224,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
                 f"for index {idx}."
             ) from last_exception
 
-        # Get data from lerobot, organized in nested dict
         sample = {
             "idx": sample_idx,
             "task": lerobot_sample["task"],
@@ -257,8 +250,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             if key not in sample and "observation" not in key and "action" not in key:
                 sample[key] = lerobot_sample[key]
 
-        # Preprocess the sample using the processor
-        # for quick data loading
         if self.processor is not None:
             sample = self.processor.preprocess(sample)
 
@@ -420,18 +411,11 @@ def sliding_window_with_replication(x: torch.Tensor, window_size: int) -> torch.
     
     N, D = x.shape
     
-    # shape [N, window_size]
-    # indices[i, j] = i + j
     i_indices = torch.arange(N).unsqueeze(1)            # [N, 1]
     j_indices = torch.arange(window_size).unsqueeze(0)  # [1, window_size]
     indices = i_indices + j_indices                     # [N, window_size]
 
-    # N-1
-    # torch.clamp  [0, N-1]
     clamped_indices = torch.clamp(indices, min=0, max=N - 1)
-
-    # clamped_indices [N, window_size]，x [N, D]
-    # out[i, j, :] = x[clamped_indices[i, j], :]
     out = x[clamped_indices]  # [N, window_size, D]
 
     return out

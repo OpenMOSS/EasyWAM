@@ -64,81 +64,28 @@ def rope_apply(x, freqs, num_heads):
 def create_group_causal_attn_mask(
     num_temporal_groups: int, num_query_per_group: int, num_key_per_group: int, mode: str = "causal"
 ) -> torch.Tensor:
-    """
-    Creates a group-based attention mask for scaled dot-product attention with two modes:
-    'causal' and 'group_diagonal'.
+    """Build a group-level boolean attention mask.
 
-    Parameters:
-    - num_temporal_groups (int): The number of temporal groups (e.g., frames in a video sequence).
-    - num_query_per_group (int): The number of query tokens per temporal group. (e.g., latent tokens in a frame, H x W).
-    - num_key_per_group (int): The number of key tokens per temporal group. (e.g., action tokens per frame).
-    - mode (str): The mode of the attention mask. Options are:
-        - 'causal': Query tokens can attend to key tokens from the same or previous temporal groups.
-        - 'group_diagonal': Query tokens can attend only to key tokens from the same temporal group.
-
-    Returns:
-    - attn_mask (torch.Tensor): A boolean tensor of shape (L, S), where:
-        - L = num_temporal_groups * num_query_per_group (total number of query tokens)
-        - S = num_temporal_groups * num_key_per_group (total number of key tokens)
-      The mask indicates where attention is allowed (True) and disallowed (False).
-
-    Example:
-    Input:
-        num_temporal_groups = 3
-        num_query_per_group = 4
-        num_key_per_group = 2
-    Output:
-        Causal Mask Shape: torch.Size([12, 6])
-        Group Diagonal Mask Shape: torch.Size([12, 6])
-        if mode='causal':
-        tensor([[ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [ True,  True,  True,  True, False, False],
-                [ True,  True,  True,  True, False, False],
-                [ True,  True,  True,  True, False, False],
-                [ True,  True,  True,  True, False, False],
-                [ True,  True,  True,  True,  True,  True],
-                [ True,  True,  True,  True,  True,  True],
-                [ True,  True,  True,  True,  True,  True],
-                [ True,  True,  True,  True,  True,  True]])
-
-        if mode='group_diagonal':
-        tensor([[ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [ True,  True, False, False, False, False],
-                [False, False,  True,  True, False, False],
-                [False, False,  True,  True, False, False],
-                [False, False,  True,  True, False, False],
-                [False, False,  True,  True, False, False],
-                [False, False, False, False,  True,  True],
-                [False, False, False, False,  True,  True],
-                [False, False, False, False,  True,  True],
-                [False, False, False, False,  True,  True]])
-
+    ``causal`` exposes the current and previous key groups;
+    ``group_diagonal`` exposes only the matching group. The returned shape is
+    ``(num_temporal_groups * num_query_per_group,
+    num_temporal_groups * num_key_per_group)``.
     """
     assert mode in ["causal", "group_diagonal"], f"Mode {mode} must be 'causal' or 'group_diagonal'"
 
-    # Total number of query and key tokens
-    total_num_query_tokens = num_temporal_groups * num_query_per_group  # Total number of query tokens (L)
-    total_num_key_tokens = num_temporal_groups * num_key_per_group  # Total number of key tokens (S)
+    total_num_query_tokens = num_temporal_groups * num_query_per_group
+    total_num_key_tokens = num_temporal_groups * num_key_per_group
 
-    # Generate time indices for query and key tokens (shape: [L] and [S])
-    query_time_indices = torch.arange(num_temporal_groups).repeat_interleave(num_query_per_group)  # Shape: [L]
-    key_time_indices = torch.arange(num_temporal_groups).repeat_interleave(num_key_per_group)  # Shape: [S]
+    query_time_indices = torch.arange(num_temporal_groups).repeat_interleave(num_query_per_group)
+    key_time_indices = torch.arange(num_temporal_groups).repeat_interleave(num_key_per_group)
 
-    # Expand dimensions to compute outer comparison
-    query_time_indices = query_time_indices.unsqueeze(1)  # Shape: [L, 1]
-    key_time_indices = key_time_indices.unsqueeze(0)  # Shape: [1, S]
+    query_time_indices = query_time_indices.unsqueeze(1)
+    key_time_indices = key_time_indices.unsqueeze(0)
 
     if mode == "causal":
-        # Causal Mode: Query can attend to keys where key_time <= query_time
-        attn_mask = query_time_indices >= key_time_indices  # Shape: [L, S]
-    elif mode == "group_diagonal":
-        # Group Diagonal Mode: Query can attend only to keys where key_time == query_time
-        attn_mask = query_time_indices == key_time_indices  # Shape: [L, S]
+        attn_mask = query_time_indices >= key_time_indices
+    else:
+        attn_mask = query_time_indices == key_time_indices
 
     assert attn_mask.shape == (total_num_query_tokens, total_num_key_tokens), "Attention mask shape mismatch"
     return attn_mask
@@ -184,8 +131,6 @@ class SelfAttention(nn.Module):
         self.norm_k = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
         self.attention_backend = require_attention_backend(attention_backend)
         
-        # self.attn = AttentionModule(self.num_heads)
-
     def forward(
         self,
         x,
@@ -231,8 +176,6 @@ class CrossAttention(nn.Module):
         self.norm_k = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
         self.attention_backend = require_attention_backend(attention_backend)
             
-        # self.attn = AttentionModule(self.num_heads)
-
     def project_kv(self, ctx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Project static cross-attention context once for inference reuse."""
         return self.norm_k(self.k(ctx)), self.v(ctx)

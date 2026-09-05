@@ -17,11 +17,6 @@ from omegaconf import DictConfig, OmegaConf
 from PIL import Image
 from tqdm import tqdm
 
-# try:
-#     import rootutils
-
-#     rootutils.setup_root(__file__, indicator=".python-version", pythonpath=True)
-# except ModuleNotFoundError:
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(PROJECT_ROOT) not in sys.path:
@@ -136,10 +131,10 @@ def _load_model_checkpoint(model: torch.nn.Module, ckpt: str) -> None:
     logging.info("Loaded checkpoint via model.load_checkpoint: %s", ckpt)
     return
 
-    # deprecated legacy checkpoint loading
+    # Support checkpoints saved before the current payload format.
     payload = torch.load(ckpt, map_location="cpu")
     if not isinstance(payload, dict):
-        raise ValueError(f"Legacy checkpoint payload must be dict, got: {type(payload)}")
+        raise ValueError(f"Old checkpoint payload must be dict, got: {type(payload)}")
 
     if "mot" in payload and hasattr(model, "mot"):
         missing, unexpected = model.mot.load_state_dict(payload["mot"], strict=False)
@@ -159,7 +154,7 @@ def _load_model_checkpoint(model: torch.nn.Module, ckpt: str) -> None:
     if state_dict is None and all(torch.is_tensor(v) for v in payload.values()):
         state_dict = payload
     if state_dict is None:
-        raise ValueError(f"Cannot parse legacy checkpoint keys from: {ckpt}")
+        raise ValueError(f"Cannot parse old checkpoint keys from: {ckpt}")
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     logging.warning(

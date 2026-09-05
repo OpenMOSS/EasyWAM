@@ -229,9 +229,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
 
         video = video.permute(1, 0, 2, 3) # [C, T_video, H, W], range [-1, 1]
 
-        # Proxy (from lerobot): 
-        #   action: [num_frames-1, action_dim] # start from t0, except the last frame
-        #   proprio: [num_frames, proprio_dim] # start from t0 to the last frame, aligned with video frames
+        # Drop the final proprio step to align it with the action horizon.
         action = sample["action"] # [T-1, action_dim]
         proprio = sample["proprio"][:-1, :] # [T-1, state_dim]， to align with action
         if video.shape[1] <= 1:
@@ -243,7 +241,6 @@ class RobotVideoDataset(torch.utils.data.Dataset):
 
         task = sample["instruction"]
         
-        # FIXME
         if self.override_instruction is not None:
             task = self.override_instruction
         instruction = DEFAULT_PROMPT.format(task=task)
