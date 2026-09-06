@@ -14,6 +14,8 @@
   <a href="https://github.com/OpenMOSS/EasyWAM/issues/1#issue-5314445304"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
 </p>
 
+**从这里开始：** [快速开始](#-快速开始) · [支持的模型](#-支持的模型与-benchmark) · [评测结果](#-benchmark-结果) · [模型下载](https://huggingface.co/collections/OpenMOSS-Team/easywam) · [文档](#-文档)
+
 ## ✨ 概览与主要特性
 
 EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型开发更加高效、可复现且易于扩展。项目通过一致的工作流连接模型实现、数据处理、分布式训练、参数高效微调和大规模评测。
