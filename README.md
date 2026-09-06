@@ -14,6 +14,8 @@
   <a href="https://github.com/OpenMOSS/EasyWAM/issues/1#issue-5314445304"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
 </p>
 
+**Start here:** [Quick start](#-quick-start) · [Supported models](#-supported-models-and-benchmarks) · [Benchmark results](#-benchmark-results) · [Checkpoints](https://huggingface.co/collections/OpenMOSS-Team/easywam) · [Documentation](#-documentation)
+
 ## ✨ Overview and Key Features
 
 EasyWAM is a unified research codebase designed to make World Action Model development efficient, reproducible, and easy to extend. It connects model implementation, data processing, distributed training, parameter-efficient fine-tuning, and large-scale evaluation through a consistent workflow.
