@@ -39,7 +39,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 ### 🧠 Models
 
-- **EasyWAM-Unified.** A single-backbone architecture that places video, action, and robot-state tokens in one Video DiT to jointly predict future video and actions. The architecture is based on [DreamZero](https://github.com/dreamzero0/dreamzero).
+- **EasyWAM-Unified.** A single-backbone architecture that places video and action tokens in one Video DiT to jointly predict future video and actions. The architecture is based on [DreamZero](https://github.com/dreamzero0/dreamzero).
 - **EasyWAM-MoT.** A dual-backbone model with separate Video DiT and Action DiT experts whose tokens interact through shared mixed self-attention. It performs action-only prediction and is based on [FastWAM](https://github.com/yuantianyuan01/FastWAM).
 - **EasyWAM-MoT-Joint.** A dual-backbone model that jointly denoises video and action tokens through shared mixed self-attention.
 - **EasyWAM-MoT-IDM.** A dual-backbone model that uses teacher-forced conditional video for action prediction.

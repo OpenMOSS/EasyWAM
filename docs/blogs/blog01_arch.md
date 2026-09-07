@@ -4,7 +4,7 @@ When designing a World Action Model, there's a question we can never quite avoid
 
 ## 🧱 Experimental Setup
 
-- **EasyWAM-Unified** ([DreamZero](https://arxiv.org/pdf/2602.15922)-like): a single-DiT architecture that places video, action, and robot-state tokens into one Video DiT for joint denoising, with action and video bidirectionally coupled within the same self-attention.
+- **EasyWAM-Unified** ([DreamZero](https://arxiv.org/pdf/2602.15922)-like): a single-DiT architecture that places video and action tokens into one Video DiT for joint denoising, with action and video bidirectionally coupled within the same self-attention.
 - **EasyWAM-Hidden** ([DiT4DiT](https://arxiv.org/pdf/2603.10448)-like): a dual-DiT architecture that conditions a separate Action DiT on the Video DiT's intermediate features in one direction; inference still requires predicting future video.
 - **EasyWAM-MoT** ([FastWAM](https://arxiv.org/pdf/2603.16666)-like): a dual-DiT architecture with an independent Video DiT and Action DiT interacting through shared mixed self-attention; at inference time it only predicts actions and does not generate or predict future video.
 

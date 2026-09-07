@@ -57,6 +57,7 @@ class EasyWAMUnified(nn.Module):
         self.projector_hidden_dim = int(projector_hidden_dim)
 
         self.hidden_dim = int(video_dit.hidden_dim)
+        self.context_dim = int(getattr(video_dit, "text_dim", self.hidden_dim))
         self.freq_dim = int(video_dit.freq_dim)
         self.num_heads = int(video_dit.num_heads)
         self.attn_head_dim = int(video_dit.attn_head_dim)
@@ -67,7 +68,7 @@ class EasyWAMUnified(nn.Module):
                 "video_dit": video_dit,
                 "state_encoder": StateEncoder(
                     state_dim=self.state_dim,
-                    hidden_dim=self.hidden_dim,
+                    hidden_dim=self.context_dim,
                     projector_hidden_dim=self.projector_hidden_dim,
                 ),
                 "action_encoder": ActionEncoder(
@@ -141,15 +142,13 @@ class EasyWAMUnified(nn.Module):
         clean_video_len: int,
         future_video_len: int,
         action_len: int,
-        state_len: int,
         device: torch.device,
         video_attention_mask_mode: str = "first_frame_causal",
     ) -> StructuredAttentionMask:
-        total = clean_video_len + future_video_len + action_len + state_len
-        future_action_end = clean_video_len + future_video_len + action_len
+        total = clean_video_len + future_video_len + action_len
         if video_attention_mask_mode == "bidirectional":
             segments = [
-                AttentionSegment(0, future_action_end, ((0, total),)),
+                AttentionSegment(0, total, ((0, total),)),
             ]
         elif video_attention_mask_mode == "first_frame_causal":
             segments = [
@@ -163,14 +162,10 @@ class EasyWAMUnified(nn.Module):
             )
         if (
             video_attention_mask_mode == "first_frame_causal"
-            and clean_video_len < future_action_end
+            and clean_video_len < total
         ):
             segments.append(
-                AttentionSegment(clean_video_len, future_action_end, ((0, total),))
-            )
-        if future_action_end < total:
-            segments.append(
-                AttentionSegment(future_action_end, total, ((future_action_end, total),))
+                AttentionSegment(clean_video_len, total, ((0, total),))
             )
         return build_structured_attention_mask(
             query_len=total,
@@ -217,8 +212,6 @@ class EasyWAMUnified(nn.Module):
             timestep_action = timestep_action.expand(batch_size)
         if timestep_video.shape[0] != batch_size or timestep_action.shape[0] != batch_size:
             raise ValueError("Video/action timestep batch size must match input batch size.")
-        timestep_state = timestep_action
-
         if context_mask is not None:
             context_mask = context_mask.to(device=x.device, dtype=torch.bool)
 
@@ -238,7 +231,6 @@ class EasyWAMUnified(nn.Module):
             action_tokens=action_tokens,
             timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
             state_tokens=state_tokens,
-            timestep_state=timestep_state.to(device=x.device, dtype=x.dtype),
             context=context if projected_context is None else projected_context,
             context_mask=context_mask,
             context_is_projected=projected_context is not None,
@@ -251,7 +243,6 @@ class EasyWAMUnified(nn.Module):
             clean_video_len=tokens_per_frame,
             future_video_len=video_len - tokens_per_frame,
             action_len=action_tokens.shape[1],
-            state_len=state_tokens.shape[1],
             device=tokens.device,
             video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
         )

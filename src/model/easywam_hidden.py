@@ -263,36 +263,51 @@ class EasyWAMHidden(nn.Module):
             if projected_context is None
             else projected_context
         )
+        state_context = self.dit["state_encoder"](
+            state.to(device=action.device, dtype=action.dtype)
+        ).to(dtype=video_context.dtype)
+        action_context = torch.cat([video_context, state_context], dim=1)
+        action_context_mask = None
+        if video_token_mask is not None:
+            state_mask = torch.ones(
+                state_context.shape[:2], dtype=torch.bool, device=video_token_mask.device
+            )
+            action_context_mask = torch.cat([video_token_mask, state_mask], dim=1)
+        action_cross_kv_cache = cross_kv_cache
+        if cross_kv_cache is not None:
+            if len(cross_kv_cache) != len(self.action_dit.blocks):
+                raise ValueError(
+                    "Cross-attention KV cache does not cover every Action DiT layer."
+                )
+            state_kv_cache = tuple(
+                block.cross_attn.project_kv(state_context)
+                for block in self.action_dit.blocks
+            )
+            action_cross_kv_cache = tuple(
+                (
+                    torch.cat([video_k, state_k], dim=1),
+                    torch.cat([video_v, state_v], dim=1),
+                )
+                for (video_k, video_v), (state_k, state_v) in zip(
+                    cross_kv_cache, state_kv_cache
+                )
+            )
         action_pre = self.action_dit.pre_dit(
             action_tokens=action,
             timestep=timestep,
-            context=video_context,
-            context_mask=video_token_mask,
+            context=action_context,
+            context_mask=action_context_mask,
             context_is_projected=True,
-            cross_kv_cache=cross_kv_cache,
+            cross_kv_cache=action_cross_kv_cache,
         )
-        state_tokens = self.dit["state_encoder"](
-            state.to(device=action.device, dtype=action.dtype)
-        )
-        state_len = state_tokens.shape[1]
-        tokens = torch.cat([state_tokens, action_pre["tokens"]], dim=1)
-        if tokens.shape[1] > self.action_dit.freqs.shape[0]:
-            raise ValueError(
-                f"State/action token length {tokens.shape[1]} exceeds ActionDiT RoPE cache "
-                f"{self.action_dit.freqs.shape[0]}."
-            )
-        freqs = self.action_dit.freqs[: tokens.shape[1]].view(
-            tokens.shape[1], 1, -1
-        ).to(tokens.device)
-
-        context_attn_mask = None
-        if video_token_mask is not None:
-            context_attn_mask = video_token_mask.unsqueeze(1).expand(
-                -1, tokens.shape[1], -1
-            )
+        tokens = action_pre["tokens"]
 
         for layer_index, block in enumerate(self.action_dit.blocks):
-            context_kv = None if cross_kv_cache is None else cross_kv_cache[layer_index]
+            context_kv = (
+                None
+                if action_pre["cross_kv_cache"] is None
+                else action_pre["cross_kv_cache"][layer_index]
+            )
             if self.action_dit.use_gradient_checkpointing:
                 tokens = gradient_checkpoint_forward(
                     block,
@@ -300,8 +315,8 @@ class EasyWAMHidden(nn.Module):
                     tokens,
                     action_pre["context"],
                     action_pre["t_mod"],
-                    freqs,
-                    context_mask=context_attn_mask,
+                    action_pre["freqs"],
+                    context_mask=action_pre["context_mask"],
                     context_kv=context_kv,
                 )
             else:
@@ -309,11 +324,11 @@ class EasyWAMHidden(nn.Module):
                     tokens,
                     action_pre["context"],
                     action_pre["t_mod"],
-                    freqs,
-                    context_mask=context_attn_mask,
+                    action_pre["freqs"],
+                    context_mask=action_pre["context_mask"],
                     context_kv=context_kv,
                 )
-        return self.action_dit.action_decoder(tokens[:, state_len:])
+        return self.action_dit.action_decoder(tokens)
 
     def _forward_dit(
         self,

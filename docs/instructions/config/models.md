@@ -8,7 +8,7 @@ Model recipes live in `configs/model/`. Their names follow `easywam_<architectur
 
 | Architecture | Configuration-specific behavior | Architecture-specific settings |
 | --- | --- | --- |
-| EasyWAM-Unified | One Video DiT jointly represents video, action, and state tokens. | `action_dim`, `state_dim`, `projector_hidden_dim` |
+| EasyWAM-Unified | One Video DiT jointly represents video and action tokens. | `action_dim`, `state_dim`, `projector_hidden_dim` |
 | EasyWAM-MoT | Separate Video DiT and Action DiT experts interact through mixed self-attention. | `action_dit_config`, `action_dit_pretrained_path` |
 | EasyWAM-MoT-Joint | The two experts jointly denoise future video and action tokens. | Same structural settings as MoT |
 | EasyWAM-MoT-IDM | Adds a teacher-forced conditional-video branch for action prediction. | `video_cond_noise_prob` in `[0, 1]` |

@@ -44,7 +44,7 @@ class ActionEncoder(nn.Module):
 
 
 class StateEncoder(nn.Module):
-    """Two-layer state value encoder; timestep and position are applied outside."""
+    """Two-layer state value encoder."""
 
     def __init__(self, state_dim: int, hidden_dim: int, projector_hidden_dim: int):
         super().__init__()

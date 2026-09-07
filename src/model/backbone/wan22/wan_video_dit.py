@@ -405,7 +405,7 @@ class WanVideoDiT(torch.nn.Module):
         ])
         self.head = Head(hidden_dim, out_dim, patch_size, eps)
         self.freqs = precompute_freqs_cis_3d(attn_head_dim)
-        # Unified action/state tokens retain their historical full-head 1D RoPE.
+        # Unified action tokens use full-head 1D RoPE.
         # This tensor is derived metadata rather than checkpoint state.
         self.freqs_aux = precompute_freqs_cis(attn_head_dim, end=4096)
         if has_ref_conv:
@@ -645,7 +645,6 @@ class WanVideoDiT(torch.nn.Module):
         action_tokens: torch.Tensor,
         timestep_action: torch.Tensor,
         state_tokens: torch.Tensor,
-        timestep_state: torch.Tensor,
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor],
         context_is_projected: bool = False,
@@ -665,11 +664,10 @@ class WanVideoDiT(torch.nn.Module):
         )
         video_len = video["tokens"].shape[1]
         action_len = action_tokens.shape[1]
-        state_len = state_tokens.shape[1]
-        if action_len > self.freqs_aux.shape[0] or state_len > self.freqs_aux.shape[0]:
+        if action_len > self.freqs_aux.shape[0]:
             raise ValueError(
-                "Unified auxiliary token length exceeds Wan RoPE cache: "
-                f"action={action_len}, state={state_len}, cache={self.freqs_aux.shape[0]}."
+                "Unified action token length exceeds Wan RoPE cache: "
+                f"action={action_len}, cache={self.freqs_aux.shape[0]}."
             )
 
         def _aux_time(timestep: torch.Tensor, length: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -685,48 +683,46 @@ class WanVideoDiT(torch.nn.Module):
             )
 
         action_t, action_t_mod = _aux_time(timestep_action, action_len)
-        state_t, state_t_mod = _aux_time(timestep_state, state_len)
-        tokens = torch.cat([video["tokens"], action_tokens, state_tokens], dim=1)
+        tokens = torch.cat([video["tokens"], action_tokens], dim=1)
         video["tokens"] = tokens
-        video["t"] = torch.cat([video["t"], action_t, state_t], dim=1)
-        video["t_mod"] = torch.cat(
-            [video["t_mod"], action_t_mod, state_t_mod], dim=1
-        )
+        video["t"] = torch.cat([video["t"], action_t], dim=1)
+        video["t_mod"] = torch.cat([video["t_mod"], action_t_mod], dim=1)
         video["freqs"] = torch.cat(
             [
                 video["freqs"],
                 self.freqs_aux[:action_len].view(action_len, 1, -1).to(tokens.device),
-                self.freqs_aux[:state_len].view(state_len, 1, -1).to(tokens.device),
             ],
             dim=0,
         )
 
-        original_context_mask = video["context_mask"]
-        if original_context_mask is None:
-            non_state_len = tokens.shape[1] - state_len
-            segments = [AttentionSegment(0, non_state_len, ((0, context.shape[1]),))]
-            if state_len:
-                segments.append(AttentionSegment(non_state_len, tokens.shape[1], ()))
-            video["context_mask"] = (
-                None
-                if not state_len
-                else build_structured_attention_mask(
-                    tokens.shape[1], context.shape[1], segments, tokens.device
+        video["context"] = torch.cat([video["context"], state_tokens], dim=1)
+        if video["context_mask"] is not None:
+            if not isinstance(video["context_mask"], KeyPaddingMask):
+                raise TypeError("Expected a key-padding mask before appending state context.")
+            state_mask = torch.ones(
+                state_tokens.shape[:2], dtype=torch.bool, device=state_tokens.device
+            )
+            video["context_mask"] = KeyPaddingMask.from_tensor(
+                torch.cat([video["context_mask"].valid, state_mask], dim=1)
+            )
+        if video["cross_kv_cache"] is not None:
+            if len(video["cross_kv_cache"]) != len(self.blocks):
+                raise ValueError("Cross-attention KV cache does not cover every transformer layer.")
+            state_kv_cache = tuple(
+                block.cross_attn.project_kv(state_tokens) for block in self.blocks
+            )
+            video["cross_kv_cache"] = tuple(
+                (
+                    torch.cat([text_k, state_k], dim=1),
+                    torch.cat([text_v, state_v], dim=1),
+                )
+                for (text_k, text_v), (state_k, state_v) in zip(
+                    video["cross_kv_cache"], state_kv_cache
                 )
             )
-        else:
-            compact = (
-                original_context_mask.valid
-                if isinstance(original_context_mask, KeyPaddingMask)
-                else original_context_mask[:, 0, :]
-            )
-            joint = compact.unsqueeze(1).expand(-1, tokens.shape[1], -1).clone()
-            if state_len:
-                joint[:, -state_len:, :] = False
-            video["context_mask"] = joint
 
         video["meta"].update(
-            {"video_len": video_len, "action_len": action_len, "state_len": state_len}
+            {"video_len": video_len, "action_len": action_len}
         )
         return video
 

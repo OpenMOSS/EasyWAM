@@ -4,7 +4,7 @@
 
 ## 🧱 实验设置
 
-- **EasyWAM-Unified** ([DreamZero](https://arxiv.org/pdf/2602.15922)-like)：单 DiT 架构，把视频、动作、机器人状态 token 全部放进同一个 Video DiT 联合去噪，动作与视频在同一组自注意力中双向耦合。
+- **EasyWAM-Unified** ([DreamZero](https://arxiv.org/pdf/2602.15922)-like)：单 DiT 架构，把视频和动作 token 放进同一个 Video DiT 联合去噪，动作与视频在同一组自注意力中双向耦合。
 - **EasyWAM-Hidden** ([DiT4DiT](https://arxiv.org/pdf/2603.10448)-like)：双 DiT 架构，用 Video DiT 的中间特征单向条件化一个独立的 Action DiT，推理时仍需要对未来视频进行预测。
 - **EasyWAM-MoT** ([FastWAM](https://arxiv.org/pdf/2603.16666)-like)：双 DiT 架构，独立的 Video DiT 和 Action DiT 通过共享混合自注意力交互，推理时只做动作预测，不生成/预测未来视频。
 

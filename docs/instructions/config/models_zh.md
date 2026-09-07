@@ -8,7 +8,7 @@
 
 | 架构 | 配置相关行为 | 架构专属设置 |
 | --- | --- | --- |
-| EasyWAM-Unified | 使用同一个 Video DiT 表示视频、动作和状态 token。 | `action_dim`、`state_dim`、`projector_hidden_dim` |
+| EasyWAM-Unified | 使用同一个 Video DiT 表示视频和动作 token。 | `action_dim`、`state_dim`、`projector_hidden_dim` |
 | EasyWAM-MoT | 独立的 Video DiT 和 Action DiT 通过混合自注意力交互。 | `action_dit_config`、`action_dit_pretrained_path` |
 | EasyWAM-MoT-Joint | 两个 expert 联合去噪未来视频和动作 token。 | 与 MoT 相同的结构设置 |
 | EasyWAM-MoT-IDM | 增加 teacher-forcing 条件视频分支，用于动作预测。 | `[0, 1]` 范围内的 `video_cond_noise_prob` |
