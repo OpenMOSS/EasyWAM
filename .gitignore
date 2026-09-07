@@ -1,14 +1,14 @@
-
 # Misc
 outputs/
 tmp/
 /checkpoints/
 /data/
-apex/
-runs/
-log/
-evaluate_results/
+/runs/
+/log/
+/evaluate_results/
+/results/
 /tests/
+apex/
 .deepspeed*
 
 
@@ -71,7 +71,6 @@ eggs/
 lib/
 lib64/
 parts/
-results/
 sdist/
 var/
 wheels/
