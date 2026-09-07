@@ -1,6 +1,6 @@
 # 效率配置
 
-[English](efficiency.md) | [配置索引](README_zh.md) | [返回 README](../../README_zh.md)
+[English](efficiency.md) | [配置索引](README_zh.md) | [返回 README](../../../README_zh.md)
 
 EasyWAM 分别提供输入吞吐、模型显存、Attention kernel 和闭环评测相关的控制项。应一次调整一组，并在 warmup 后测量稳态吞吐；最佳值取决于 GPU 显存、CPU 核数、存储、序列形状和模型架构。
 

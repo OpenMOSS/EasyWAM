@@ -1,6 +1,6 @@
 # EasyWAM 配置指南
 
-[English](README.md) | [返回 README](../../README_zh.md)
+[English](README.md) | [返回 README](../../../README_zh.md)
 
 EasyWAM 使用 [Hydra](https://hydra.cc/) 组合训练、数据、模型和任务配置。本目录说明各配置组的关系，以及如何在不复制整份 task 配置的情况下进行调整。
 
@@ -69,7 +69,7 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 | 数据、训练、日志和评测 | [Training configuration](training.md) | [训练配置](training_zh.md) |
 | 吞吐、显存和推理延迟 | [Efficiency configuration](efficiency.md) | [效率配置](efficiency_zh.md) |
 
-Benchmark 安装、数据目录、任务选择和断点续评请参阅 [LIBERO](../instructions/libero_zh.md)、[LIBERO-Plus](../instructions/libero_plus_zh.md) 和 [RoboTwin](../instructions/robotwin_zh.md) 指南。
+Benchmark 安装、任务选择和断点续评请参阅 [LIBERO](../benchmark/libero_zh.md)、[LIBERO-Plus](../benchmark/libero_plus_zh.md) 和 [RoboTwin](../benchmark/robotwin_zh.md) 指南。
 
 ## 推荐流程
 

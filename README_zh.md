@@ -59,60 +59,55 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | --- | :---: |
 | Wan2.2-TI2V-5B | ✅ |
 | Cosmos-Predict2.5-2B | ✅ |
-| FLUX.2 Klein-4B（兼容 ImageWAM） | ✅ |
-
-checkpoint 迁移、配置和评测方式请参阅
-[FLUX.2 / ImageWAM backbone 接入文档](docs/instructions/flux2_imagewam_integration.md)。
+| FLUX.2 Klein-4B | ✅ |
 
 ### 🧪 Benchmark
 
-| Benchmark | 训练 | 评测 |
-| --- | --- | --- |
-| LIBERO | 全参数训练和 LoRA | 标准四 suite 评测 |
-| LIBERO-Plus | 使用 LIBERO checkpoint | 鲁棒性评测 |
-| RoboTwin | 全参数训练和 LoRA | Clean 和 randomized 评测 |
+| Benchmark | 支持情况 | 训练 | 评测 |
+| --- | :---: | --- | --- |
+| LIBERO | ✅ | 全参数训练和 LoRA | 标准四 suite 评测 |
+| LIBERO-Plus | ✅ | 使用 LIBERO checkpoint | 鲁棒性评测 |
+| RoboTwin | ✅ | 全参数训练和 LoRA | Clean 和 randomized 评测 |
 
 ## 🏆 Benchmark 结果
-
-> 以下所有 Benchmark 结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。
 
 <details open>
 <summary><b>LIBERO</b></summary>
 
 **全参数训练**
 
-| 模型 | Spatial | Object | Goal | LIBERO-10 | 平均 |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | 99.0 | 99.4 | 99.2 | 98.2 | 99.0 |
-| EasyWAM-MoT | 97.8 | 98.4 | 97.6 | 95.6 | 97.4 |
-| EasyWAM-Hidden | 99.4 | 100.0 | 97.0 | 97.8 | 98.6 |
+| Backbone | 模型 | Spatial | Object | Goal | LIBERO-10 | 平均 |
+| --- | --- | :---: | :---: | :---: | :---: | :---: |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 99.0 | 99.4 | 99.2 | 98.2 | 99.0 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 97.8 | 98.4 | 97.6 | 95.6 | 97.4 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 99.4 | 100.0 | 97.0 | 97.8 | 98.6 |
 
 **LoRA（Rank 128）**
 
-| 模型 | Spatial | Object | Goal | LIBERO-10 | 平均 |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | 84.0 | 97.8 | 92.0 | 81.2 | 88.8 |
-| EasyWAM-MoT | 96.8 | 98.8 | 94.4 | 90.4 | 95.1 |
-| EasyWAM-Hidden | 96.8 | 99.4 | 92.6 | 86.8 | 93.9 |
+| Backbone | 模型 | Spatial | Object | Goal | LIBERO-10 | 平均 |
+| --- | --- | :---: | :---: | :---: | :---: | :---: |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 84.0 | 97.8 | 92.0 | 81.2 | 88.8 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 96.8 | 98.8 | 94.4 | 90.4 | 95.1 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 96.8 | 99.4 | 92.6 | 86.8 | 93.9 |
 
 </details>
 
 <details open>
 <summary><b>LIBERO-Plus</b></summary>
 
-| 模型 | Orig（LIBERO） | Background | Camera | Language | Layout | Light | Noise | Robot | 平均 |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | 99.0 | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
-| EasyWAM-MoT | 97.4 | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
-| EasyWAM-Hidden | 98.6 | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
+| Backbone | 模型 | Orig（LIBERO） | Background | Camera | Language | Layout | Light | Noise | Robot | 平均 |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 99.0 | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 97.4 | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 98.6 | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
 
 </details>
 
-我们撰写了一篇 blog，对上述实验结果进行分析：[什么样的 WAM 架构是我们需要的？](docs/blogs/blog01_arch_zh.md)（[English](docs/blogs/blog01_arch.md)）。
+更多结果请查阅[完整 Benchmark 结果](docs/results/result_zh.md)，结果分析请参阅[什么样的 WAM 架构是我们需要的？](docs/blogs/blog01_arch_zh.md)（[English](docs/blogs/blog01_arch.md)）。
 
 ## ⚡ 效率结果
 
-> 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。**实际训练时长会随 CPU 和 GPU 配置而变化，以上数据仅供参考。** 请参阅[效率配置指南](docs/configurations/efficiency_zh.md)，根据自己的机器选择合适的配置，以提升训练与推理效率。
+> 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。**实际训练时长会随 CPU 和 GPU 配置而变化，以上数据仅供参考。** 请参阅[效率配置指南](docs/instructions/config/efficiency_zh.md)，根据自己的机器选择合适的配置，以提升训练与推理效率。
 
 EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一致的条件下对比 EasyWAM 训练框架与 FastWAM 原始代码框架。在 **8 × NVIDIA H100 GPUs**、**per-device batch size 为 16** 的配置下，EasyWAM-MoT 的吞吐量达到 **121.9 samples/s**，是 FastWAM（51.5 samples/s）的 **2.37 倍**；每 step 的数据读取、前向传播和反向传播耗时分别降低 **66.0%**、**58.4%** 和 **54.7%**。
 
@@ -143,63 +138,34 @@ pip install -e .
 
 [FlashAttention](https://github.com/Dao-AILab/flash-attention) 是可选依赖。安装后，EasyWAM 会使用当前环境中最快的兼容实现；无法使用时则回退到 PyTorch SDPA。
 
+请根据 GPU 选择支持的实现：FA2 支持 Ampere、Ada 和 Hopper GPU；FA3 面向 Hopper GPU；FA4 面向 Hopper 和 Blackwell GPU。
+
+```bash
+# FlashAttention 2
+pip install flash-attn --no-build-isolation
+
+# FlashAttention 3
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention/hopper
+python setup.py install
+cd ../..
+
+# FlashAttention 4
+pip install flash-attn-4
+
+# FlashAttention 4 + CUDA 13
+# pip install "flash-attn-4[cu13]"
+```
+
 ### 📦 准备模型
 
-已发布的 EasyWAM checkpoint 可从 Hugging Face 的 [OpenMOSS-Team/EasyWAM 模型集合](https://huggingface.co/collections/OpenMOSS-Team/easywam) 下载。各 checkpoint 的具体下载命令和使用要求请参阅对应的 [model cards](model_cards/)。
+已发布的 EasyWAM checkpoint 可从 Hugging Face 的 [OpenMOSS-Team/EasyWAM 模型集合](https://huggingface.co/collections/OpenMOSS-Team/easywam) 下载。
 
-请在项目根目录运行以下命令。下载位置与
-`configs/model/backbone/wan22.yaml`、`configs/model/backbone/cosmos25.yaml`
-中的默认路径一致。
+请按所选 backbone 的独立文档完成准备：
 
-```bash
-mkdir -p checkpoints
-
-# Wan2.2 Video DiT、VAE、UMT5 encoder 和 tokenizer
-huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir checkpoints/Wan2.2-TI2V-5B
-
-# Cosmos post-trained 2B Video DiT 和对应的 Wan2.1 video tokenizer
-huggingface-cli download nvidia/Cosmos-Predict2.5-2B \
-  --include "base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt" "tokenizer.pth" \
-  --local-dir checkpoints/Cosmos-Predict2.5-2B
-
-# 用于生成 Cosmos 文本缓存的 Reason1 text encoder 和 tokenizer
-huggingface-cli download nvidia/Cosmos-Reason1-7B --local-dir checkpoints/Cosmos-Reason1-7B
-```
-
-完成下载并生成 ActionDiT 初始化权重后，默认配置实际使用以下文件：
-
-```text
-checkpoints/
-├── Wan2.2-TI2V-5B/
-├── Cosmos-Predict2.5-2B/
-│   ├── base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt
-│   └── tokenizer.pth
-├── Cosmos-Reason1-7B/
-├── ActionDiT_Wan22_5B_alphascale_1024hdim.pt
-└── ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt
-```
-
-EasyWAM-MoT 和 EasyWAM-Hidden 还需要经过插值初始化的 ActionDiT 权重：
-
-```bash
-# 输出路径与 configs/model/backbone/wan22.yaml 完全一致
-python scripts/preprocess_action_dit_backbone.py \
-  --model-config configs/model/easywam_mot_wan22.yaml \
-  --backbone wan22 \
-  --output checkpoints/ActionDiT_Wan22_5B_alphascale_1024hdim.pt \
-  --device cuda \
-  --dtype bfloat16
-
-# 输出路径与 configs/model/backbone/cosmos25.yaml 完全一致
-python scripts/preprocess_action_dit_backbone.py \
-  --model-config configs/model/easywam_mot_cosmos25.yaml \
-  --backbone cosmos25 \
-  --output checkpoints/ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt \
-  --device cuda \
-  --dtype bfloat16
-```
-
-EasyWAM-Unified 不需要该 ActionDiT checkpoint。
+- [Wan2.2-TI2V-5B](docs/instructions/backbone/wan22.md)
+- [Cosmos-Predict2.5-2B](docs/instructions/backbone/cosmos25.md)
+- [FLUX.2 Klein Base 4B](docs/instructions/backbone/flux2.md)
 
 ### 📝 预计算文本特征
 
@@ -248,17 +214,16 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt>
 ```
 
-manager 默认使用 8 张 GPU，每张 GPU 启动 4 个环境，动态推理 batch 上限为 4，等待窗口为 10 ms。可通过 `MULTIRUN.num_gpus`、`MULTIRUN.env_num_per_gpu`、`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 适配实际机器。每个 GPU worker 只加载一个模型，其环境共享该模型。环境安装、数据目录、已发布权重、任务筛选和断点恢复等内容见对应 benchmark 指南。
+manager 默认使用 8 张 GPU，每张 GPU 启动 4 个环境，动态推理 batch 上限为 4，等待窗口为 10 ms。可通过 `MULTIRUN.num_gpus`、`MULTIRUN.env_num_per_gpu`、`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 适配实际机器。每个 GPU worker 只加载一个模型，其环境共享该模型。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。
 
 ## 📚 文档
 
-| 文档 | English | 中文 |
+| 分区 | English | 中文 |
 | --- | --- | --- |
-| 文档索引 | [Index](docs/README.md) | [文档索引](docs/README_zh.md) |
-| 配置 | [Guide](docs/configurations/README.md) | [配置指南](docs/configurations/README_zh.md) |
-| LIBERO | [Guide](docs/instructions/libero.md) | [使用指南](docs/instructions/libero_zh.md) |
-| LIBERO-Plus | [Guide](docs/instructions/libero_plus.md) | [使用指南](docs/instructions/libero_plus_zh.md) |
-| RoboTwin | [Guide](docs/instructions/robotwin.md) | [使用指南](docs/instructions/robotwin_zh.md) |
+| Backbone 准备与使用 | [Index](docs/instructions/backbone/README.md) | [索引](docs/instructions/backbone/README_zh.md) |
+| 训练数据准备 | [Index](docs/instructions/data/README.md) | [索引](docs/instructions/data/README_zh.md) |
+| Benchmark 准备与评测 | [Index](docs/instructions/benchmark/README.md) | [索引](docs/instructions/benchmark/README_zh.md) |
+| 配置参考 | [Index](docs/instructions/config/README.md) | [索引](docs/instructions/config/README_zh.md) |
 
 ## 🗂️ 项目结构
 
@@ -268,8 +233,8 @@ EasyWAM/
 ├── docs/             # 项目文档
 │   ├── README.md      # 文档索引
 │   ├── blogs/        # 架构博客
-│   ├── configurations/ # 配置指南
-│   └── instructions/   # 集成与 Benchmark 使用指南
+│   ├── results/      # Benchmark 结果汇总
+│   └── instructions/   # 数据、评测、Backbone 与配置指南
 ├── experiments/      # Benchmark 评测器
 ├── scripts/          # 训练、预处理和缓存入口
 ├── src/              # 模型、数据管线、runtime 和 trainer
@@ -280,17 +245,11 @@ EasyWAM/
 
 ## 🤝 参与贡献
 
-EasyWAM 由社区共同建设。你可以通过修复 bug、改进文档、支持新的模型或 benchmark，或分享帮助降低 World Action Model 研究门槛的想法来参与其中。
-
-- **报告 bug：** 请在 [Issue](https://github.com/OpenMOSS/EasyWAM/issues) 中提供复现步骤、配置详情和相关日志。
-- **提出功能或改进建议：** 对于较大的改动，请先创建 Issue 讨论范围和实现方案。
-- **提交 Pull Request：** 保持改动聚焦，必要时同步更新文档，并说明验证方式。
-
-我们很高兴接受任何形式的贡献。如果你希望参与贡献、与我们交流，或共同建设 EasyWAM，欢迎发送邮件至 [siyinwang20@fudan.edu.cn](mailto:siyinwang20@fudan.edu.cn)。详细贡献指南请参阅 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)。
+欢迎参与 EasyWAM 建设。Issue 与 Pull Request 的提交说明请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 🙏 致谢
 
-本项目的代码基于[FastWAM](https://github.com/yuantianyuan01/FastWAM)构建,并参考 [DreamZero](https://github.com/dreamzero0/dreamzero) 和 [DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT) 的模型设计。我们由衷感谢以上团队对开源社区的宝贵贡献。
+本项目基于 [FastWAM](https://github.com/yuantianyuan01/FastWAM) 构建，并参考了 [DreamZero](https://github.com/dreamzero0/dreamzero)、[DiT4DiT](https://github.com/Mondo-Robotics/DiT4DiT) 和 [ImageWAM](https://github.com/yuyangalin/ImageWAM) 的模型设计与实现。我们由衷感谢以上团队对开源社区的宝贵贡献。
 
 ## 📝 Citation
 

@@ -1,6 +1,6 @@
 # Data, Training, and Evaluation Configuration
 
-[中文](training_zh.md) | [Configuration index](README.md) | [Back to README](../../README.md)
+[中文](training_zh.md) | [Configuration index](README.md) | [Back to README](../../../README.md)
 
 This guide covers the non-model portions of the composed Hydra configuration. Defaults come from `configs/train.yaml`; dataset and task recipes override them for a benchmark.
 
@@ -103,4 +103,4 @@ Common policy controls include:
 
 `replan_steps` is bounded by the predicted action horizon at runtime. Shorter replanning reacts more frequently but invokes the model more often. `num_inference_steps` must be positive; reducing it trades denoising compute for possible policy-quality loss.
 
-`MULTIRUN.num_gpus` controls evaluation model workers; `env_num_per_gpu` and the inference batching options control environment and GPU concurrency rather than training world size. See the [LIBERO](../instructions/libero.md), [LIBERO-Plus](../instructions/libero_plus.md), and [RoboTwin](../instructions/robotwin.md) guides for benchmark-specific selectors and resume rules.
+`MULTIRUN.num_gpus` controls evaluation model workers; `env_num_per_gpu` and the inference batching options control environment and GPU concurrency rather than training world size. See the [LIBERO](../benchmark/libero.md), [LIBERO-Plus](../benchmark/libero_plus.md), and [RoboTwin](../benchmark/robotwin.md) guides for benchmark-specific selectors and resume rules.

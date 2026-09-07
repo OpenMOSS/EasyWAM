@@ -1,6 +1,6 @@
 # 模型配置
 
-[English](models.md) | [配置索引](README_zh.md) | [返回 README](../../README_zh.md)
+[English](models.md) | [配置索引](README_zh.md) | [返回 README](../../../README_zh.md)
 
 模型 recipe 位于 `configs/model/`，命名形式为 `easywam_<architecture>_<backbone>[_lora]`。task recipe 会选择其中一个模型，并提供模型配置引用的数据维度。
 
@@ -36,7 +36,7 @@ Backbone 配置包含模型/checkpoint 路径、文本维度、Transformer 维�
 
 训练配置中的 `model.backbone.load_text_encoder` 为 `false`，因为数据集直接读取预计算 embedding；评测配置将其设为 `true`，使 policy 能够编码运行时任务指令。
 
-FLUX.2 的源码、checkpoint 迁移和 Qwen3 cache 要求请参阅 [FLUX.2 / ImageWAM 接入指南](../instructions/flux2_imagewam_integration.md)。
+准备与使用方法分别见 [Wan2.2](../backbone/wan22.md)、[Cosmos2.5](../backbone/cosmos25.md) 和 [FLUX.2 / ImageWAM](../backbone/flux2.md) 文档。
 
 ## 从数据配置获得维度
 
@@ -60,7 +60,7 @@ Unified 和 Hidden 在模型顶层暴露 `action_dim`；MoT 系列将其放在 `
 | `ckpt` | `configs/sim_*.yaml` 定义的评测 checkpoint 路径。 |
 | `resume` | Trainer 恢复训练所使用的 checkpoint 或目录。 |
 
-使用根 README 中的 `scripts/preprocess_action_dit_backbone.py` 生成 Wan2.2 或 Cosmos2.5 ActionDiT 初始化权重。EasyWAM-Unified 不使用独立的 ActionDiT checkpoint。
+使用 `scripts/preprocess_action_dit_backbone.py` 生成 [Wan2.2](../backbone/wan22.md) 或 [Cosmos2.5](../backbone/cosmos25.md) 文档中说明的 ActionDiT 初始化权重。EasyWAM-Unified 不使用独立的 ActionDiT checkpoint。
 
 ## 全参数训练与 LoRA
 

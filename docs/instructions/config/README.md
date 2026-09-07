@@ -1,6 +1,6 @@
 # EasyWAM Configuration Guide
 
-[中文](README_zh.md) | [Back to README](../../README.md)
+[中文](README_zh.md) | [Back to README](../../../README.md)
 
 EasyWAM uses [Hydra](https://hydra.cc/) to compose training, data, model, and task configuration. This directory explains how the configuration groups fit together and how to tune them without copying an entire task file.
 
@@ -69,7 +69,7 @@ Hydra does not change the working directory in this project (`hydra.job.chdir=fa
 | Data, training, logging, and evaluation | [Training configuration](training.md) | [训练配置](training_zh.md) |
 | Throughput, memory, and inference latency | [Efficiency configuration](efficiency.md) | [效率配置](efficiency_zh.md) |
 
-Benchmark installation, dataset layout, task selection, and result-resume behavior are covered by the [LIBERO](../instructions/libero.md), [LIBERO-Plus](../instructions/libero_plus.md), and [RoboTwin](../instructions/robotwin.md) guides.
+Benchmark installation, task selection, and result-resume behavior are covered by the [LIBERO](../benchmark/libero.md), [LIBERO-Plus](../benchmark/libero_plus.md), and [RoboTwin](../benchmark/robotwin.md) guides.
 
 ## Recommended workflow
 

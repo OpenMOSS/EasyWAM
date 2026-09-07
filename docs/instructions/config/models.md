@@ -1,6 +1,6 @@
 # Model Configuration
 
-[中文](models_zh.md) | [Configuration index](README.md) | [Back to README](../../README.md)
+[中文](models_zh.md) | [Configuration index](README.md) | [Back to README](../../../README.md)
 
 Model recipes live in `configs/model/`. Their names follow `easywam_<architecture>_<backbone>[_lora]`. Task recipes select one of these models and provide the data dimensions referenced by the model config.
 
@@ -36,7 +36,7 @@ Backbone configs contain model/checkpoint paths, text dimensions, transformer di
 
 `model.backbone.load_text_encoder` is `false` for training because datasets load precomputed embeddings. Evaluation configs set it to `true` so policies can encode runtime task instructions.
 
-See the dedicated [FLUX.2 / ImageWAM integration guide](../instructions/flux2_imagewam_integration.md) for its source checkout, checkpoint migration, and Qwen3 cache requirements.
+Preparation and usage are documented separately for [Wan2.2](../backbone/wan22.md), [Cosmos2.5](../backbone/cosmos25.md), and [FLUX.2 / ImageWAM](../backbone/flux2.md).
 
 ## Data-derived dimensions
 
@@ -60,7 +60,7 @@ Unified and Hidden expose `action_dim` at the model level; MoT-family models pla
 | `ckpt` | Evaluation checkpoint path, defined by `configs/sim_*.yaml`. |
 | `resume` | Training checkpoint/directory consumed by the trainer's resume workflow. |
 
-Use `scripts/preprocess_action_dit_backbone.py` to build the Wan2.2 or Cosmos2.5 ActionDiT initialization described in the root README. EasyWAM-Unified does not use a separate ActionDiT checkpoint.
+Use `scripts/preprocess_action_dit_backbone.py` to build the ActionDiT initialization described in the [Wan2.2](../backbone/wan22.md) and [Cosmos2.5](../backbone/cosmos25.md) guides. EasyWAM-Unified does not use a separate ActionDiT checkpoint.
 
 ## Full training and LoRA
 

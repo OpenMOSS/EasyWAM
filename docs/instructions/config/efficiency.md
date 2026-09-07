@@ -1,6 +1,6 @@
 # Efficiency Configuration
 
-[中文](efficiency_zh.md) | [Configuration index](README.md) | [Back to README](../../README.md)
+[中文](efficiency_zh.md) | [Configuration index](README.md) | [Back to README](../../../README.md)
 
 EasyWAM exposes independent controls for input throughput, model memory, attention kernels, and closed-loop evaluation. Tune one group at a time and measure steady-state throughput after warmup; the best values depend on GPU memory, CPU cores, storage, sequence shape, and model architecture.
 
