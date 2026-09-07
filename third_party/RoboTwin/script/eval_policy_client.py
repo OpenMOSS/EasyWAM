@@ -458,6 +458,11 @@ def eval_policy(task_name,
 
         args["render_freq"] = render_freq
 
+        print(
+            f"[{task_name}:{args['task_config']}] "
+            f"Trial {TASK_ENV.test_num + 1}/{test_num} started",
+            flush=True,
+        )
         TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
         episode_info_list = [episode_info["info"]]
         results = generate_episode_descriptions(args["task_name"], episode_info_list, test_num)
@@ -539,8 +544,10 @@ def eval_policy(task_name,
         TASK_ENV.test_num += 1
 
         print(
-            f"\033[93m{task_name}\033[0m | \033[94m{args['policy_name']}\033[0m | \033[92m{args['task_config']}\033[0m | \033[91m{args['ckpt_setting']}\033[0m\n"
-            f"Success rate: \033[96m{TASK_ENV.suc}/{TASK_ENV.test_num}\033[0m => \033[95m{round(TASK_ENV.suc/TASK_ENV.test_num*100, 1)}%\033[0m, current seed: \033[90m{now_seed}\033[0m\n"
+            f"[{task_name}:{args['task_config']}] Trial {TASK_ENV.test_num}/{test_num} "
+            f"completed: success={succ} cumulative={TASK_ENV.suc}/{TASK_ENV.test_num} "
+            f"({round(TASK_ENV.suc/TASK_ENV.test_num*100, 1)}%) seed={now_seed}",
+            flush=True,
         )
         # TASK_ENV._take_picture()
         now_seed += 1

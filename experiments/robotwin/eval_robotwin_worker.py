@@ -122,14 +122,30 @@ def main(cfg: DictConfig) -> None:
 
             def actor_main(actor_index: int) -> None:
                 while True:
-                    raw = dispatcher.claim()
-                    if raw is None:
+                    claimed = dispatcher.claim_with_index()
+                    if claimed is None:
                         return
+                    task_index, raw = claimed
                     job = json.loads(raw)
                     task_name = str(job["task_name"])
+                    print(
+                        f"[Task {task_index + 1}/{len(dispatcher.tasks)}] "
+                        f"Actor {actor_index} started {task_name}",
+                        flush=True,
+                    )
                     for phase, task_config in (("clean", "demo_clean"), ("random", "demo_randomized")):
                         if valid_phase_result(output_dir, task_name, phase):
+                            print(
+                                f"[Task {task_index + 1}/{len(dispatcher.tasks)}] "
+                                f"Actor {actor_index} skipped completed {task_name} {phase}",
+                                flush=True,
+                            )
                             continue
+                        print(
+                            f"[Task {task_index + 1}/{len(dispatcher.tasks)}] "
+                            f"Actor {actor_index} started {task_name} {phase}",
+                            flush=True,
+                        )
                         client_overrides = list(common)
                         for key, value in {
                             "task_name": task_name,
@@ -151,7 +167,11 @@ def main(cfg: DictConfig) -> None:
                                 client_cmd, cwd=robotwin_root, env=env,
                                 stdout=client_log, stderr=subprocess.STDOUT, check=True,
                             )
-                        print(f"Actor {actor_index} completed {task_name} {phase}", flush=True)
+                        print(
+                            f"[Task {task_index + 1}/{len(dispatcher.tasks)}] "
+                            f"Actor {actor_index} completed {task_name} {phase}",
+                            flush=True,
+                        )
 
             with ThreadPoolExecutor(max_workers=actor_count, thread_name_prefix="rollout") as executor:
                 futures = [executor.submit(actor_main, index) for index in range(actor_count)]

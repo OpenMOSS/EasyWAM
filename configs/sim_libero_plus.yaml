@@ -61,8 +61,8 @@ MULTIRUN:
   difficulty_levels: null
   task_ids: null
   num_gpus: 8
-  env_num_per_gpu: 4
-  inference_batch_size: 4
+  env_num_per_gpu: 20
+  inference_batch_size: 20
   inference_batch_wait_ms: 10
 
 # Internal worker arguments populated by run_libero_plus_manager.py.

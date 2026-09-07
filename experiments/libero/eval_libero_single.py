@@ -690,7 +690,15 @@ def run_single_task(
         raise ValueError(f"No initial states available for task {cfg.EVALUATION.task_id}.")
 
     try:
-        for trial_idx in range(int(cfg.EVALUATION.num_trials)):
+        num_trials = int(cfg.EVALUATION.num_trials)
+        suite_name = str(cfg.EVALUATION.task_suite_name)
+        task_id = int(cfg.EVALUATION.task_id)
+        for trial_idx in range(num_trials):
+            trial_started = time.perf_counter()
+            logging.info(
+                "[%s:%d] Trial %d/%d started",
+                suite_name, task_id, trial_idx + 1, num_trials,
+            )
             initial_state = initial_states[trial_idx % len(initial_states)]
             success, replay_images, predicted_future_video_clips, episode_mean_psnr = run_single_episode(
                 env=env,
@@ -712,6 +720,12 @@ def run_single_task(
                 results["success_episodes"].append(trial_idx)
             else:
                 results["failure_episodes"].append(trial_idx)
+            logging.info(
+                "[%s:%d] Trial %d/%d completed: success=%s cumulative=%d/%d duration=%.2fs",
+                suite_name, task_id, trial_idx + 1, num_trials, success,
+                results["successes"], trial_idx + 1,
+                time.perf_counter() - trial_started,
+            )
             if visualize_future_video:
                 results["episode_future_video_psnr"].append(episode_mean_psnr)
 
@@ -852,6 +866,10 @@ def evaluate_task_with_runtime(
         task_suite = benchmark.get_benchmark_dict()[suite_name]()
     task = task_suite.get_task(task_id)
     initial_states = task_suite.get_task_init_states(task_id)
+    logging.info(
+        "Task started: suite=%s task_id=%d name=%s trials=%d",
+        suite_name, task_id, getattr(task, "name", None), int(cfg.EVALUATION.num_trials),
+    )
 
     results: dict[str, Any] = {
         "task_suite": suite_name,
@@ -885,6 +903,11 @@ def evaluate_task_with_runtime(
     )
     results.update(task_results)
     results["duration"] = time.time() - start_time
+    logging.info(
+        "Task completed: suite=%s task_id=%d successes=%d/%d duration=%.2fs",
+        suite_name, task_id, results["successes"], results["total_episodes"],
+        results["duration"],
+    )
     return results
 
 

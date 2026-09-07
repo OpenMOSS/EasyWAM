@@ -48,9 +48,9 @@ EVALUATION:
 MULTIRUN:
   enabled: false
   num_gpus: 8
-  env_num_per_gpu: 4
-  inference_batch_size: 4
-  inference_batch_wait_ms: 10
+  env_num_per_gpu: 20
+  inference_batch_size: 20
+  inference_batch_wait_ms: 20
 
 # Internal worker arguments populated by run_robotwin_manager.py.
 WORKER:

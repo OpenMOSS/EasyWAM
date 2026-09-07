@@ -72,9 +72,10 @@ def main(cfg: DictConfig) -> None:
     def actor_main(actor_index: int) -> None:
         suites = {}
         while True:
-            raw = dispatcher.claim()
-            if raw is None:
+            claimed = dispatcher.claim_with_index()
+            if claimed is None:
                 return
+            task_index, raw = claimed
             from experiments.libero_plus.libero_plus_utils import TaskSpec
             task = TaskSpec.from_dict(json.loads(raw))
             destination = result_path(output_dir, task)
@@ -84,6 +85,11 @@ def main(cfg: DictConfig) -> None:
             task_error_path.unlink(missing_ok=True)
             task_start = time.time()
             try:
+                logging.info(
+                    "[Task %d/%d] Actor %d started %s:%d (%s)",
+                    task_index + 1, len(tasks), actor_index,
+                    task.suite, task.task_id, task.task_name,
+                )
                 local_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
                 with open_dict(local_cfg):
                     local_cfg.EVALUATION.task_suite_name = task.suite
@@ -107,7 +113,11 @@ def main(cfg: DictConfig) -> None:
                     },
                 )
                 write_json_atomic(destination, results)
-                logging.info("Actor %d completed %s:%d", actor_index, task.suite, task.task_id)
+                logging.info(
+                    "[Task %d/%d] Actor %d completed %s:%d: successes=%d/%d duration=%.2fs",
+                    task_index + 1, len(tasks), actor_index, task.suite, task.task_id,
+                    results["successes"], results["total_episodes"], results["duration"],
+                )
             except BaseException as exc:
                 write_json_atomic(task_error_path, {
                     **task.to_dict(), "error_type": type(exc).__name__, "error": str(exc),

@@ -12,6 +12,10 @@ class FileTaskDispatcher:
         self.cursor_file.touch(exist_ok=True)
 
     def claim(self) -> str | None:
+        claimed = self.claim_with_index()
+        return None if claimed is None else claimed[1]
+
+    def claim_with_index(self) -> tuple[int, str] | None:
         with self.cursor_file.open("r+", encoding="utf-8") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             raw = handle.read().strip()
@@ -22,4 +26,4 @@ class FileTaskDispatcher:
             handle.truncate()
             handle.write(str(index + 1))
             handle.flush()
-            return self.tasks[index]
+            return index, self.tasks[index]

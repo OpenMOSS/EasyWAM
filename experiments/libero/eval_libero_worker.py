@@ -65,14 +65,19 @@ def main(cfg: DictConfig) -> None:
         benchmark_dict = benchmark.get_benchmark_dict()
         suites = {}
         while True:
-            raw = dispatcher.claim()
-            if raw is None:
+            claimed = dispatcher.claim_with_index()
+            if claimed is None:
                 return
+            task_index, raw = claimed
             suite_name, task_id_text = next(csv.reader([raw]))
             task_id = int(task_id_text)
             destination = output_dir / suite_name / f"gpu{worker_index}_task{task_id}_results.json"
             if valid_result_path(output_dir, suite_name, task_id, int(cfg.EVALUATION.num_trials)) is not None:
                 continue
+            logging.info(
+                "[Task %d/%d] Actor %d started %s:%d",
+                task_index + 1, len(tasks), actor_index, suite_name, task_id,
+            )
             local_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
             with open_dict(local_cfg):
                 local_cfg.EVALUATION.task_suite_name = suite_name
@@ -81,7 +86,11 @@ def main(cfg: DictConfig) -> None:
                 suites[suite_name] = benchmark_dict[suite_name]()
             result = evaluate_task_with_runtime(local_cfg, runtime, task_suite=suites[suite_name])
             write_json_atomic(destination, result)
-            logging.info("Actor %d completed %s:%d", actor_index, suite_name, task_id)
+            logging.info(
+                "[Task %d/%d] Actor %d completed %s:%d: successes=%d/%d duration=%.2fs",
+                task_index + 1, len(tasks), actor_index, suite_name, task_id,
+                result["successes"], result["total_episodes"], result["duration"],
+            )
 
     try:
         with ThreadPoolExecutor(max_workers=actor_count, thread_name_prefix="rollout") as executor:
