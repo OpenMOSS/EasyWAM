@@ -77,7 +77,8 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.max_tasks_per_gpu=2
+  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
 Evaluate one task or change the language protocol with overrides:
@@ -94,4 +95,4 @@ The manager evaluates both `demo_clean` and `demo_randomized` for each task and 
 
 `EVALUATION.skip_get_obs_within_replan=true` skips RGB rendering while the remaining actions in a predicted chunk are executed. This speeds up evaluation, but saved video appears low frame-rate. Set it to `false` for fully rendered video. `EVALUATION.replan_steps` controls the action chunk executed before replanning.
 
-Persistent workers keep the model loaded while processing their task shard. Results are stored under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, with per-phase result files, worker logs, `summary.json`, and `summary.csv`. A task is skipped on resume only after both its clean and randomized phase results are valid; reuse the same `EVALUATION.output_dir` timestamp component to resume.
+Each GPU runs one persistent model server. Rollout clients claim tasks dynamically, use isolated action-queue sessions, and share server-side inference batches; a task's clean and randomized phases remain sequential. Results are stored under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, with per-phase result files, worker logs, `summary.json`, and `summary.csv`. A task is skipped on resume only after both phases are valid; reuse the same `EVALUATION.output_dir` timestamp component to resume.

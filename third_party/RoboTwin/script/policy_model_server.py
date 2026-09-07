@@ -11,6 +11,7 @@ import yaml
 from datetime import datetime
 import importlib
 import argparse
+import uuid
 from pathlib import Path
 from collections import deque
 
@@ -104,6 +105,9 @@ class ModelServer:
                 pass
         for t in self.client_threads:
             t.join(timeout=1)
+        close = getattr(self.model, "close", None)
+        if callable(close):
+            close()
         print("🛑 Server has been stopped")
 
     def _accept_connections(self):
@@ -125,60 +129,58 @@ class ModelServer:
                 break
 
     def _handle_client(self, client_socket):
-        """Process requests from a single client"""
-        with client_socket:
-            while self.running:
-                try:
-                    # Read message length header (4 bytes, big-endian)
-                    len_bytes = client_socket.recv(4)
-                    if not len_bytes:
-                        print("🔌 Client disconnected")
+        session_id = uuid.uuid4().hex
+        try:
+            with client_socket:
+                while self.running:
+                    try:
+                        len_bytes = client_socket.recv(4)
+                        if not len_bytes:
+                            print("🔌 Client disconnected")
+                            break
+                        msg_length = int.from_bytes(len_bytes, 'big')
+
+                        chunks = []
+                        remaining = msg_length
+                        while remaining > 0:
+                            chunk = client_socket.recv(min(remaining, 4096))
+                            if not chunk:
+                                raise ConnectionError("Incomplete data received")
+                            chunks.append(chunk)
+                            remaining -= len(chunk)
+                        raw_msg = b''.join(chunks).decode('utf-8')
+                        data = json_to_numpy(raw_msg)
+                        cmd = data.get("cmd")
+                        obs = data.get("obs")
+                        invoke = getattr(self.model, "invoke", None)
+                        if callable(invoke):
+                            result = invoke(session_id, cmd, obs)
+                        else:
+                            method = getattr(self.model, cmd, None)
+                            if not callable(method):
+                                raise AttributeError(f"No model method named '{cmd}'")
+                            result = method(obs) if obs is not None else method()
+                        response = {"res": result}
+
+                        resp_bytes = numpy_to_json(response).encode('utf-8')
+                        client_socket.sendall(len(resp_bytes).to_bytes(4, 'big'))
+                        client_socket.sendall(resp_bytes)
+
+                    except (ConnectionResetError, BrokenPipeError):
+                        print("🔌 Client connection lost")
                         break
-                    msg_length = int.from_bytes(len_bytes, 'big')
-
-                    # Read the full message based on length
-                    chunks = []
-                    remaining = msg_length
-                    while remaining > 0:
-                        chunk = client_socket.recv(min(remaining, 4096))
-                        if not chunk:
-                            raise ConnectionError("Incomplete data received")
-                        chunks.append(chunk)
-                        remaining -= len(chunk)
-                    raw_msg = b''.join(chunks).decode('utf-8')
-
-                    # Deserialize JSON to Python, reconstruct any numpy arrays
-                    data = json_to_numpy(raw_msg)
-
-                    # Extract command and observation
-                    cmd = data.get("cmd")
-                    obs = data.get("obs")  # None if not provided
-
-                    # Find corresponding model method
-                    method = getattr(self.model, cmd, None)
-                    if not callable(method):
-                        raise AttributeError(f"No model method named '{cmd}'")
-
-                    # Call method with or without obs
-                    result = method(obs) if obs is not None else method()
-                    response = {"res": result}
-
-                    # Serialize response and send back with length header
-                    resp_bytes = numpy_to_json(response).encode('utf-8')
-                    client_socket.sendall(len(resp_bytes).to_bytes(4, 'big'))
-                    client_socket.sendall(resp_bytes)
-
-                except (ConnectionResetError, BrokenPipeError):
-                    print("🔌 Client connection lost")
-                    break
-                except Exception as e:
-                    err = f"Error handling request: {e}"
-                    print(f"⚠️ {err}")
-                    tb = traceback.format_exc()
-                    error_resp = numpy_to_json({"error": err, "traceback": tb}).encode('utf-8')
-                    client_socket.sendall(len(error_resp).to_bytes(4, 'big'))
-                    client_socket.sendall(error_resp)
-                    break
+                    except Exception as e:
+                        err = f"Error handling request: {e}"
+                        print(f"⚠️ {err}")
+                        tb = traceback.format_exc()
+                        error_resp = numpy_to_json({"error": err, "traceback": tb}).encode('utf-8')
+                        client_socket.sendall(len(error_resp).to_bytes(4, 'big'))
+                        client_socket.sendall(error_resp)
+                        break
+        finally:
+            close_session = getattr(self.model, "close_session", None)
+            if callable(close_session):
+                close_session(session_id)
 
 
 # --------------------- Utility Decorators ---------------------

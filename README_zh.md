@@ -137,8 +137,7 @@ EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一�
 conda create -n easywam python=3.10 -y
 conda activate easywam
 pip install -U pip
-pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 \
-  --extra-index-url https://download.pytorch.org/whl/cu128
+pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.pytorch.org/whl/cu128
 pip install -e .
 ```
 
@@ -249,7 +248,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt>
 ```
 
-manager 默认使用 8 张 GPU。可通过 `MULTIRUN.num_gpus` 和 `MULTIRUN.max_tasks_per_gpu` 适配实际机器。环境安装、数据目录、已发布权重、任务筛选和断点恢复等内容见对应 benchmark 指南。
+manager 默认使用 8 张 GPU，每张 GPU 启动 4 个环境，动态推理 batch 上限为 4，等待窗口为 10 ms。可通过 `MULTIRUN.num_gpus`、`MULTIRUN.env_num_per_gpu`、`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 适配实际机器。每个 GPU worker 只加载一个模型，其环境共享该模型。环境安装、数据目录、已发布权重、任务筛选和断点恢复等内容见对应 benchmark 指南。
 
 ## 📚 文档
 

@@ -48,11 +48,14 @@ EVALUATION:
 MULTIRUN:
   enabled: false
   num_gpus: 8
-  max_tasks_per_gpu: 2
+  env_num_per_gpu: 4
+  inference_batch_size: 4
+  inference_batch_wait_ms: 10
 
 # Internal worker arguments populated by run_robotwin_manager.py.
 WORKER:
   task_file: null
+  task_cursor: null
   worker_index: 0
 
 hydra:

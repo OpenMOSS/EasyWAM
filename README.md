@@ -137,8 +137,7 @@ On LIBERO, training for **20,000 steps** takes approximately **6 hours** with Ea
 conda create -n easywam python=3.10 -y
 conda activate easywam
 pip install -U pip
-pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 \
-  --extra-index-url https://download.pytorch.org/whl/cu128
+pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.pytorch.org/whl/cu128
 pip install -e .
 ```
 
@@ -249,7 +248,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt>
 ```
 
-The managers default to 8 GPUs. Override `MULTIRUN.num_gpus` and `MULTIRUN.max_tasks_per_gpu` to match your machine. See the benchmark guides for installation, data layout, checkpoint examples, filtering, and resume behavior.
+The managers default to 8 GPUs, 4 environments per GPU, dynamic inference batches of up to 4, and a 10 ms batching window. Override `MULTIRUN.num_gpus`, `MULTIRUN.env_num_per_gpu`, `MULTIRUN.inference_batch_size`, and `MULTIRUN.inference_batch_wait_ms` to match your machine. Each GPU worker loads one model while its environments share that model. See the benchmark guides for installation, data layout, checkpoint examples, filtering, and resume behavior.
 
 ## 📚 Documentation
 

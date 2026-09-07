@@ -103,4 +103,4 @@ Common policy controls include:
 
 `replan_steps` is bounded by the predicted action horizon at runtime. Shorter replanning reacts more frequently but invokes the model more often. `num_inference_steps` must be positive; reducing it trades denoising compute for possible policy-quality loss.
 
-`MULTIRUN.num_gpus` and `MULTIRUN.max_tasks_per_gpu` control manager-side task sharding rather than training world size. See the [LIBERO](../instructions/libero.md), [LIBERO-Plus](../instructions/libero_plus.md), and [RoboTwin](../instructions/robotwin.md) guides for benchmark-specific selectors and resume rules.
+`MULTIRUN.num_gpus` controls evaluation model workers; `env_num_per_gpu` and the inference batching options control environment and GPU concurrency rather than training world size. See the [LIBERO](../instructions/libero.md), [LIBERO-Plus](../instructions/libero_plus.md), and [RoboTwin](../instructions/robotwin.md) guides for benchmark-specific selectors and resume rules.

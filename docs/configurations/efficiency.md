@@ -61,7 +61,8 @@ VAE micro-batching applies to both training and evaluation model construction. I
 | `EVALUATION.torch_compile_mode` | Defaults to `reduce-overhead`, which is suitable for repeated batch-1 inference and may use CUDA graphs when eligible. |
 | `EVALUATION.skip_get_obs_within_replan` | RoboTwin-only optimization that skips RGB rendering between replans; saved videos then contain fewer rendered frames. |
 | `EVALUATION.video_mode`, `visualize_future_video`, `eval_save_video` | Video encoding, decoding, visualization, and disk writes add overhead; leave disabled for throughput measurements. |
-| `MULTIRUN.num_gpus`, `max_tasks_per_gpu` | Control evaluation task concurrency. Excess workers can contend for GPU memory and rendering resources. |
+| `MULTIRUN.num_gpus`, `env_num_per_gpu` | Control model workers and concurrent environments. Each GPU loads one model. |
+| `MULTIRUN.inference_batch_size`, `inference_batch_wait_ms` | Control dynamic inference batch size and queue window. |
 
 `torch_compile_backend`, `torch_compile_fullgraph`, `torch_compile_dynamic`, and `torch_compile_options` are forwarded to `torch.compile`. Keep the checked-in defaults first. Reusing a loaded model with a different compile configuration is rejected; restart the worker when changing compile settings.
 

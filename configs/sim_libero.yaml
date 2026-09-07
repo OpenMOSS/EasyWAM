@@ -21,7 +21,6 @@ EVALUATION:
   output_dir: ./evaluate_results/libero/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
 
   # Runtime behavior
-  env_num: 1
   num_steps_wait: 30
   replan_steps: 10
   binarize_gripper: true
@@ -60,12 +59,14 @@ MULTIRUN:
     - libero_spatial
     - libero_object
   num_gpus: 8
-  # 1 selects EGL; values greater than 1 select CPU OSMesa rendering.
-  max_tasks_per_gpu: 2
+  env_num_per_gpu: 4
+  inference_batch_size: 4
+  inference_batch_wait_ms: 10
 
 # Internal worker arguments populated by run_libero_manager.py.
 WORKER:
   task_file: null
+  task_cursor: null
   worker_index: 0
 
 hydra:

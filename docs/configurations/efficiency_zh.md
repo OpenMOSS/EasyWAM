@@ -61,7 +61,8 @@ VAE micro-batching 会同时应用于训练和评测的模型构造，但不会�
 | `EVALUATION.torch_compile_mode` | 默认 `reduce-overhead`，适合重复的 batch-1 推理，条件允许时可能使用 CUDA Graph。 |
 | `EVALUATION.skip_get_obs_within_replan` | RoboTwin 专属优化，在两次 replan 之间跳过 RGB 渲染；保存的视频会因此缺少中间渲染帧。 |
 | `EVALUATION.video_mode`、`visualize_future_video`、`eval_save_video` | 视频编码、解码、可视化和磁盘写入都会增加开销；吞吐测试应保持关闭。 |
-| `MULTIRUN.num_gpus`、`max_tasks_per_gpu` | 控制评测任务并发；worker 过多可能争用 GPU 显存和渲染资源。 |
+| `MULTIRUN.num_gpus`、`env_num_per_gpu` | 控制模型 worker 数和并发环境数；每张 GPU 只加载一个模型。 |
+| `MULTIRUN.inference_batch_size`、`inference_batch_wait_ms` | 控制动态推理 batch 上限和等待窗口。 |
 
 `torch_compile_backend`、`torch_compile_fullgraph`、`torch_compile_dynamic` 和 `torch_compile_options` 会传给 `torch.compile`。应先使用仓库默认值。已经加载的模型不允许切换到另一套 compile 配置；修改这些设置后需要重启 worker。
 

@@ -50,7 +50,8 @@ python experiments/libero_plus/run_libero_plus_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.max_tasks_per_gpu=2
+  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
 Filter a development run by suite, perturbation category, difficulty, or zero-based task ID:
@@ -68,6 +69,6 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 
 Valid category slugs are `layout`, `camera`, `robot`, `language`, `light`, `background`, and `noise`; difficulty levels range from 1 to 5. Task IDs apply to every selected suite.
 
-The manager creates persistent model workers and automatically switches between EGL and OSMesa based on the number of workers per GPU. Videos and progress output are disabled by default.
+The manager loads one model per GPU. Rollout actors claim tasks dynamically, share its inference batcher, and select EGL or OSMesa according to actor concurrency. Videos and progress output are disabled by default.
 
 Results are written to `evaluate_results/libero_plus/<task>/<timestamp>/`. The directory includes `tasks.jsonl`, worker logs, per-task results, errors, `summary.json`, `summary.csv`, and `task_results.csv`, with aggregate statistics by suite, perturbation category, difficulty, and category-by-difficulty. Reuse the same explicit `EVALUATION.output_dir` to skip valid results and resume an interrupted run.

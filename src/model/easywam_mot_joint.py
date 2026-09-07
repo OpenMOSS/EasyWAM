@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence, Union
 
 import torch
 
@@ -65,6 +65,64 @@ class EasyWAMMoTJoint(EasyWAMMoT):
             segments=segments,
             device=device,
         )
+
+    @torch.inference_mode()
+    def infer_joint_batch(
+        self,
+        prompt: Optional[Union[str, Sequence[str]]],
+        input_image: torch.Tensor,
+        num_video_frames: int,
+        action_horizon: int,
+        action: Optional[torch.Tensor] = None,
+        proprio: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
+        context_mask: Optional[torch.Tensor] = None,
+        negative_prompt: Optional[str] = None,
+        text_cfg_scale: float = 1.0,
+        num_inference_steps: int = 20,
+        sigma_shift: Optional[float] = None,
+        seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
+        rand_device: str = "cpu",
+        test_action_with_infer_action: bool = False,
+        decode_video: bool = True,
+    ) -> dict[str, Any]:
+        if test_action_with_infer_action:
+            logger.warning("Joint batch inference always jointly denoises video and action.")
+        return super().infer_joint_batch(
+            prompt=prompt, input_image=input_image, num_video_frames=num_video_frames,
+            action_horizon=action_horizon, action=action, proprio=proprio, context=context,
+            context_mask=context_mask, negative_prompt=negative_prompt,
+            text_cfg_scale=text_cfg_scale, num_inference_steps=num_inference_steps,
+            sigma_shift=sigma_shift, seed=seed, rand_device=rand_device,
+            test_action_with_infer_action=False, decode_video=decode_video,
+        )
+
+    @torch.inference_mode()
+    def infer_action_batch(
+        self,
+        prompt: Optional[Union[str, Sequence[str]]],
+        input_image: torch.Tensor,
+        action_horizon: int,
+        num_video_frames: int,
+        proprio: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
+        context_mask: Optional[torch.Tensor] = None,
+        negative_prompt: Optional[str] = None,
+        text_cfg_scale: float = 1.0,
+        num_inference_steps: int = 20,
+        sigma_shift: Optional[float] = None,
+        seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
+        rand_device: str = "cpu",
+    ) -> dict[str, Any]:
+        out = self.infer_joint_batch(
+            prompt=prompt, input_image=input_image, num_video_frames=num_video_frames,
+            action_horizon=action_horizon, proprio=proprio, context=context,
+            context_mask=context_mask, negative_prompt=negative_prompt,
+            text_cfg_scale=text_cfg_scale, num_inference_steps=num_inference_steps,
+            sigma_shift=sigma_shift, seed=seed, rand_device=rand_device,
+            decode_video=False,
+        )
+        return {"action": out["action"]}
 
     @torch.inference_mode()
     def infer_joint(

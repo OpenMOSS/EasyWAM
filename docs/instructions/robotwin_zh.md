@@ -77,7 +77,8 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.max_tasks_per_gpu=2
+  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
 可以通过 override 只评测一个任务或切换语言指令协议：
@@ -94,4 +95,4 @@ manager 会对每个任务分别评测 `demo_clean` 和 `demo_randomized`，默�
 
 `EVALUATION.skip_get_obs_within_replan=true` 会在连续执行一次预测 action chunk 的剩余动作时跳过 RGB 渲染，从而加速评测，但保存的视频会显得帧率很低。如果需要完整渲染视频，请设置为 `false`。`EVALUATION.replan_steps` 控制每次重新规划前执行的动作数。
 
-常驻 worker 会在处理任务分片时保持模型已加载状态。结果保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括各阶段结果文件、worker 日志、`summary.json` 和 `summary.csv`。只有 clean 和 randomized 两个阶段的结果都有效时，续评才会跳过该任务；使用相同的 `EVALUATION.output_dir` 时间戳部分即可继续。
+每张 GPU 运行一个常驻模型服务。rollout 客户端动态领取任务，使用隔离的动作队列会话，并共享服务端推理 batch；同一任务的 clean 和 randomized 阶段仍按顺序执行。结果保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括各阶段结果文件、worker 日志、`summary.json` 和 `summary.csv`。只有两个阶段的结果都有效时，续评才会跳过该任务；使用相同的 `EVALUATION.output_dir` 时间戳部分即可继续。

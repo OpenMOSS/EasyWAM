@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -31,7 +33,8 @@ from experiments.libero_plus.libero_plus_utils import (  # noqa: E402
     read_task_jsonl,
     result_path,
 )
-from utils.pytorch_utils import set_global_seed  # noqa: E402
+from experiments.batched_inference import DynamicInferenceBatcher  # noqa: E402
+from experiments.task_dispatch import FileTaskDispatcher  # noqa: E402
 
 
 @hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_libero_plus.yaml")
@@ -49,85 +52,76 @@ def main(cfg: DictConfig) -> None:
         logging.info("Worker shard is empty: %s", task_file)
         return
 
+    cursor_value = cfg.WORKER.get("task_cursor")
+    if not cursor_value:
+        raise ValueError("WORKER.task_cursor is required.")
+    dispatcher = FileTaskDispatcher(task_file, Path(str(cursor_value)).expanduser().resolve())
     runtime = build_eval_runtime(cfg)
     # LIBERO-Plus init-state files are trusted local NumPy pickles. Set this
     # only after the model checkpoint has loaded; upstream calls torch.load
     # without an explicit weights_only argument when tasks are evaluated.
     os.environ.pop("TORCH_FORCE_WEIGHTS_ONLY_LOAD", None)
     os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    suites = {
-        suite_name: instantiate_suite(benchmark, suite_name)
-        for suite_name in dict.fromkeys(task.suite for task in tasks)
-    }
-    logging.info("Loaded model once for %d LIBERO-Plus tasks", len(tasks))
+    actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+    runtime.batcher = DynamicInferenceBatcher(
+        runtime.model, max_batch_size=int(cfg.MULTIRUN.inference_batch_size),
+        wait_ms=float(cfg.MULTIRUN.inference_batch_wait_ms),
+        prompt_cache_size=max(actor_count * 2, 8),
+    )
 
-    for position, task in enumerate(tasks, start=1):
-        destination = result_path(output_dir, task)
-        if is_valid_result(destination, task):
-            logging.info("[%d/%d] Skip completed %s:%d", position, len(tasks), task.suite, task.task_id)
-            continue
-
-        task_error_path = error_path(output_dir, task)
-        task_error_path.unlink(missing_ok=True)
-        task_start = time.time()
-        try:
-            if cfg.get("seed") is not None:
-                # Persistent workers must reproduce the old one-process-per-task RNG semantics.
-                set_global_seed(int(cfg.seed), get_worker_init_fn=False)
-            with open_dict(cfg):
-                cfg.EVALUATION.task_suite_name = task.suite
-                cfg.EVALUATION.task_id = task.task_id
-
-            task_suite = suites[task.suite]
-            actual_name = str(task_suite.get_task(task.task_id).name)
-            if actual_name != task.task_name:
-                raise RuntimeError(
-                    f"Task manifest mismatch for {task.suite}:{task.task_id}: "
-                    f"expected {task.task_name!r}, installed benchmark has {actual_name!r}."
+    def actor_main(actor_index: int) -> None:
+        suites = {}
+        while True:
+            raw = dispatcher.claim()
+            if raw is None:
+                return
+            from experiments.libero_plus.libero_plus_utils import TaskSpec
+            task = TaskSpec.from_dict(json.loads(raw))
+            destination = result_path(output_dir, task)
+            if is_valid_result(destination, task):
+                continue
+            task_error_path = error_path(output_dir, task)
+            task_error_path.unlink(missing_ok=True)
+            task_start = time.time()
+            try:
+                local_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
+                with open_dict(local_cfg):
+                    local_cfg.EVALUATION.task_suite_name = task.suite
+                    local_cfg.EVALUATION.task_id = task.task_id
+                if task.suite not in suites:
+                    suites[task.suite] = instantiate_suite(benchmark, task.suite)
+                task_suite = suites[task.suite]
+                actual_name = str(task_suite.get_task(task.task_id).name)
+                if actual_name != task.task_name:
+                    raise RuntimeError(
+                        f"Task manifest mismatch for {task.suite}:{task.task_id}: "
+                        f"expected {task.task_name!r}, installed benchmark has {actual_name!r}."
+                    )
+                results = evaluate_task_with_runtime(
+                    local_cfg, runtime, task_suite=task_suite,
+                    result_metadata={
+                        "task_name": task.task_name, "category": task.category,
+                        "category_label": task.category_label,
+                        "difficulty_level": task.difficulty_level,
+                        "classification_id": task.classification_id,
+                    },
                 )
+                write_json_atomic(destination, results)
+                logging.info("Actor %d completed %s:%d", actor_index, task.suite, task.task_id)
+            except BaseException as exc:
+                write_json_atomic(task_error_path, {
+                    **task.to_dict(), "error_type": type(exc).__name__, "error": str(exc),
+                    "traceback": traceback.format_exc(), "duration": time.time() - task_start,
+                })
+                raise
 
-            results = evaluate_task_with_runtime(
-                cfg,
-                runtime,
-                task_suite=task_suite,
-                result_metadata={
-                    "task_name": task.task_name,
-                    "category": task.category,
-                    "category_label": task.category_label,
-                    "difficulty_level": task.difficulty_level,
-                    "classification_id": task.classification_id,
-                },
-            )
-            write_started = time.perf_counter()
-            write_json_atomic(destination, results)
-            write_seconds = time.perf_counter() - write_started
-            logging.info(
-                "[%d/%d] Completed %s:%d success=%d duration=%.2fs",
-                position,
-                len(tasks),
-                task.suite,
-                task.task_id,
-                results["successes"],
-                results["duration"],
-            )
-            if bool(cfg.EVALUATION.get("timing_enabled", False)):
-                logging.info(
-                    "Result write time for %s:%d: %.6fs",
-                    task.suite,
-                    task.task_id,
-                    write_seconds,
-                )
-        except BaseException as exc:
-            error_payload = {
-                **task.to_dict(),
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-                "traceback": traceback.format_exc(),
-                "duration": time.time() - task_start,
-            }
-            write_json_atomic(task_error_path, error_payload)
-            logging.exception("Infrastructure failure in %s:%d", task.suite, task.task_id)
-            raise
+    try:
+        with ThreadPoolExecutor(max_workers=actor_count, thread_name_prefix="rollout") as executor:
+            futures = [executor.submit(actor_main, index) for index in range(actor_count)]
+            for future in futures:
+                future.result()
+    finally:
+        runtime.batcher.close()
 
 
 if __name__ == "__main__":

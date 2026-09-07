@@ -32,7 +32,6 @@ from experiments.libero.render_backend import (  # noqa: E402
     configure_mujoco_worker_env,
     select_mujoco_render_backend,
 )
-from experiments.libero.run_libero_manager import build_worker_slots  # noqa: E402
 
 
 def _resolve_path(value: str) -> Path:
@@ -122,15 +121,6 @@ def _terminate_processes(processes: list[subprocess.Popen]) -> None:
             process.wait()
 
 
-def _build_shards(tasks: list[TaskSpec], worker_count: int) -> list[list[TaskSpec]]:
-    if worker_count <= 0:
-        raise ValueError(f"worker_count must be positive, got {worker_count}.")
-    shards: list[list[TaskSpec]] = [[] for _ in range(worker_count)]
-    for index, task in enumerate(tasks):
-        shards[index % worker_count].append(task)
-    return shards
-
-
 def _summarize(output_dir: Path) -> None:
     from experiments.libero_plus.summarize_libero_plus import summarize_results
 
@@ -147,15 +137,16 @@ def _run_workers(
     pending: list[TaskSpec],
 ) -> None:
     num_gpus = int(cfg.MULTIRUN.get("num_gpus", 1))
-    max_tasks_per_gpu = int(cfg.MULTIRUN.get("max_tasks_per_gpu", 1))
-    slots = build_worker_slots(num_gpus, max_tasks_per_gpu)
-    render_backend = select_mujoco_render_backend(max_tasks_per_gpu)
+    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    batch_size = int(cfg.MULTIRUN.inference_batch_size)
+    if batch_size > env_num_per_gpu:
+        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
+    render_backend = select_mujoco_render_backend(env_num_per_gpu)
     print(
         f"MuJoCo rendering backend: {render_backend} "
-        f"(num_gpus={num_gpus}, max_tasks_per_gpu={max_tasks_per_gpu})"
+        f"(num_gpus={num_gpus}, env_num_per_gpu={env_num_per_gpu})"
     )
-    worker_count = min(len(slots), len(pending))
-    shards = _build_shards(pending, worker_count)
+    worker_count = min(num_gpus, len(pending))
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -165,10 +156,13 @@ def _run_workers(
     processes: list[subprocess.Popen] = []
     log_handles = []
     try:
-        for worker_index, ((gpu_id, slot), shard) in enumerate(zip(slots, shards)):
-            shard_path = worker_dir / f"worker_{worker_index:03d}.jsonl"
-            write_jsonl(shard_path, (task.to_dict() for task in shard))
-            log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}_slot_{slot}.log"
+        shared_task_path = worker_dir / "pending_tasks.jsonl"
+        write_jsonl(shared_task_path, (task.to_dict() for task in pending))
+        cursor_path = worker_dir / "task_cursor.txt"
+        cursor_path.write_text("0", encoding="utf-8")
+        for worker_index in range(worker_count):
+            gpu_id = worker_index
+            log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log"
             log_handle = log_path.open("a", encoding="utf-8")
             log_handles.append(log_handle)
             command = [
@@ -179,12 +173,17 @@ def _run_workers(
                 _string_override("EVALUATION.output_dir", output_dir),
                 _string_override("EVALUATION.dataset_stats_path", dataset_stats),
                 f"gpu_id={gpu_id}",
-                _string_override("WORKER.task_file", shard_path),
+                _string_override("WORKER.task_file", shared_task_path),
+                _string_override("WORKER.task_cursor", cursor_path),
+                f"WORKER.worker_index={worker_index}",
+                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.inference_batch_size={batch_size}",
+                f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
                 *extra_overrides,
             ]
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            configure_mujoco_worker_env(env, max_tasks_per_gpu)
+            configure_mujoco_worker_env(env, env_num_per_gpu)
             env.setdefault("PYTHONFAULTHANDLER", "1")
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
@@ -199,8 +198,8 @@ def _run_workers(
                 )
             )
             print(
-                f"Started worker {worker_index} on GPU {gpu_id} slot {slot}: "
-                f"{len(shard)} tasks, log={log_path}"
+                f"Started model worker {worker_index} on GPU {gpu_id}: "
+                f"envs={env_num_per_gpu}, log={log_path}"
             )
 
         while processes:

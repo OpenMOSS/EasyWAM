@@ -3,7 +3,6 @@ from typing import Any, Optional, Sequence, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from PIL import Image
 
 from utils.logging_config import get_logger
 
@@ -15,6 +14,12 @@ from .component.attention import (
     elide_fully_valid_attention_mask,
 )
 from .component.mot import MoT
+from .helpers.batching import (
+    decode_video_batch,
+    encode_image_batch,
+    randn_per_sample,
+    validate_single_inference_image,
+)
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
 logger = get_logger(__name__)
@@ -392,27 +397,10 @@ class EasyWAMMoT(torch.nn.Module):
 
     @torch.no_grad()
     def _encode_input_image_latents_tensor(self, input_image: torch.Tensor):
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
-            raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
-            )
-        image = input_image.to(device=self.device)[0].unsqueeze(1)
-        z = self.vae.encode([image], device=self.device)
-        if isinstance(z, list):
-            z = z[0].unsqueeze(0)
-        return z
+        return encode_image_batch(self.vae, input_image, self.device)
 
     def _decode_latents(self, latents):
-        video_tensor = self.vae.decode(latents, device=self.device)
-        video_tensor = video_tensor.squeeze(0).detach().float().clamp(-1, 1)
-        video_tensor = ((video_tensor + 1.0) * 127.5).to(torch.uint8).cpu()
-        frames = []
-        for t in range(video_tensor.shape[1]):
-            frame = video_tensor[:, t].permute(1, 2, 0).numpy()
-            frames.append(Image.fromarray(frame))
-        return frames
+        return decode_video_batch(self.vae, latents, self.device)
 
     @staticmethod
     def _scheduler_timestep_to_unit(timestep: torch.Tensor, scheduler) -> torch.Tensor:
@@ -1219,9 +1207,9 @@ class EasyWAMMoT(torch.nn.Module):
         return len(video_timesteps)
 
     @torch.inference_mode()
-    def infer_joint(
+    def infer_joint_batch(
         self,
-        prompt: Optional[str],
+        prompt: Optional[Union[str, Sequence[str]]],
         input_image: torch.Tensor,
         num_video_frames: int,
         action_horizon: int,
@@ -1233,36 +1221,22 @@ class EasyWAMMoT(torch.nn.Module):
         text_cfg_scale: float = 1.0,
         num_inference_steps: int = 20,
         sigma_shift: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
         rand_device: str = "cpu",
         test_action_with_infer_action: bool = False,
         decode_video: bool = True,
     ) -> dict[str, Any]:
         self.eval()
         if test_action_with_infer_action:
-            if seed is None:
-                raise ValueError("`test_action_with_infer_action=True` requires non-null `seed`.")
-            action_only_out = self.infer_action(
-                prompt=prompt,
-                input_image=input_image.clone(),
-                action_horizon=action_horizon,
-                num_video_frames=num_video_frames,
-                context=context.clone() if context is not None else None,
-                context_mask=context_mask.clone() if context_mask is not None else None,
-                num_inference_steps=num_inference_steps,
-                sigma_shift=sigma_shift,
-                seed=seed,
-                rand_device=rand_device,
-                proprio=proprio.clone() if proprio is not None else None,
-            )["action"]
+            raise ValueError("Batch inference does not support `test_action_with_infer_action`.")
         
         if input_image.ndim == 3:
             input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+        if input_image.ndim != 4 or input_image.shape[1] != 3:
             raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
+                f"`input_image` must have shape [B,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
             )
-        _, _, height, width = input_image.shape
+        batch_size, _, height, width = input_image.shape
         checked_h, checked_w, checked_t = self._check_resize_height_width(height, width, num_video_frames)
         if (checked_h, checked_w) != (height, width):
             raise ValueError(
@@ -1275,10 +1249,9 @@ class EasyWAMMoT(torch.nn.Module):
         if action is not None:
             if action.ndim == 2:
                 action = action.unsqueeze(0)
-            if action.ndim != 3 or action.shape[0] != 1 or action.shape[1] != action_horizon:
-                # NOTE: This enforces action condition to have the same shape as action horizon to predict, which may be unnecessary
+            if action.ndim != 3 or action.shape[0] != batch_size or action.shape[1] != action_horizon:
                 raise ValueError(
-                    f"`action` must have shape [1, T, a_dim] or [T, a_dim], got {tuple(action.shape)} with action_horizon={action_horizon}"
+                    f"`action` must have shape [B,T,D], got {tuple(action.shape)} with B={batch_size} and T={action_horizon}"
                 )
             action = action.to(device=self.device, dtype=self.torch_dtype)
         if proprio is not None:
@@ -1286,10 +1259,10 @@ class EasyWAMMoT(torch.nn.Module):
                 raise ValueError("`proprio` was provided but `state_dim=None` so `state_encoder` is disabled.")
             if proprio.ndim == 1:
                 proprio = proprio.unsqueeze(0)
-            elif proprio.ndim == 2 and proprio.shape[0] == 1:
+            elif proprio.ndim == 2 and proprio.shape[0] == batch_size:
                 pass
             else:
-                raise ValueError(f"`proprio` must be [D] or [1,D], got shape {tuple(proprio.shape)}")
+                raise ValueError(f"`proprio` must be [B,D], got shape {tuple(proprio.shape)}")
             if proprio.shape[1] != self.state_dim:
                 raise ValueError(f"`proprio` last dim must be {self.state_dim}, got {proprio.shape[1]}")
             proprio = proprio.to(device=self.device, dtype=self.torch_dtype)
@@ -1298,19 +1271,13 @@ class EasyWAMMoT(torch.nn.Module):
         latent_h = height // self.vae.upsampling_factor
         latent_w = width // self.vae.upsampling_factor
 
-        video_generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        action_generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        latents_video = torch.randn(
-            (1, self.vae.model.z_dim, latent_t, latent_h, latent_w),
-            generator=video_generator,
-            device=rand_device,
-            dtype=torch.float32,
+        latents_video = randn_per_sample(
+            (self.vae.model.z_dim, latent_t, latent_h, latent_w), seeds=seed,
+            batch_size=batch_size, rand_device=rand_device,
         ).to(device=self.device, dtype=self.torch_dtype)
-        latents_action = torch.randn(
-            (1, action_horizon, self.action_expert.action_dim),
-            generator=action_generator,
-            device=rand_device,
-            dtype=torch.float32,
+        latents_action = randn_per_sample(
+            (action_horizon, self.action_expert.action_dim), seeds=seed,
+            batch_size=batch_size, rand_device=rand_device,
         ).to(device=self.device, dtype=self.torch_dtype)
 
         input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
@@ -1340,6 +1307,8 @@ class EasyWAMMoT(torch.nn.Module):
                 )
             context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
             context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if context.shape[0] != batch_size or context_mask.shape[0] != batch_size:
+            raise ValueError("Context batch size must match input_image batch size.")
         if proprio is not None:
             context, context_mask = self._append_state_to_context(
                 context=context,
@@ -1369,8 +1338,8 @@ class EasyWAMMoT(torch.nn.Module):
             infer_timesteps_action,
             infer_deltas_action,
         ):
-            timestep_video = step_t_video.unsqueeze(0).to(dtype=latents_video.dtype, device=self.device)
-            timestep_action = step_t_action.unsqueeze(0).to(dtype=latents_action.dtype, device=self.device)
+            timestep_video = step_t_video.expand(batch_size).to(dtype=latents_video.dtype, device=self.device)
+            timestep_action = step_t_action.expand(batch_size).to(dtype=latents_action.dtype, device=self.device)
 
             pred_video_posi, pred_action_posi = self._predict_joint_noise(
                 latents_video=latents_video,
@@ -1393,23 +1362,25 @@ class EasyWAMMoT(torch.nn.Module):
             latents_action = self.infer_action_scheduler.step(pred_action, step_delta_action, latents_action)
             latents_video[:, :, 0:1] = first_frame_latents.clone()
 
-        action_out = latents_action[0].detach().to(device="cpu", dtype=torch.float32)
-        if test_action_with_infer_action:
-            if not torch.allclose(action_out, action_only_out, atol=1e-2, rtol=1e-2):
-                max_abs_diff = (action_out - action_only_out).abs().max().item()
-                logger.warning(
-                    f"Action from infer_joint and infer_action differ with max abs diff {max_abs_diff:.6f}. "
-                )
-
-        result = {"action": action_out}
+        result = {"action": latents_action.detach().to(device="cpu", dtype=torch.float32)}
         if decode_video:
             result["video"] = self._decode_latents(latents_video)
         return result
 
     @torch.inference_mode()
-    def infer_action(
+    def infer_joint(self, *args, **kwargs) -> dict[str, Any]:
+        validate_single_inference_image(args, kwargs)
+        kwargs["test_action_with_infer_action"] = False
+        result = self.infer_joint_batch(*args, **kwargs)
+        result["action"] = result["action"][0]
+        if "video" in result and result["video"] and isinstance(result["video"][0], list):
+            result["video"] = result["video"][0]
+        return result
+
+    @torch.inference_mode()
+    def infer_action_batch(
         self,
-        prompt: Optional[str],
+        prompt: Optional[Union[str, Sequence[str]]],
         input_image: torch.Tensor,
         action_horizon: int,
         proprio: Optional[torch.Tensor] = None,
@@ -1419,7 +1390,7 @@ class EasyWAMMoT(torch.nn.Module):
         text_cfg_scale: float = 1.0,
         num_inference_steps: int = 20,
         sigma_shift: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
         rand_device: str = "cpu",
         num_video_frames: int = 5,
     ) -> dict[str, Any]:
@@ -1428,7 +1399,7 @@ class EasyWAMMoT(torch.nn.Module):
             getattr(self.video_expert, "video_attention_mask_mode", "")
         )
         if attention_mode == "flux2_reference_causal":
-            return self._infer_action_flux2(
+            return self._infer_action_flux2_batch(
                 prompt=prompt,
                 input_image=input_image,
                 action_horizon=action_horizon,
@@ -1441,7 +1412,7 @@ class EasyWAMMoT(torch.nn.Module):
                 rand_device=rand_device,
             )
         if attention_mode == "bidirectional":
-            joint_out = self.infer_joint(
+            joint_out = self.infer_joint_batch(
                 prompt=prompt,
                 input_image=input_image,
                 num_video_frames=num_video_frames,
@@ -1468,11 +1439,11 @@ class EasyWAMMoT(torch.nn.Module):
 
         if input_image.ndim == 3:
             input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+        if input_image.ndim != 4 or input_image.shape[1] != 3:
             raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
+                f"`input_image` must have shape [B,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
             )
-        _, _, height, width = input_image.shape
+        batch_size, _, height, width = input_image.shape
         if height % 16 != 0 or width % 16 != 0:
             raise ValueError(
                 f"`input_image` must be resized before infer, expected multiples of 16 but got HxW=({height},{width})"
@@ -1482,20 +1453,17 @@ class EasyWAMMoT(torch.nn.Module):
                 raise ValueError("`proprio` was provided but `state_dim=None` so `state_encoder` is disabled.")
             if proprio.ndim == 1:
                 proprio = proprio.unsqueeze(0)
-            elif proprio.ndim == 2 and proprio.shape[0] == 1:
+            elif proprio.ndim == 2 and proprio.shape[0] == batch_size:
                 pass
             else:
-                raise ValueError(f"`proprio` must be [D] or [1,D], got shape {tuple(proprio.shape)}")
+                raise ValueError(f"`proprio` must be [B,D], got shape {tuple(proprio.shape)}")
             if proprio.shape[1] != self.state_dim:
                 raise ValueError(f"`proprio` last dim must be {self.state_dim}, got {proprio.shape[1]}")
             proprio = proprio.to(device=self.device, dtype=self.torch_dtype)
 
-        generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        latents_action = torch.randn(
-            (1, action_horizon, self.action_expert.action_dim),
-            generator=generator,
-            device=rand_device,
-            dtype=torch.float32,
+        latents_action = randn_per_sample(
+            (action_horizon, self.action_expert.action_dim), seeds=seed,
+            batch_size=batch_size, rand_device=rand_device,
         ).to(device=self.device, dtype=self.torch_dtype)
 
         input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
@@ -1524,6 +1492,8 @@ class EasyWAMMoT(torch.nn.Module):
                 )
             context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
             context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if context.shape[0] != batch_size or context_mask.shape[0] != batch_size:
+            raise ValueError("Context batch size must match input_image batch size.")
         if proprio is not None:
             context, context_mask = self._append_state_to_context(
                 context=context,
@@ -1578,7 +1548,7 @@ class EasyWAMMoT(torch.nn.Module):
             shift_override=sigma_shift,
         )
         for step_t_action, step_delta_action in zip(infer_timesteps_action, infer_deltas_action):
-            timestep_action = step_t_action.unsqueeze(0).to(dtype=latents_action.dtype, device=self.device)
+            timestep_action = step_t_action.expand(batch_size).to(dtype=latents_action.dtype, device=self.device)
 
             pred_action_posi = self._predict_action_noise_with_cache(
                 latents_action=latents_action,
@@ -1596,14 +1566,28 @@ class EasyWAMMoT(torch.nn.Module):
             latents_action = self.infer_action_scheduler.step(pred_action, step_delta_action, latents_action)
 
         return {
-            "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
+            "action": latents_action.detach().to(device="cpu", dtype=torch.float32),
         }
 
     @torch.inference_mode()
-    def _infer_action_flux2(
+    def infer_action(self, *args, **kwargs) -> dict[str, Any]:
+        validate_single_inference_image(args, kwargs)
+        batch_method = getattr(self, "infer_action_batch", None)
+        if not callable(batch_method):
+            attention_mode = str(getattr(self.video_expert, "video_attention_mask_mode", ""))
+            if attention_mode == "bidirectional":
+                kwargs.setdefault("num_video_frames", 5)
+                kwargs["test_action_with_infer_action"] = False
+                return {"action": self.infer_joint(*args, **kwargs)["action"]}
+            raise AttributeError("infer_action_batch is unavailable")
+        result = batch_method(*args, **kwargs)
+        return {"action": result["action"][0]}
+
+    @torch.inference_mode()
+    def _infer_action_flux2_batch(
         self,
         *,
-        prompt: Optional[str],
+        prompt: Optional[Union[str, Sequence[str]]],
         input_image: torch.Tensor,
         action_horizon: int,
         proprio: Optional[torch.Tensor],
@@ -1611,14 +1595,14 @@ class EasyWAMMoT(torch.nn.Module):
         context_mask: Optional[torch.Tensor],
         num_inference_steps: int,
         sigma_shift: Optional[float],
-        seed: Optional[int],
+        seed: Optional[Union[int, Sequence[Optional[int]]]],
         rand_device: str,
     ) -> dict[str, Any]:
         if input_image.ndim == 3:
             input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+        if input_image.ndim != 4 or input_image.shape[1] != 3:
             raise ValueError(
-                f"`input_image` must be [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
+                f"`input_image` must be [B,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
             )
         height, width = int(input_image.shape[-2]), int(input_image.shape[-1])
         if height % 16 or width % 16:
@@ -1654,9 +1638,9 @@ class EasyWAMMoT(torch.nn.Module):
                 raise ValueError("FLUX.2 action inference requires proprio when state_dim is enabled.")
             if proprio.ndim == 1:
                 proprio = proprio.unsqueeze(0)
-            if proprio.ndim != 2 or proprio.shape != (1, self.state_dim):
+            if proprio.ndim != 2 or proprio.shape != (input_image.shape[0], self.state_dim):
                 raise ValueError(
-                    f"`proprio` must be [1,{self.state_dim}], got {tuple(proprio.shape)}"
+                    f"`proprio` must be [B,{self.state_dim}], got {tuple(proprio.shape)}"
                 )
             context, context_mask = self._append_state_to_context(
                 context, context_mask, proprio.to(device=self.device, dtype=self.torch_dtype)
@@ -1672,12 +1656,9 @@ class EasyWAMMoT(torch.nn.Module):
         empty_target = ref_tokens.new_zeros(batch_size, 0, ref_tokens.shape[-1])
         empty_target_ids = ref_img_ids.new_zeros(batch_size, 0, ref_img_ids.shape[-1])
 
-        generator = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        latents_action = torch.randn(
-            (batch_size, action_horizon, self.action_expert.action_dim),
-            generator=generator,
-            device=rand_device,
-            dtype=torch.float32,
+        latents_action = randn_per_sample(
+            (action_horizon, self.action_expert.action_dim), seeds=seed,
+            batch_size=batch_size, rand_device=rand_device,
         ).to(device=self.device, dtype=self.torch_dtype)
         timesteps, deltas = self.infer_action_scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -1741,7 +1722,7 @@ class EasyWAMMoT(torch.nn.Module):
                 pred_action, step_delta, latents_action
             )
 
-        return {"action": latents_action[0].detach().to(device="cpu", dtype=torch.float32)}
+        return {"action": latents_action.detach().to(device="cpu", dtype=torch.float32)}
 
     @torch.inference_mode()
     def infer(

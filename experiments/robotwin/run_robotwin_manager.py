@@ -19,7 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.robotwin.result_utils import parse_success_rate, task_is_complete  # noqa: E402
+from experiments.robotwin.result_utils import (  # noqa: E402
+    parse_success_rate,
+    task_is_complete,
+)
 
 WORKER_ENTRY = PROJECT_ROOT / "experiments" / "robotwin" / "eval_robotwin_worker.py"
 EVAL_STEP_LIMIT_FILE = PROJECT_ROOT / "third_party" / "RoboTwin" / "task_config" / "_eval_step_limit.yml"
@@ -44,12 +47,6 @@ def _load_all_tasks() -> list[str]:
     if not isinstance(payload, dict) or not payload:
         raise ValueError(f"Invalid task map: {EVAL_STEP_LIMIT_FILE}")
     return list(dict.fromkeys(str(key) for key in payload))
-
-
-def _build_worker_slots(num_gpus: int, max_tasks_per_gpu: int) -> list[tuple[int, int]]:
-    if num_gpus <= 0 or max_tasks_per_gpu <= 0:
-        raise ValueError("num_gpus and max_tasks_per_gpu must both be positive.")
-    return [(gpu, slot) for gpu in range(num_gpus) for slot in range(max_tasks_per_gpu)]
 
 
 def _is_blocked_override(raw: str) -> bool:
@@ -111,8 +108,6 @@ def main(cfg: DictConfig) -> None:
         raise FileNotFoundError(checkpoint)
     configured_task = cfg.EVALUATION.task_name
     tasks = _load_all_tasks() if configured_task is None or not str(configured_task).strip() else [str(configured_task)]
-    slots = _build_worker_slots(int(cfg.MULTIRUN.num_gpus), int(cfg.MULTIRUN.max_tasks_per_gpu))
-
     raw_output = _resolve_path(str(cfg.EVALUATION.output_dir))
     output_dir = PROJECT_ROOT / "evaluate_results" / "robotwin" / _resolve_ckpt_tag(checkpoint) / raw_output.name
     pending_tasks = [task for task in tasks if not task_is_complete(output_dir, task)]
@@ -122,10 +117,12 @@ def main(cfg: DictConfig) -> None:
         print(f"RoboTwin evaluation already complete: {output_dir}")
         return
 
-    worker_count = min(len(pending_tasks), len(slots))
-    shards = [[] for _ in range(worker_count)]
-    for index, task in enumerate(pending_tasks):
-        shards[index % worker_count].append(task)
+    num_gpus = int(cfg.MULTIRUN.num_gpus)
+    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    batch_size = int(cfg.MULTIRUN.inference_batch_size)
+    if batch_size > env_num_per_gpu:
+        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
+    worker_count = min(len(pending_tasks), num_gpus)
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -137,17 +134,26 @@ def main(cfg: DictConfig) -> None:
     processes: list[subprocess.Popen] = []
     handles = []
     try:
-        for worker_index, ((gpu_id, slot), shard) in enumerate(zip(slots, shards)):
-            shard_path = worker_dir / f"worker_{worker_index:03d}.json"
-            shard_path.write_text(json.dumps(shard), encoding="utf-8")
-            log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}_slot_{slot}.log"
+        jobs = [{"task_name": task} for task in pending_tasks]
+        task_path = worker_dir / "pending_jobs.jsonl"
+        task_path.write_text("".join(json.dumps(job) + "\n" for job in jobs), encoding="utf-8")
+        cursor_path = worker_dir / "task_cursor.txt"
+        cursor_path.write_text("0", encoding="utf-8")
+        for worker_index in range(worker_count):
+            gpu_id = worker_index
+            log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log"
             handle = log_path.open("a", encoding="utf-8")
             handles.append(handle)
             command = [
                 sys.executable, str(WORKER_ENTRY), f"task={task_choice}", f"ckpt={checkpoint}",
-                f"gpu_id={gpu_id}", f"WORKER.task_file={shard_path}",
+                f"gpu_id={gpu_id}", f"WORKER.task_file={task_path}",
+                f"WORKER.task_cursor={cursor_path}",
                 f"EVALUATION.output_dir={output_dir}",
-                f"WORKER.worker_index={worker_index}", *extra,
+                f"WORKER.worker_index={worker_index}",
+                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.inference_batch_size={batch_size}",
+                f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
+                *extra,
             ]
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
@@ -155,7 +161,7 @@ def main(cfg: DictConfig) -> None:
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
             processes.append(subprocess.Popen(command, cwd=PROJECT_ROOT, env=env, stdout=handle, stderr=subprocess.STDOUT))
-            print(f"Started worker {worker_index}: gpu={gpu_id} slot={slot}, tasks={len(shard)}")
+            print(f"Started model worker {worker_index}: gpu={gpu_id}, envs={env_num_per_gpu}")
         while not all(process.poll() == 0 for process in processes):
             failed = next((p for p in processes if p.poll() not in (None, 0)), None)
             if failed is not None:

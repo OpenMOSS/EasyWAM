@@ -97,18 +97,19 @@ python experiments/libero/run_libero_manager.py \
 常用参数示例：
 
 ```bash
-# 只评测部分 suite，在四张 GPU 上各启动一个 worker
+# 只评测部分 suite，每张 GPU 启动一个模型 worker 和四个 rollout actor
 python experiments/libero/run_libero_manager.py \
   task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   'MULTIRUN.task_suite_names=[libero_spatial,libero_object]' \
-  MULTIRUN.num_gpus=4 MULTIRUN.max_tasks_per_gpu=1
+  MULTIRUN.num_gpus=4 MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 
 # 仅检查安装并生成任务清单，不启动 rollout
 python experiments/libero/run_libero_manager.py \
   task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> MULTIRUN.create_only=true
 ```
 
-默认协议会评测四个 suite，每个任务执行 50 次。每张 GPU 一个 worker 时 manager 使用 EGL；单卡多 worker 时使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。
+默认协议会评测四个 suite，每个任务执行 50 次。每张 GPU 只加载一个模型，rollout actor 动态领取任务并共享动态推理组批器。单 actor 使用 EGL，并发 actor 使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。
 
 结果保存在 `evaluate_results/libero/<task>/<timestamp>/`，其中包括 worker 日志、逐任务 JSON、`summary.json`、`summary.csv` 和 `task_success_rates.csv`。重新指定同一个 `EVALUATION.output_dir` 即可续评，manager 会跳过结果完整的任务。

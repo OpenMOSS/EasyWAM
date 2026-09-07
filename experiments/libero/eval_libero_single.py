@@ -59,6 +59,7 @@ class LiberoEvalRuntime:
     input_h: int
     model_device: str
     prompt_cache: PromptContextCache
+    batcher: Any = None
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -392,22 +393,17 @@ def _predict_action_chunk(
         num_inference_steps = int(num_inference_steps_cfg)
     prompt_template = DEFAULT_PROMPT
     prompt = prompt_template.format(task=task_description)
-    context, context_mask = prompt_cache.get(prompt)
-
     image, proprio, imgs = _obs_to_model_input(
         obs,
         cfg=cfg,
         processor=processor,
         width=input_w,
         height=input_h,
-        device=model_device,
-        dtype=model.torch_dtype,
+        device="cpu" if isinstance(model, LiberoEvalRuntime) else model_device,
+        dtype=torch.float32 if isinstance(model, LiberoEvalRuntime) else model.torch_dtype,
     )
 
     infer_kwargs = {
-        "prompt": None,
-        "context": context,
-        "context_mask": context_mask,
         "input_image": image,
         "action_horizon": action_horizon,
         "negative_prompt": str(cfg.EVALUATION.get("negative_prompt", "")),
@@ -426,16 +422,32 @@ def _predict_action_chunk(
     predicted_future_frames = None
     if visualize_future_video:
         infer_kwargs["num_video_frames"] = _get_num_video_frames(cfg)
-    elif bool(getattr(model, "_eval_supports_num_video_frames", False)):
+    elif bool(getattr(
+        model.model if isinstance(model, LiberoEvalRuntime) else model,
+        "_eval_supports_num_video_frames",
+        False,
+    )):
         infer_kwargs["num_video_frames"] = _get_num_video_frames(cfg)
 
     infer_started = time.perf_counter()
-    with torch.inference_mode():
+    if isinstance(model, LiberoEvalRuntime):
+        pred = model.batcher.submit(
+            "joint" if visualize_future_video else "action",
+            prompt=prompt,
+            **infer_kwargs,
+        )
+        timing["prompt_encode_seconds"] += float(pred.get("prompt_encode_seconds", 0.0))
         if visualize_future_video:
-            pred = model.infer_joint(**infer_kwargs)
             predicted_future_frames = _select_predicted_future_frames(pred["video"], cfg)
-        else:
-            pred = model.infer_action(**infer_kwargs)
+    else:
+        context, context_mask = prompt_cache.get(prompt)
+        infer_kwargs.update(prompt=None, context=context, context_mask=context_mask)
+        with torch.inference_mode():
+            if visualize_future_video:
+                pred = model.infer_joint(**infer_kwargs)
+                predicted_future_frames = _select_predicted_future_frames(pred["video"], cfg)
+            else:
+                pred = model.infer_action(**infer_kwargs)
     timing["inference_seconds"] += time.perf_counter() - infer_started
     action = pred["action"]  # [T, D]
 
@@ -644,7 +656,8 @@ def run_single_task(
     model_device: str,
     prompt_cache: PromptContextCache,
 ) -> dict:
-    prompt_cache.clear()
+    if not isinstance(model, LiberoEvalRuntime):
+        prompt_cache.clear()
     timing = {
         "environment_initialize_seconds": 0.0,
         "prompt_encode_seconds": 0.0,
@@ -748,7 +761,8 @@ def run_single_task(
         valid_episode_psnr = [x for x in results["episode_future_video_psnr"] if x is not None]
         if len(valid_episode_psnr) > 0:
             results["future_video_psnr_mean"] = float(np.mean(valid_episode_psnr))
-    timing["prompt_encode_seconds"] = prompt_cache.encode_seconds - prompt_encode_before
+    if not isinstance(model, LiberoEvalRuntime):
+        timing["prompt_encode_seconds"] = prompt_cache.encode_seconds - prompt_encode_before
     if bool(cfg.EVALUATION.get("timing_enabled", False)):
         results["timing"] = timing
     return results
@@ -778,7 +792,7 @@ def build_eval_runtime(cfg: DictConfig) -> LiberoEvalRuntime:
     model = model.to(model_device).eval()
     model = configure_inference_compile_from_config(model, cfg.EVALUATION)
     model._eval_supports_num_video_frames = (
-        "num_video_frames" in inspect.signature(model.infer_action).parameters
+        "num_video_frames" in inspect.signature(model.infer_action_batch).parameters
     )
 
     dataset_stats_path = _resolve_dataset_stats_path(cfg)
@@ -858,7 +872,7 @@ def evaluate_task_with_runtime(
     task_results = run_single_task(
         task=task,
         initial_states=initial_states,
-        model=runtime.model,
+        model=runtime if runtime.batcher is not None else runtime.model,
         processor=runtime.processor,
         cfg=cfg,
         video_dir=video_dir,

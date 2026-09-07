@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import hydra
@@ -26,6 +27,7 @@ from experiments.robotwin.eval_robotwin_single import (
     _resolve_path,
 )
 from experiments.robotwin.result_utils import valid_phase_result
+from experiments.task_dispatch import FileTaskDispatcher
 
 
 def _free_port() -> int:
@@ -45,13 +47,6 @@ def _wait_for_server(process: subprocess.Popen, port: int, timeout: float = 600)
         except OSError:
             time.sleep(1)
     raise TimeoutError(f"Timed out waiting for model server on port {port}.")
-
-
-def _read_tasks(path: Path) -> list[str]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list) or not all(isinstance(value, str) for value in payload):
-        raise ValueError(f"Worker task file must contain a JSON string list: {path}")
-    return payload
 
 
 def _common_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) -> list[str]:
@@ -74,6 +69,8 @@ def _common_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) ->
         "negative_prompt": cfg.EVALUATION.negative_prompt,
         "rand_device": cfg.EVALUATION.rand_device,
         "timing_enabled": cfg.EVALUATION.timing_enabled,
+        "inference_batch_size": cfg.MULTIRUN.inference_batch_size,
+        "inference_batch_wait_ms": cfg.MULTIRUN.inference_batch_wait_ms,
     }
     for key, value in values.items():
         _append_override(overrides, key, value)
@@ -85,9 +82,13 @@ def main(cfg: DictConfig) -> None:
     task_file = cfg.WORKER.get("task_file")
     if not task_file:
         raise ValueError("WORKER.task_file is required.")
-    tasks = _read_tasks(Path(str(task_file)).expanduser().resolve())
-    if not tasks:
+    task_path = Path(str(task_file)).expanduser().resolve()
+    if not task_path.read_text(encoding="utf-8").strip():
         return
+    cursor = cfg.WORKER.get("task_cursor")
+    if not cursor:
+        raise ValueError("WORKER.task_cursor is required.")
+    dispatcher = FileTaskDispatcher(task_path, Path(str(cursor)).expanduser().resolve())
 
     checkpoint = _resolve_path(str(cfg.ckpt), base=PROJECT_ROOT)
     robotwin_root = _resolve_path(str(cfg.EVALUATION.robotwin_root), base=PROJECT_ROOT)
@@ -116,34 +117,46 @@ def main(cfg: DictConfig) -> None:
         )
         try:
             _wait_for_server(server, port)
-            print(f"Worker {worker_index} loaded one model for {len(tasks)} tasks", flush=True)
-            for task_name in tasks:
-                for phase, task_config in (("clean", "demo_clean"), ("random", "demo_randomized")):
-                    if valid_phase_result(output_dir, task_name, phase):
-                        print(f"Skip completed {task_name} {phase}", flush=True)
-                        continue
-                    client_overrides = list(common)
-                    for key, value in {
-                        "task_name": task_name,
-                        "task_config": task_config,
-                        "instruction_type": cfg.EVALUATION.instruction_type,
-                        "eval_num_episodes": cfg.EVALUATION.eval_num_episodes,
-                        "eval_output_dir": str(output_dir / task_name),
-                        "skip_get_obs_within_replan": cfg.EVALUATION.skip_get_obs_within_replan,
-                    }.items():
-                        _append_override(client_overrides, key, value)
-                    client_cmd = [
-                        sys.executable, "-u", "script/eval_policy_client.py",
-                        "--port", str(port), "--config", policy_config,
-                        "--overrides", *client_overrides,
-                    ]
-                    client_log_path = log_dir / f"worker_{worker_index:03d}_{task_name}_{phase}.log"
-                    with client_log_path.open("w", encoding="utf-8") as client_log:
-                        subprocess.run(
-                            client_cmd, cwd=robotwin_root, env=env,
-                            stdout=client_log, stderr=subprocess.STDOUT, check=True,
-                        )
-                    print(f"Completed {task_name} {phase}", flush=True)
+            actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+            print(f"Worker {worker_index} loaded one model for {actor_count} actors", flush=True)
+
+            def actor_main(actor_index: int) -> None:
+                while True:
+                    raw = dispatcher.claim()
+                    if raw is None:
+                        return
+                    job = json.loads(raw)
+                    task_name = str(job["task_name"])
+                    for phase, task_config in (("clean", "demo_clean"), ("random", "demo_randomized")):
+                        if valid_phase_result(output_dir, task_name, phase):
+                            continue
+                        client_overrides = list(common)
+                        for key, value in {
+                            "task_name": task_name,
+                            "task_config": task_config,
+                            "instruction_type": cfg.EVALUATION.instruction_type,
+                            "eval_num_episodes": cfg.EVALUATION.eval_num_episodes,
+                            "eval_output_dir": str(output_dir / task_name),
+                            "skip_get_obs_within_replan": cfg.EVALUATION.skip_get_obs_within_replan,
+                        }.items():
+                            _append_override(client_overrides, key, value)
+                        client_cmd = [
+                            sys.executable, "-u", "script/eval_policy_client.py",
+                            "--port", str(port), "--config", policy_config,
+                            "--overrides", *client_overrides,
+                        ]
+                        client_log_path = log_dir / f"worker_{worker_index:03d}_{task_name}_{phase}.log"
+                        with client_log_path.open("w", encoding="utf-8") as client_log:
+                            subprocess.run(
+                                client_cmd, cwd=robotwin_root, env=env,
+                                stdout=client_log, stderr=subprocess.STDOUT, check=True,
+                            )
+                        print(f"Actor {actor_index} completed {task_name} {phase}", flush=True)
+
+            with ThreadPoolExecutor(max_workers=actor_count, thread_name_prefix="rollout") as executor:
+                futures = [executor.submit(actor_main, index) for index in range(actor_count)]
+                for future in futures:
+                    future.result()
         finally:
             if server.poll() is None:
                 server.terminate()

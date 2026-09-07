@@ -44,12 +44,6 @@ def _read_task_lines(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def build_worker_slots(num_gpus: int, max_tasks_per_gpu: int) -> list[tuple[int, int]]:
-    if num_gpus <= 0 or max_tasks_per_gpu <= 0:
-        raise ValueError("num_gpus and max_tasks_per_gpu must both be positive.")
-    return [(gpu_id, slot) for gpu_id in range(num_gpus) for slot in range(max_tasks_per_gpu)]
-
-
 def _is_blocked_override(raw: str) -> bool:
     key = raw.split("=", 1)[0].lstrip("+~")
     return key in {
@@ -103,17 +97,16 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
         summarize_results(str(output_dir))
         return
     num_gpus = int(cfg.MULTIRUN.num_gpus)
-    max_tasks_per_gpu = int(cfg.MULTIRUN.max_tasks_per_gpu)
-    slots = build_worker_slots(num_gpus, max_tasks_per_gpu)
-    render_backend = select_mujoco_render_backend(max_tasks_per_gpu)
+    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    batch_size = int(cfg.MULTIRUN.inference_batch_size)
+    if batch_size > env_num_per_gpu:
+        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
+    render_backend = select_mujoco_render_backend(env_num_per_gpu)
     print(
         f"MuJoCo rendering backend: {render_backend} "
-        f"(num_gpus={num_gpus}, max_tasks_per_gpu={max_tasks_per_gpu})"
+        f"(num_gpus={num_gpus}, env_num_per_gpu={env_num_per_gpu})"
     )
-    worker_count = min(len(tasks), len(slots))
-    shards = [[] for _ in range(worker_count)]
-    for index, task in enumerate(tasks):
-        shards[index % worker_count].append(task)
+    worker_count = min(len(tasks), num_gpus)
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -123,10 +116,13 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
     processes: list[subprocess.Popen] = []
     handles = []
     try:
-        for worker_index, ((gpu_id, slot), shard) in enumerate(zip(slots, shards)):
-            shard_path = worker_dir / f"worker_{worker_index:03d}.txt"
-            shard_path.write_text("\n".join(shard) + "\n", encoding="utf-8")
-            handle = (log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}_slot_{slot}.log").open(
+        shared_task_path = worker_dir / "pending_tasks.txt"
+        shared_task_path.write_text("\n".join(tasks) + "\n", encoding="utf-8")
+        cursor_path = worker_dir / "task_cursor.txt"
+        cursor_path.write_text("0", encoding="utf-8")
+        for worker_index in range(worker_count):
+            gpu_id = worker_index
+            handle = (log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log").open(
                 "a", encoding="utf-8"
             )
             handles.append(handle)
@@ -137,18 +133,22 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
                 f"ckpt={cfg.ckpt}",
                 f"gpu_id={gpu_id}",
                 f"EVALUATION.output_dir={output_dir}",
-                f"WORKER.task_file={shard_path}",
+                f"WORKER.task_file={shared_task_path}",
+                f"WORKER.task_cursor={cursor_path}",
                 f"WORKER.worker_index={worker_index}",
+                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.inference_batch_size={batch_size}",
+                f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
                 *extra,
             ]
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            configure_mujoco_worker_env(env, max_tasks_per_gpu)
+            configure_mujoco_worker_env(env, env_num_per_gpu)
             env.setdefault("PYTHONFAULTHANDLER", "1")
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
             processes.append(subprocess.Popen(command, cwd=PROJECT_ROOT, env=env, stdout=handle, stderr=subprocess.STDOUT))
-            print(f"Started worker {worker_index}: gpu={gpu_id} slot={slot}, tasks={len(shard)}")
+            print(f"Started model worker {worker_index}: gpu={gpu_id}, envs={env_num_per_gpu}")
         while not all(process.poll() == 0 for process in processes):
             failed_index = next(
                 (index for index, process in enumerate(processes) if process.poll() not in (None, 0)),
@@ -156,10 +156,10 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
             )
             if failed_index is not None:
                 code = int(processes[failed_index].returncode)
-                gpu_id, slot = slots[failed_index]
+                gpu_id = failed_index
                 _terminate(processes)
                 raise RuntimeError(
-                    f"LIBERO worker {failed_index} on GPU {gpu_id} slot {slot} failed "
+                    f"LIBERO worker {failed_index} on GPU {gpu_id} failed "
                     f"with return code {_format_return_code(code)}; inspect {log_dir}."
                 )
             time.sleep(2)

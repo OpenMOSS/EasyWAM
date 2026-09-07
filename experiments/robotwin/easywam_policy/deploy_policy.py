@@ -3,7 +3,9 @@ import os
 import sys
 import time
 import inspect
+import threading
 from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -26,10 +28,20 @@ if str(SRC_ROOT) not in sys.path:
 from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
-from experiments.prompt_context_cache import PromptContextCache
+from experiments.batched_inference import DynamicInferenceBatcher
 from model.helpers.inference import configure_inference_compile, configure_model_execution
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PolicySession:
+    pending_actions: deque[np.ndarray] = field(default_factory=deque)
+    episode_count: int = 0
+    step_count: int = 0
+    timing: Dict[str, float] = field(
+        default_factory=lambda: {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
+    )
 
 
 def _is_none_like(value: Any) -> bool:
@@ -164,6 +176,9 @@ class WorldActionRobotWinPolicy:
         num_video_frames: int,
         vae_micro_batch_size: int | None = 1,
         inference_cross_kv_reuse: bool = True,
+        inference_batch_size: int = 4,
+        inference_batch_wait_ms: float = 10,
+        prompt_cache_size: int = 8,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
         model_cfg_copy.load_text_encoder = True
@@ -189,9 +204,14 @@ class WorldActionRobotWinPolicy:
         self.processor: WAMProcessor = instantiate(processor_cfg).eval()
         dataset_stats = load_dataset_stats_from_json(str(dataset_stats_path))
         self.processor.set_normalizer_from_stats(dataset_stats)
-        self.prompt_cache = PromptContextCache(self.model)
+        self.batcher = DynamicInferenceBatcher(
+            self.model,
+            max_batch_size=inference_batch_size,
+            wait_ms=inference_batch_wait_ms,
+            prompt_cache_size=prompt_cache_size,
+        )
         self._supports_num_video_frames = (
-            "num_video_frames" in inspect.signature(self.model.infer_action).parameters
+            "num_video_frames" in inspect.signature(self.model.infer_action_batch).parameters
         )
 
         self.action_horizon = int(action_horizon)
@@ -205,10 +225,8 @@ class WorldActionRobotWinPolicy:
         self.timing_enabled = bool(timing_enabled)
         self._num_video_frames = int(num_video_frames)
 
-        self.pending_actions: deque[np.ndarray] = deque()
-        self.episode_count = 0
-        self.step_count = 0
-        self._timing_rollout = {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
+        self._sessions: Dict[str, _PolicySession] = {"local": _PolicySession()}
+        self._sessions_lock = threading.Lock()
 
         logger.info(
             "Initialized WorldActionRobotWinPolicy | ckpt=%s | stats=%s | horizon=%d | replan=%d",
@@ -252,112 +270,128 @@ class WorldActionRobotWinPolicy:
         bottom = np.concatenate([left, right], axis=1)
         image = np.concatenate([head, bottom], axis=0)  # [384, 320, 3]
 
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).to(
-            device=self.model.device,
-            dtype=self.model.torch_dtype,
-        )
+        image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
         image_tensor = image_tensor * (2.0 / 255.0) - 1.0
         return image_tensor
 
-    def _infer_action_chunk(self, observation: Dict[str, Any], instruction: str) -> np.ndarray:
+    def _infer_action_chunk(
+        self, observation: Dict[str, Any], instruction: str, session: _PolicySession
+    ) -> np.ndarray:
         image_tensor = self._build_robotwin_image_tensor(observation)
         state_vector = np.asarray(observation["joint_action"]["vector"], dtype=np.float32)
         proprio = self._normalize_state(state_vector)
 
         prompt = DEFAULT_PROMPT.format(task=instruction)
-        prompt_started = self.prompt_cache.encode_seconds
-        context, context_mask = self.prompt_cache.get(prompt)
-        if self.timing_enabled:
-            self._timing_rollout["prompt_encode_s"] += (
-                self.prompt_cache.encode_seconds - prompt_started
-            )
         infer_kwargs = {
-            "prompt": None,
-            "context": context,
-            "context_mask": context_mask,
-            "input_image": image_tensor,
             "action_horizon": self.action_horizon,
-            "proprio": proprio,
             "negative_prompt": self.negative_prompt,
             "text_cfg_scale": self.text_cfg_scale,
             "num_inference_steps": self.num_inference_steps,
             "sigma_shift": self.sigma_shift,
-            "seed": self.seed,
             "rand_device": self.rand_device,
         }
         if self._supports_num_video_frames:
             infer_kwargs["num_video_frames"] = int(self._num_video_frames)
         infer_t0 = time.perf_counter() if self.timing_enabled else 0.0
-        with torch.inference_mode():
-            pred = self.model.infer_action(**infer_kwargs)
+        pred = self.batcher.submit(
+            "action", prompt=prompt, input_image=image_tensor,
+            proprio=proprio, seed=self.seed, **infer_kwargs,
+        )
         if self.timing_enabled:
-            self._timing_rollout["infer_s"] += time.perf_counter() - infer_t0
+            prompt_seconds = float(pred.get("prompt_encode_seconds", 0.0))
+            session.timing["prompt_encode_s"] += prompt_seconds
+            session.timing["infer_s"] += max(0.0, time.perf_counter() - infer_t0 - prompt_seconds)
 
         action_tensor = pred["action"]  # [T, D]
         action_chunk = self._denormalize_action(action_tensor)[0]  # [T, D]
         return action_chunk
 
-    def _fill_action_queue(self, observation: Dict[str, Any], instruction: str) -> None:
-        action_chunk = self._infer_action_chunk(observation=observation, instruction=instruction)
+    def _fill_action_queue(
+        self, observation: Dict[str, Any], instruction: str, session: _PolicySession
+    ) -> None:
+        action_chunk = self._infer_action_chunk(observation, instruction, session)
         n_exec = min(self.replan_steps, action_chunk.shape[0])
         for i in range(n_exec):
-            self.pending_actions.append(np.asarray(action_chunk[i], dtype=np.float32))
+            session.pending_actions.append(np.asarray(action_chunk[i], dtype=np.float32))
 
     def should_request_observation(self) -> bool:
-        return not self.pending_actions
+        return not self._sessions["local"].pending_actions
 
     def remote_step(self, payload: Dict[str, Any]) -> np.ndarray:
-        """Return one action for an RPC client while keeping the action queue server-side."""
+        return self._remote_step(payload, self._sessions["local"])
+
+    def _remote_step(self, payload: Dict[str, Any], session: _PolicySession) -> np.ndarray:
         observation = payload.get("observation")
         instruction = str(payload.get("instruction", ""))
-        if not self.pending_actions:
+        if not session.pending_actions:
             if observation is None:
                 raise ValueError("Observation is required at a remote replan step.")
-            self._fill_action_queue(observation=observation, instruction=instruction)
-        if not self.pending_actions:
+            self._fill_action_queue(observation, instruction, session)
+        if not session.pending_actions:
             raise RuntimeError("The policy generated no actions.")
-        self.step_count += 1
-        return self.pending_actions.popleft()
+        session.step_count += 1
+        return session.pending_actions.popleft()
 
     def step(self, task_env, observation: Optional[Dict[str, Any]]) -> None:
-        if not self.pending_actions:
+        session = self._sessions["local"]
+        if not session.pending_actions:
             if observation is None:
                 raise ValueError(
                     "Observation is required when action queue is empty "
                     "(EasyWAM replan step)."
                 )
             instruction = task_env.get_instruction()
-            self._fill_action_queue(observation=observation, instruction=instruction)
+            self._fill_action_queue(observation, instruction, session)
 
-        if not self.pending_actions:
+        if not session.pending_actions:
             logger.warning("No action generated; skip current eval step.")
             return
 
-        action = self.pending_actions.popleft()
+        action = session.pending_actions.popleft()
         sim_t0 = time.perf_counter() if self.timing_enabled else 0.0
         task_env.take_action(action, action_type="qpos")
         if self.timing_enabled:
-            self._timing_rollout["sim_s"] += time.perf_counter() - sim_t0
-        self.step_count += 1
+            session.timing["sim_s"] += time.perf_counter() - sim_t0
+        session.step_count += 1
 
     def reset_timing_rollout(self) -> None:
-        self._timing_rollout["prompt_encode_s"] = 0.0
-        self._timing_rollout["infer_s"] = 0.0
-        self._timing_rollout["sim_s"] = 0.0
+        self._sessions["local"].timing = {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
 
     def get_timing_rollout(self) -> Dict[str, float]:
         return {
-            "prompt_encode_s": float(self._timing_rollout["prompt_encode_s"]),
-            "infer_s": float(self._timing_rollout["infer_s"]),
-            "sim_s": float(self._timing_rollout["sim_s"]),
+            key: float(value) for key, value in self._sessions["local"].timing.items()
         }
 
     def reset(self) -> None:
-        self.pending_actions.clear()
-        self.prompt_cache.clear()
-        self.episode_count += 1
-        self.step_count = 0
+        session = self._sessions["local"]
+        session.pending_actions.clear()
+        session.episode_count += 1
+        session.step_count = 0
         self.reset_timing_rollout()
+
+    def invoke(self, session_id: str, command: str, payload: Any = None) -> Any:
+        with self._sessions_lock:
+            session = self._sessions.setdefault(session_id, _PolicySession())
+        if command == "remote_step":
+            return self._remote_step(payload, session)
+        if command == "should_request_observation":
+            return not session.pending_actions
+        if command == "reset":
+            session.pending_actions.clear()
+            session.episode_count += 1
+            session.step_count = 0
+            session.timing = {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
+            return None
+        if command == "get_timing_rollout":
+            return {key: float(value) for key, value in session.timing.items()}
+        raise AttributeError(f"No policy command named {command!r}")
+
+    def close_session(self, session_id: str) -> None:
+        with self._sessions_lock:
+            self._sessions.pop(session_id, None)
+
+    def close(self) -> None:
+        self.batcher.close()
 
 
 def encode_obs(observation: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -470,6 +504,9 @@ def get_model(usr_args: Dict[str, Any]):
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
         vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
         inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
+        inference_batch_size=int(usr_args.get("inference_batch_size", cfg.MULTIRUN.inference_batch_size)),
+        inference_batch_wait_ms=float(usr_args.get("inference_batch_wait_ms", cfg.MULTIRUN.inference_batch_wait_ms)),
+        prompt_cache_size=max(int(cfg.MULTIRUN.env_num_per_gpu) * 2, 8),
     )
     return policy
 
