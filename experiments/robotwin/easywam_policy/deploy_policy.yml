@@ -24,4 +24,5 @@ rand_device: cpu
 timing_enabled: false
 inference_batch_size: 4
 inference_batch_wait_ms: 10
+prompt_cache_size: 40
 skip_get_obs_within_replan: false

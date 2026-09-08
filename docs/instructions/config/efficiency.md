@@ -63,6 +63,7 @@ VAE micro-batching applies to both training and evaluation model construction. I
 | `EVALUATION.video_mode`, `visualize_future_video`, `eval_save_video` | Video encoding, decoding, visualization, and disk writes add overhead; leave disabled for throughput measurements. |
 | `MULTIRUN.num_gpus`, `env_num_per_gpu` | Control model workers and concurrent environments. Each GPU loads one model. |
 | `MULTIRUN.inference_batch_size`, `inference_batch_wait_ms` | Control dynamic inference batch size and queue window. |
+| `MULTIRUN.prompt_cache_size` | Control the maximum number of prompt embeddings cached by each model worker. |
 
 `torch_compile_backend`, `torch_compile_fullgraph`, `torch_compile_dynamic`, and `torch_compile_options` are forwarded to `torch.compile`. Keep the checked-in defaults first. Reusing a loaded model with a different compile configuration is rejected; restart the worker when changing compile settings.
 

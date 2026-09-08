@@ -63,6 +63,7 @@ VAE micro-batching 会同时应用于训练和评测的模型构造，但不会�
 | `EVALUATION.video_mode`、`visualize_future_video`、`eval_save_video` | 视频编码、解码、可视化和磁盘写入都会增加开销；吞吐测试应保持关闭。 |
 | `MULTIRUN.num_gpus`、`env_num_per_gpu` | 控制模型 worker 数和并发环境数；每张 GPU 只加载一个模型。 |
 | `MULTIRUN.inference_batch_size`、`inference_batch_wait_ms` | 控制动态推理 batch 上限和等待窗口。 |
+| `MULTIRUN.prompt_cache_size` | 控制每个模型 worker 最多缓存的 prompt embedding 数量。 |
 
 `torch_compile_backend`、`torch_compile_fullgraph`、`torch_compile_dynamic` 和 `torch_compile_options` 会传给 `torch.compile`。应先使用仓库默认值。已经加载的模型不允许切换到另一套 compile 配置；修改这些设置后需要重启 worker。
 

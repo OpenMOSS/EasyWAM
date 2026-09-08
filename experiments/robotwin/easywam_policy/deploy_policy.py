@@ -178,7 +178,7 @@ class WorldActionRobotWinPolicy:
         inference_cross_kv_reuse: bool = True,
         inference_batch_size: int = 4,
         inference_batch_wait_ms: float = 10,
-        prompt_cache_size: int = 8,
+        prompt_cache_size: int = 40,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
         model_cfg_copy.load_text_encoder = True
@@ -506,7 +506,9 @@ def get_model(usr_args: Dict[str, Any]):
         inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
         inference_batch_size=int(usr_args.get("inference_batch_size", cfg.MULTIRUN.inference_batch_size)),
         inference_batch_wait_ms=float(usr_args.get("inference_batch_wait_ms", cfg.MULTIRUN.inference_batch_wait_ms)),
-        prompt_cache_size=max(int(cfg.MULTIRUN.env_num_per_gpu) * 2, 8),
+        prompt_cache_size=int(
+            usr_args.get("prompt_cache_size", cfg.MULTIRUN.prompt_cache_size)
+        ),
     )
     return policy
 

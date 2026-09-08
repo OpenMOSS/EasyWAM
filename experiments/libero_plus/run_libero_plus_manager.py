@@ -179,6 +179,7 @@ def _run_workers(
                 f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
                 f"MULTIRUN.inference_batch_size={batch_size}",
                 f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
+                f"MULTIRUN.prompt_cache_size={int(cfg.MULTIRUN.prompt_cache_size)}",
                 *extra_overrides,
             ]
             env = os.environ.copy()

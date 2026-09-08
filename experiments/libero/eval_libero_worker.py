@@ -57,7 +57,7 @@ def main(cfg: DictConfig) -> None:
         runtime.model,
         max_batch_size=int(cfg.MULTIRUN.inference_batch_size),
         wait_ms=float(cfg.MULTIRUN.inference_batch_wait_ms),
-        prompt_cache_size=max(actor_count * 2, 8),
+        prompt_cache_size=int(cfg.MULTIRUN.prompt_cache_size),
     )
     worker_index = int(cfg.WORKER.get("worker_index", cfg.gpu_id))
 

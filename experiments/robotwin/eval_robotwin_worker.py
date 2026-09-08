@@ -71,6 +71,7 @@ def _common_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) ->
         "timing_enabled": cfg.EVALUATION.timing_enabled,
         "inference_batch_size": cfg.MULTIRUN.inference_batch_size,
         "inference_batch_wait_ms": cfg.MULTIRUN.inference_batch_wait_ms,
+        "prompt_cache_size": cfg.MULTIRUN.prompt_cache_size,
     }
     for key, value in values.items():
         _append_override(overrides, key, value)
