@@ -48,6 +48,11 @@ class PromptContextCache:
         return value[0].unsqueeze(0), value[1].unsqueeze(0)
 
     def get_many(self, prompts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+        cached = {}
+        for prompt in dict.fromkeys(prompts):
+            if prompt in self._values:
+                self._values.move_to_end(prompt)
+                cached[prompt] = self._values[prompt]
         missing = list(dict.fromkeys(prompt for prompt in prompts if prompt not in self._values))
         fresh = {}
         if missing:
@@ -76,6 +81,8 @@ class PromptContextCache:
             if prompt in self._values:
                 self._values.move_to_end(prompt)
                 values.append(self._values[prompt])
+            elif prompt in cached:
+                values.append(cached[prompt])
             else:
                 values.append(fresh[prompt])
         max_length = max(value[0].shape[0] for value in values)

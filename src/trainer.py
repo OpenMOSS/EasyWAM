@@ -674,7 +674,12 @@ class EasyWAMTrainer:
         # 4. VAE reconstruction metrics against GT video
         gt_video_batch = video0.unsqueeze(0).to(device=model.device, dtype=model.torch_dtype)
         vae_latents = model._encode_video_latents(gt_video_batch)
-        vae_recon_video = model._decode_latents(vae_latents)
+        vae_recon_batch = model._decode_latents(vae_latents)
+        if len(vae_recon_batch) != 1:
+            raise ValueError(
+                f"Eval VAE reconstruction must contain one video, got {len(vae_recon_batch)}."
+            )
+        vae_recon_video = vae_recon_batch[0]
         vae_video_tensor = pil_frames_to_video_tensor(vae_recon_video)
 
         assert vae_video_tensor.shape == gt_video_tensor.shape, (

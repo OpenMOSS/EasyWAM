@@ -773,13 +773,14 @@ class EasyWAMUnified(nn.Module):
         proprio: Optional[torch.Tensor] = None,
         context: Optional[torch.Tensor] = None,
         context_mask: Optional[torch.Tensor] = None,
+        num_video_frames: int = 5,
         **kwargs,
     ) -> dict[str, Any]:
         kwargs.pop("decode_video", None)
         out = self.infer_joint_batch(
             prompt=prompt,
             input_image=input_image,
-            num_video_frames=kwargs.pop("num_video_frames", 5),
+            num_video_frames=num_video_frames,
             action_horizon=action_horizon,
             proprio=proprio,
             context=context,
