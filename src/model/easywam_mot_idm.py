@@ -7,7 +7,12 @@ import torch.nn.functional as F
 
 from utils.logging_config import get_logger
 
-from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
+from .component.attention import (
+    AttentionSegment,
+    KeyPaddingMask,
+    StructuredAttentionMask,
+    build_structured_attention_mask,
+)
 from .easywam_mot_joint import EasyWAMMoTJoint
 from .helpers.batching import randn_per_sample
 
@@ -208,6 +213,9 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             context=context,
             context_mask=context_mask,
         )
+        action_pre = self._prepend_state_to_action_sequence(
+            action_pre, inputs.get("state")
+        )
 
         noisy_video_seq_len = int(video_pre_noisy["tokens"].shape[1])
         cond_video_seq_len = int(video_pre_cond["tokens"].shape[1])
@@ -223,10 +231,25 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         merged_video_t_mod = _concat_sequence_values(
             video_pre_noisy["t_mod"], video_pre_cond["t_mod"], dim=1
         )
-        merged_video_context_mask = _concat_sequence_values(
-            video_pre_noisy["context_mask"], video_pre_cond["context_mask"], dim=1
-        ) if video_pre_noisy["context_mask"] is not None else None
-        if merged_video_context_mask is None and video_pre_cond["context_mask"] is not None:
+        noisy_context_mask = video_pre_noisy["context_mask"]
+        cond_context_mask = video_pre_cond["context_mask"]
+        if isinstance(noisy_context_mask, KeyPaddingMask) and isinstance(
+            cond_context_mask, KeyPaddingMask
+        ):
+            if not torch.equal(noisy_context_mask.valid, cond_context_mask.valid):
+                raise ValueError(
+                    "Noisy and conditional video branches must use the same context mask."
+                )
+            merged_video_context_mask = noisy_context_mask
+        elif noisy_context_mask is None and cond_context_mask is None:
+            merged_video_context_mask = None
+        elif isinstance(noisy_context_mask, torch.Tensor) and isinstance(
+            cond_context_mask, torch.Tensor
+        ):
+            merged_video_context_mask = _concat_sequence_values(
+                noisy_context_mask, cond_context_mask, dim=1
+            )
+        else:
             raise ValueError("Noisy and conditional video context masks must be both present or both absent.")
 
         attention_mask = self._build_teacher_forcing_attention_mask(
@@ -441,7 +464,9 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         video_seq_len = int(video_pre_cond["tokens"].shape[1])
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_seq_len,
-            action_seq_len=latents_action.shape[1],
+            action_seq_len=(
+                latents_action.shape[1] + self._state_sequence_length(proprio)
+            ),
             video_tokens_per_frame=int(video_pre_cond["meta"]["tokens_per_frame"]),
             device=video_pre_cond["tokens"].device,
         )
@@ -478,6 +503,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
                 video_seq_len=video_seq_len,
                 action_context=action_context,
                 action_cross_kv_cache=action_cross_kv_cache,
+                state=proprio,
             )
             latents_action = self.infer_action_scheduler.step(
                 pred_action, step_delta_action, latents_action

@@ -211,4 +211,80 @@ class ActionDiTFlux2(nn.Module):
         }
 
     def post_dit(self, tokens: torch.Tensor, pre_state: dict[str, Any]) -> torch.Tensor:
-        return self.head(tokens, pre_state["t_mod"]["vec"])
+        state_len = int(pre_state.get("meta", {}).get("state_len", 0))
+        return self.head(tokens[:, state_len:], pre_state["t_mod"]["vec"])
+
+    @staticmethod
+    def _expand_modulation(value: Any, length: int) -> Any:
+        if isinstance(value, torch.Tensor):
+            return value.expand(-1, length, -1)
+        if isinstance(value, (tuple, list)):
+            return tuple(
+                ActionDiTFlux2._expand_modulation(item, length) for item in value
+            )
+        raise TypeError(f"Unsupported FLUX.2 modulation value: {type(value).__name__}.")
+
+    @staticmethod
+    def _concat_modulation(left: Any, right: Any) -> Any:
+        if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
+            return torch.cat([left, right], dim=1)
+        if isinstance(left, (tuple, list)) and isinstance(right, (tuple, list)):
+            if len(left) != len(right):
+                raise ValueError("FLUX.2 modulation structures must have matching lengths.")
+            return tuple(
+                ActionDiTFlux2._concat_modulation(a, b)
+                for a, b in zip(left, right)
+            )
+        raise TypeError("FLUX.2 modulation structures must have matching types.")
+
+    def prepend_state_tokens(
+        self,
+        pre_state: dict[str, Any],
+        state_tokens: torch.Tensor,
+    ) -> dict[str, Any]:
+        action_tokens = pre_state["tokens"]
+        if state_tokens.ndim != 3 or state_tokens.shape[0] != action_tokens.shape[0]:
+            raise ValueError(
+                "State tokens must be [B,S,D] with the same batch size as action tokens."
+            )
+        if state_tokens.shape[2] != self.hidden_dim:
+            raise ValueError(
+                f"State token width must be {self.hidden_dim}, got {state_tokens.shape[2]}."
+            )
+        state_len = int(state_tokens.shape[1])
+        action_len = int(action_tokens.shape[1])
+        total_len = state_len + action_len
+
+        from flux2.model import timestep_embedding
+
+        zero_timestep = pre_state["t_mod"]["vec"].new_zeros(action_tokens.shape[0])
+        zero_vec = self.time_in(timestep_embedding(zero_timestep, 256)).to(
+            dtype=action_tokens.dtype
+        )
+        state_mod = {
+            "double_img": self.double_stream_modulation_img(zero_vec),
+            "single": self.single_stream_modulation(zero_vec)[0],
+        }
+        action_mod = pre_state["t_mod"]
+        pre_state["tokens"] = torch.cat([state_tokens, action_tokens], dim=1)
+        pre_state["ids"] = self.build_action_ids(
+            action_tokens.shape[0],
+            total_len,
+            device=action_tokens.device,
+            dtype=pre_state["ids"].dtype,
+        )
+        pre_state["t_mod"] = {
+            "vec": action_mod["vec"],
+            "double_img": self._concat_modulation(
+                self._expand_modulation(state_mod["double_img"], state_len),
+                self._expand_modulation(action_mod["double_img"], action_len),
+            ),
+            "single": self._concat_modulation(
+                self._expand_modulation(state_mod["single"], state_len),
+                self._expand_modulation(action_mod["single"], action_len),
+            ),
+        }
+        pre_state["meta"].update(
+            {"state_len": state_len, "action_len": action_len, "seq_len": total_len}
+        )
+        return pre_state

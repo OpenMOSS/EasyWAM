@@ -6,7 +6,12 @@ import torch.nn.functional as F
 
 from utils.logging_config import get_logger
 
-from .component.action_dit import ActionDiT, StateEncoder
+from .component.action_dit import (
+    ActionDiT,
+    StateEncoder,
+    normalize_state_position,
+    validate_checkpoint_state_position,
+)
 from .component.attention import elide_fully_valid_attention_mask
 from .helpers.gradient import gradient_checkpoint_forward
 from .helpers.batching import (
@@ -33,6 +38,7 @@ class EasyWAMHidden(nn.Module):
         action_dit: ActionDiT,
         vae,
         state_dim: int,
+        state_position: str = "context",
         text_encoder=None,
         tokenizer=None,
         text_dim: Optional[int] = None,
@@ -69,6 +75,7 @@ class EasyWAMHidden(nn.Module):
         )
         self.action_dim = int(action_dit.action_dim)
         self.state_dim = int(state_dim)
+        self.state_position = normalize_state_position(state_position)
         self.video_hidden_layer = int(video_hidden_layer)
         self.detach_video_hidden = bool(detach_video_hidden)
         self.vae = vae
@@ -263,35 +270,39 @@ class EasyWAMHidden(nn.Module):
             if projected_context is None
             else projected_context
         )
-        state_context = self.dit["state_encoder"](
+        state_tokens = self.dit["state_encoder"](
             state.to(device=action.device, dtype=action.dtype)
         ).to(dtype=video_context.dtype)
-        action_context = torch.cat([video_context, state_context], dim=1)
-        action_context_mask = None
-        if video_token_mask is not None:
-            state_mask = torch.ones(
-                state_context.shape[:2], dtype=torch.bool, device=video_token_mask.device
-            )
-            action_context_mask = torch.cat([video_token_mask, state_mask], dim=1)
+        action_context = video_context
+        action_context_mask = video_token_mask
         action_cross_kv_cache = cross_kv_cache
-        if cross_kv_cache is not None:
-            if len(cross_kv_cache) != len(self.action_dit.blocks):
-                raise ValueError(
-                    "Cross-attention KV cache does not cover every Action DiT layer."
+        if self.state_position == "context":
+            action_context = torch.cat([video_context, state_tokens], dim=1)
+            if video_token_mask is not None:
+                state_mask = torch.ones(
+                    state_tokens.shape[:2],
+                    dtype=torch.bool,
+                    device=video_token_mask.device,
                 )
-            state_kv_cache = tuple(
-                block.cross_attn.project_kv(state_context)
-                for block in self.action_dit.blocks
-            )
-            action_cross_kv_cache = tuple(
-                (
-                    torch.cat([video_k, state_k], dim=1),
-                    torch.cat([video_v, state_v], dim=1),
+                action_context_mask = torch.cat([video_token_mask, state_mask], dim=1)
+            if cross_kv_cache is not None:
+                if len(cross_kv_cache) != len(self.action_dit.blocks):
+                    raise ValueError(
+                        "Cross-attention KV cache does not cover every Action DiT layer."
+                    )
+                state_kv_cache = tuple(
+                    block.cross_attn.project_kv(state_tokens)
+                    for block in self.action_dit.blocks
                 )
-                for (video_k, video_v), (state_k, state_v) in zip(
-                    cross_kv_cache, state_kv_cache
+                action_cross_kv_cache = tuple(
+                    (
+                        torch.cat([video_k, state_k], dim=1),
+                        torch.cat([video_v, state_v], dim=1),
+                    )
+                    for (video_k, video_v), (state_k, state_v) in zip(
+                        cross_kv_cache, state_kv_cache
+                    )
                 )
-            )
         action_pre = self.action_dit.pre_dit(
             action_tokens=action,
             timestep=timestep,
@@ -300,6 +311,8 @@ class EasyWAMHidden(nn.Module):
             context_is_projected=True,
             cross_kv_cache=action_cross_kv_cache,
         )
+        if self.state_position == "sequence":
+            action_pre = self.action_dit.prepend_state_tokens(action_pre, state_tokens)
         tokens = action_pre["tokens"]
 
         for layer_index, block in enumerate(self.action_dit.blocks):
@@ -328,7 +341,7 @@ class EasyWAMHidden(nn.Module):
                     context_mask=action_pre["context_mask"],
                     context_kv=context_kv,
                 )
-        return self.action_dit.action_decoder(tokens)
+        return self.action_dit.post_dit(tokens, action_pre)
 
     def _forward_dit(
         self,
@@ -374,6 +387,7 @@ class EasyWAMHidden(nn.Module):
         action_dit_pretrained_path: str | None,
         action_dim: int,
         state_dim: int,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         video_hidden_layer: int = 17,
         detach_video_hidden: bool = True,
@@ -412,6 +426,7 @@ class EasyWAMHidden(nn.Module):
             action_dit=action_dit,
             vae=components.vae,
             state_dim=state_dim,
+            state_position=state_position,
             text_encoder=components.text_encoder,
             tokenizer=components.tokenizer,
             text_dim=int(cfg["text_dim"]),
@@ -470,6 +485,7 @@ class EasyWAMHidden(nn.Module):
         action_dit_pretrained_path: str | None = None,
         action_dim: int | None = None,
         state_dim: int | None = None,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         video_hidden_layer: int = 17,
         detach_video_hidden: bool = True,
@@ -523,6 +539,7 @@ class EasyWAMHidden(nn.Module):
             tokenizer=components.tokenizer,
             text_dim=int(video_dit_config["text_dim"]),
             state_dim=int(state_dim),
+            state_position=state_position,
             projector_hidden_dim=int(projector_hidden_dim),
             video_hidden_layer=int(video_hidden_layer),
             detach_video_hidden=bool(detach_video_hidden),
@@ -1191,6 +1208,7 @@ class EasyWAMHidden(nn.Module):
                 "torch_dtype": str(self.torch_dtype),
                 "backbone_name": getattr(self, "backbone_name", "wan22"),
             }
+        payload["state_position"] = self.state_position
         if optimizer is not None:
             payload["optimizer"] = optimizer.state_dict()
         torch.save(payload, path)
@@ -1203,6 +1221,7 @@ class EasyWAMHidden(nn.Module):
         )
 
         payload = torch.load(path, map_location="cpu")
+        validate_checkpoint_state_position(payload, self.state_position)
         checkpoint_backbone = payload.get("backbone_name")
         if checkpoint_backbone is not None and checkpoint_backbone != getattr(self, "backbone_name", "wan22"):
             raise ValueError(

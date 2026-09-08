@@ -44,6 +44,7 @@ Do not normally hard-code robot dimensions in a model recipe:
 
 ```yaml
 state_dim: ${data.train.processor.proprio_output_dim}
+state_position: context
 action_dit_config:
   action_dim: ${data.train.processor.action_output_dim}
 ```
@@ -91,8 +92,9 @@ The total objective is `lambda_video * loss_video + lambda_action * loss_action`
 
 ## Architecture-specific settings
 
+- `state_position` accepts `context` or `sequence` and defaults to `context`. In `context` mode, state tokens join the text conditioning context. In `sequence` mode, they join Unified's main sequence or the ActionDiT sequence used by MoT-family and Hidden models. Select the same value when loading a checkpoint; new checkpoints record it and reject mismatches.
 - `video_cond_noise_prob` controls how often MoT-IDM adds noise to the teacher-forced conditional video during training. It must be between `0` and `1` and defaults to `0.5`.
 - `video_hidden_layer` is a zero-based Video DiT block index used by Hidden. The checked-in value comes from the backbone and must remain within its layer count.
 - `detach_video_hidden=true` prevents the action loss from backpropagating through Hidden's video feature path. Setting it to `false` couples action gradients into that path and changes training memory and optimization behavior.
 - `projector_hidden_dim` controls the small state/action projection MLPs; changing it makes checkpoint shapes incompatible.
-- `video_attention_mask_mode` is a backbone behavior setting. Checked-in Wan2.2 and Cosmos2.5 recipes use `first_frame_causal`; do not change it when resuming a checkpoint trained with another mode.
+- `video_attention_mask_mode` accepts `first_frame_causal`, `per_frame_causal`, or `bidirectional`. In `per_frame_causal` mode, tokens within one video frame interact bidirectionally and each frame sees video tokens from that frame and all earlier frames. Checked-in Wan2.2 and Cosmos2.5 recipes use `first_frame_causal`; do not change it when resuming a checkpoint trained with another mode.

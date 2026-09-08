@@ -6,7 +6,12 @@ import torch.nn.functional as F
 
 from utils.logging_config import get_logger
 
-from .component.action_dit import ActionDiT, StateEncoder
+from .component.action_dit import (
+    ActionDiT,
+    StateEncoder,
+    normalize_state_position,
+    validate_checkpoint_state_position,
+)
 from .component.attention import (
     AttentionSegment,
     StructuredAttentionMask,
@@ -46,6 +51,7 @@ class EasyWAMMoT(torch.nn.Module):
         tokenizer=None,
         text_dim: Optional[int] = None,
         state_dim: Optional[int] = None,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         device: str = "cpu",
         torch_dtype: torch.dtype = torch.float32,
@@ -75,15 +81,21 @@ class EasyWAMMoT(torch.nn.Module):
             text_dim = int(self.text_encoder.dim)
         self.text_dim = int(text_dim)
         self.state_dim = None if state_dim is None else int(state_dim)
+        self.state_position = normalize_state_position(state_position)
         self.projector_hidden_dim = int(projector_hidden_dim)
         if self.state_dim is not None:
+            state_output_dim = (
+                self.text_dim
+                if self.state_position == "context"
+                else int(self.action_expert.hidden_dim)
+            )
             if getattr(video_expert, "block_protocol", "main") == "flux2":
                 # ImageWAM FLUX.2 checkpoints used a single linear proprio token.
-                self.state_encoder = nn.Linear(self.state_dim, self.text_dim).to(torch_dtype)
+                self.state_encoder = nn.Linear(self.state_dim, state_output_dim).to(torch_dtype)
             else:
                 self.state_encoder = StateEncoder(
                     state_dim=self.state_dim,
-                    hidden_dim=self.text_dim,
+                    hidden_dim=state_output_dim,
                     projector_hidden_dim=self.projector_hidden_dim,
                 ).to(torch_dtype)
         else:
@@ -128,6 +140,7 @@ class EasyWAMMoT(torch.nn.Module):
         device: str = "cuda",
         torch_dtype: torch.dtype = torch.bfloat16,
         state_dim: Optional[int] = None,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         action_dit_config: dict[str, Any],
         action_dit_pretrained_path: str | None = None,
@@ -187,6 +200,7 @@ class EasyWAMMoT(torch.nn.Module):
             tokenizer=components.tokenizer,
             text_dim=int(components.text_dim),
             state_dim=state_dim,
+            state_position=state_position,
             projector_hidden_dim=projector_hidden_dim,
             device=device,
             torch_dtype=torch_dtype,
@@ -237,6 +251,7 @@ class EasyWAMMoT(torch.nn.Module):
         tokenizer_max_len: int = 512,
         load_text_encoder: bool = True,
         state_dim: Optional[int] = None,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         video_dit_config: dict[str, Any] | None = None,
         action_dit_config: dict[str, Any] | None = None,
@@ -298,6 +313,7 @@ class EasyWAMMoT(torch.nn.Module):
             tokenizer=components.tokenizer,
             text_dim=int(video_dit_config["text_dim"]),
             state_dim=state_dim,
+            state_position=state_position,
             projector_hidden_dim=int(projector_hidden_dim),
             device=device,
             torch_dtype=torch_dtype,
@@ -371,7 +387,11 @@ class EasyWAMMoT(torch.nn.Module):
         context_mask: Optional[torch.Tensor],
         state: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-        if self.state_encoder is None or state is None:
+        if (
+            self.state_position != "context"
+            or self.state_encoder is None
+            or state is None
+        ):
             return context, context_mask
         if state.ndim != 2:
             raise ValueError(f"`state` must be 2D [B, D], got shape {tuple(state.shape)}")
@@ -388,6 +408,33 @@ class EasyWAMMoT(torch.nn.Module):
         return (
             torch.cat([context, state_token], dim=1),
             torch.cat([context_mask, state_mask], dim=1),
+        )
+
+    def _prepend_state_to_action_sequence(
+        self,
+        action_pre: dict[str, Any],
+        state: Optional[torch.Tensor],
+    ) -> dict[str, Any]:
+        if self.state_position != "sequence" or self.state_encoder is None:
+            return action_pre
+        if state is None:
+            return action_pre
+        if state.ndim != 2:
+            raise ValueError(f"`state` must be 2D [B,D], got shape {tuple(state.shape)}")
+        if self.state_dim is None or state.shape[1] != self.state_dim:
+            raise ValueError(
+                f"`state` last dim must be {self.state_dim}, got {state.shape[1]}"
+            )
+        state_tokens = self.state_encoder(
+            state.to(device=self.device, dtype=action_pre["tokens"].dtype).unsqueeze(1)
+        ).to(dtype=action_pre["tokens"].dtype)
+        return self.action_expert.prepend_state_tokens(action_pre, state_tokens)
+
+    def _state_sequence_length(self, state: Optional[torch.Tensor]) -> int:
+        return int(
+            self.state_position == "sequence"
+            and self.state_encoder is not None
+            and state is not None
         )
 
     @torch.no_grad()
@@ -486,11 +533,13 @@ class EasyWAMMoT(torch.nn.Module):
 
         context, context_mask = self._encode_flux2_text(sample)
         proprio = sample.get("proprio")
+        state = None
         if self.state_encoder is not None:
             if proprio is None or proprio.ndim != 3:
                 raise ValueError("FLUX.2 with state_dim requires proprio [B,T,D].")
+            state = proprio[:, 0].to(device=self.device, dtype=self.torch_dtype)
             context, context_mask = self._append_state_to_context(
-                context, context_mask, proprio[:, 0].to(device=self.device, dtype=self.torch_dtype)
+                context, context_mask, state
             )
         action = sample["action"].to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
         action_is_pad = sample.get("action_is_pad")
@@ -506,6 +555,7 @@ class EasyWAMMoT(torch.nn.Module):
             "ref_img_ids": reference_ids,
             "context": context,
             "context_mask": context_mask,
+            "state": state,
             "action": action,
             "action_is_pad": action_is_pad,
             "action_dim_is_pad": action_dim_is_pad,
@@ -617,6 +667,7 @@ class EasyWAMMoT(torch.nn.Module):
         context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
         if context_mask is not None:
             context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        state = None
         if self.state_encoder is not None:
             if proprio is None:
                 raise ValueError("`sample['proprio']` is required when `state_dim` is enabled.")
@@ -642,6 +693,7 @@ class EasyWAMMoT(torch.nn.Module):
         return {
             "context": context,
             "context_mask": context_mask,
+            "state": state,
             "input_latents": input_latents,
             "first_frame_latents": first_frame_latents,
             "fuse_vae_embedding_in_latents": fuse_flag,
@@ -786,6 +838,9 @@ class EasyWAMMoT(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
+        action_pre = self._prepend_state_to_action_sequence(
+            action_pre, inputs.get("state")
+        )
 
         video_tokens = video_pre["tokens"]
         action_tokens = action_pre["tokens"]
@@ -904,6 +959,9 @@ class EasyWAMMoT(torch.nn.Module):
             timestep=self._scheduler_timestep_to_unit(
                 timestep_action, self.train_action_scheduler
             ),
+        )
+        action_pre = self._prepend_state_to_action_sequence(
+            action_pre, inputs.get("state")
         )
         attention_mask = self._build_mot_attention_mask_flux2(
             batch_size=batch_size,
@@ -1035,6 +1093,7 @@ class EasyWAMMoT(torch.nn.Module):
         action_context: Optional[torch.Tensor] = None,
         video_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
         action_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        state: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
@@ -1053,6 +1112,7 @@ class EasyWAMMoT(torch.nn.Module):
             context_is_projected=action_context is not None,
             cross_kv_cache=action_cross_kv_cache,
         )
+        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
 
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_pre["tokens"].shape[1],
@@ -1102,6 +1162,7 @@ class EasyWAMMoT(torch.nn.Module):
         context: torch.Tensor,
         context_mask: torch.Tensor,
         fuse_vae_embedding_in_latents: bool,
+        state: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         timestep_video = torch.zeros_like(timestep_action, dtype=first_frame_latents.dtype, device=self.device)
         video_pre = self.video_expert.pre_dit(
@@ -1117,6 +1178,7 @@ class EasyWAMMoT(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
+        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
 
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_pre["tokens"].shape[1],
@@ -1164,6 +1226,7 @@ class EasyWAMMoT(torch.nn.Module):
         video_seq_len: int,
         action_context: Optional[torch.Tensor] = None,
         action_cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        state: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         action_pre = self.action_expert.pre_dit(
             action_tokens=latents_action,
@@ -1173,6 +1236,7 @@ class EasyWAMMoT(torch.nn.Module):
             context_is_projected=action_context is not None,
             cross_kv_cache=action_cross_kv_cache,
         )
+        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
         action_tokens = self.mot.forward_action_with_video_cache(
             action_tokens=action_pre["tokens"],
             action_freqs=action_pre["freqs"],
@@ -1354,6 +1418,7 @@ class EasyWAMMoT(torch.nn.Module):
                 action_context=action_context,
                 video_cross_kv_cache=video_cross_kv_cache,
                 action_cross_kv_cache=action_cross_kv_cache,
+                state=proprio,
             )
             pred_video = pred_video_posi
             pred_action = pred_action_posi
@@ -1520,7 +1585,9 @@ class EasyWAMMoT(torch.nn.Module):
         video_seq_len = int(video_pre["tokens"].shape[1])
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_seq_len,
-            action_seq_len=latents_action.shape[1],
+            action_seq_len=(
+                latents_action.shape[1] + self._state_sequence_length(proprio)
+            ),
             video_tokens_per_frame=int(video_pre["meta"]["tokens_per_frame"]),
             device=video_pre["tokens"].device,
         )
@@ -1560,6 +1627,7 @@ class EasyWAMMoT(torch.nn.Module):
                 video_seq_len=video_seq_len,
                 action_context=action_context,
                 action_cross_kv_cache=action_cross_kv_cache,
+                state=proprio,
             )
             pred_action = pred_action_posi
 
@@ -1696,7 +1764,9 @@ class EasyWAMMoT(torch.nn.Module):
             txt_len=int(video_pre["txt_len"]),
             target_len=0,
             cond_len=int(video_pre["cond_len"]),
-            action_len=int(latents_action.shape[1]),
+            action_len=(
+                int(latents_action.shape[1]) + self._state_sequence_length(proprio)
+            ),
             device=latents_action.device,
             text_attention_mask=video_pre["text_mask"],
         )
@@ -1709,6 +1779,7 @@ class EasyWAMMoT(torch.nn.Module):
                     self.infer_action_scheduler,
                 ),
             )
+            action_pre = self._prepend_state_to_action_sequence(action_pre, proprio)
             action_tokens = self.mot.forward_flux2_action_with_video_cache(
                 action_tokens=action_pre["tokens"],
                 action_ids=action_pre["ids"],
@@ -1779,12 +1850,14 @@ class EasyWAMMoT(torch.nn.Module):
             }
         if self.state_encoder is not None and not is_lora_model:
             payload["state_encoder"] = self.state_encoder.state_dict()
+        payload["state_position"] = self.state_position
         if optimizer is not None:
             payload["optimizer"] = optimizer.state_dict()
         torch.save(payload, path)
 
     def load_checkpoint(self, path, optimizer=None, merge_lora: bool = False):
         payload = torch.load(path, map_location="cpu", mmap=True)
+        validate_checkpoint_state_position(payload, self.state_position)
         imagewam_conversion = None
         imagewam_load_report = None
         if "proprio_encoder" in payload:

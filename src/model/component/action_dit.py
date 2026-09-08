@@ -18,6 +18,33 @@ from .attention import KeyPaddingMask, elide_fully_valid_attention_mask, require
 
 logger = get_logger(__name__)
 
+STATE_POSITIONS = ("context", "sequence")
+
+
+def normalize_state_position(value: str) -> str:
+    position = str(value).strip().lower()
+    if position not in STATE_POSITIONS:
+        raise ValueError(
+            f"Unsupported state_position: {value!r}. Expected one of {STATE_POSITIONS}."
+        )
+    return position
+
+
+def validate_checkpoint_state_position(payload: dict, current_position: str) -> None:
+    checkpoint_position = payload.get("state_position")
+    if checkpoint_position is None:
+        logger.warning(
+            "Checkpoint has no state_position metadata; using configured value %r.",
+            current_position,
+        )
+        return
+    checkpoint_position = normalize_state_position(checkpoint_position)
+    if checkpoint_position != current_position:
+        raise ValueError(
+            f"Checkpoint state_position {checkpoint_position!r} does not match model "
+            f"state_position {current_position!r}."
+        )
+
 
 class ActionEncoder(nn.Module):
     """Two-layer action value encoder; timestep and position are applied outside."""
@@ -394,7 +421,52 @@ class ActionDiT(nn.Module):
         }
 
     def post_dit(self, tokens: torch.Tensor, pre_state: Dict[str, Any]) -> torch.Tensor:
-        return self.action_decoder(tokens)
+        state_len = int(pre_state.get("meta", {}).get("state_len", 0))
+        return self.action_decoder(tokens[:, state_len:])
+
+    def prepend_state_tokens(
+        self,
+        pre_state: Dict[str, Any],
+        state_tokens: torch.Tensor,
+    ) -> Dict[str, Any]:
+        action_tokens = pre_state["tokens"]
+        if state_tokens.ndim != 3 or state_tokens.shape[0] != action_tokens.shape[0]:
+            raise ValueError(
+                "State tokens must be [B,S,D] with the same batch size as action tokens."
+            )
+        if state_tokens.shape[2] != self.hidden_dim:
+            raise ValueError(
+                f"State token width must be {self.hidden_dim}, got {state_tokens.shape[2]}."
+            )
+        state_len = int(state_tokens.shape[1])
+        action_len = int(action_tokens.shape[1])
+        total_len = state_len + action_len
+        if total_len > self.freqs.shape[0]:
+            raise ValueError(
+                f"State/action token length {total_len} exceeds RoPE cache {self.freqs.shape[0]}."
+            )
+
+        zero_timestep = pre_state["t"].new_zeros(action_tokens.shape[0])
+        state_t = self.time_embedding(
+            sinusoidal_embedding_1d(self.freq_dim, zero_timestep)
+        )
+        state_t_mod = self.time_projection(state_t).unflatten(1, (6, self.hidden_dim))
+        action_t_mod = pre_state["t_mod"]
+        pre_state["tokens"] = torch.cat([state_tokens, action_tokens], dim=1)
+        pre_state["freqs"] = self.freqs[:total_len].view(total_len, 1, -1).to(
+            action_tokens.device
+        )
+        pre_state["t_mod"] = torch.cat(
+            [
+                state_t_mod[:, None].expand(-1, state_len, -1, -1),
+                action_t_mod[:, None].expand(-1, action_len, -1, -1),
+            ],
+            dim=1,
+        )
+        pre_state["meta"].update(
+            {"state_len": state_len, "action_len": action_len, "seq_len": total_len}
+        )
+        return pre_state
 
     def forward(
         self,

@@ -7,7 +7,7 @@ text_encoder_id: cosmos_reason1_7b
 text_dim: 1024
 attention_backend: auto
 use_gradient_checkpointing: false
-# Options: first_frame_causal, bidirectional. Keep first_frame_causal by default.
+# Options: first_frame_causal, per_frame_causal, bidirectional. Keep first_frame_causal by default.
 video_attention_mask_mode: first_frame_causal
 num_layers: 28
 num_heads: 16

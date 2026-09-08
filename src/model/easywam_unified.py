@@ -6,7 +6,13 @@ import torch.nn.functional as F
 
 from utils.logging_config import get_logger
 
-from .component.action_dit import ActionDecoder, ActionEncoder, StateEncoder
+from .component.action_dit import (
+    ActionDecoder,
+    ActionEncoder,
+    StateEncoder,
+    normalize_state_position,
+    validate_checkpoint_state_position,
+)
 from .component.attention import (
     AttentionSegment,
     StructuredAttentionMask,
@@ -37,6 +43,7 @@ class EasyWAMUnified(nn.Module):
         vae,
         action_dim: int,
         state_dim: int,
+        state_position: str = "context",
         text_encoder=None,
         tokenizer=None,
         text_dim: Optional[int] = None,
@@ -54,6 +61,7 @@ class EasyWAMUnified(nn.Module):
         self.backbone_name = getattr(video_dit, "backbone_name", "wan22")
         self.action_dim = int(action_dim)
         self.state_dim = int(state_dim)
+        self.state_position = normalize_state_position(state_position)
         self.projector_hidden_dim = int(projector_hidden_dim)
 
         self.hidden_dim = int(video_dit.hidden_dim)
@@ -68,7 +76,11 @@ class EasyWAMUnified(nn.Module):
                 "video_dit": video_dit,
                 "state_encoder": StateEncoder(
                     state_dim=self.state_dim,
-                    hidden_dim=self.context_dim,
+                    hidden_dim=(
+                        self.context_dim
+                        if self.state_position == "context"
+                        else self.hidden_dim
+                    ),
                     projector_hidden_dim=self.projector_hidden_dim,
                 ),
                 "action_encoder": ActionEncoder(
@@ -143,30 +155,52 @@ class EasyWAMUnified(nn.Module):
         future_video_len: int,
         action_len: int,
         device: torch.device,
+        state_len: int = 0,
         video_attention_mask_mode: str = "first_frame_causal",
     ) -> StructuredAttentionMask:
-        total = clean_video_len + future_video_len + action_len
+        video_len = clean_video_len + future_video_len
+        state_start = video_len + action_len
+        total = state_start + state_len
         if video_attention_mask_mode == "bidirectional":
             segments = [
                 AttentionSegment(0, total, ((0, total),)),
             ]
         elif video_attention_mask_mode == "first_frame_causal":
+            clean_key_ranges = [(0, clean_video_len)]
+            if state_len:
+                clean_key_ranges.append((state_start, total))
             segments = [
-                AttentionSegment(0, clean_video_len, ((0, clean_video_len),)),
+                AttentionSegment(0, clean_video_len, tuple(clean_key_ranges)),
             ]
+        elif video_attention_mask_mode == "per_frame_causal":
+            if clean_video_len <= 0 or video_len % clean_video_len:
+                raise ValueError(
+                    "Unified video token length must be divisible by tokens per frame "
+                    "in per_frame_causal mode."
+                )
+            segments = []
+            for frame_start in range(0, video_len, clean_video_len):
+                frame_end = frame_start + clean_video_len
+                key_ranges = [(0, frame_end)]
+                if state_len:
+                    key_ranges.append((state_start, total))
+                segments.append(
+                    AttentionSegment(frame_start, frame_end, tuple(key_ranges))
+                )
         else:
             raise ValueError(
                 "EasyWAM-Unified supports `video_attention_mask_mode` values "
-                "'first_frame_causal' and 'bidirectional', "
+                "'first_frame_causal', 'per_frame_causal', and 'bidirectional', "
                 f"got {video_attention_mask_mode!r}."
             )
-        if (
-            video_attention_mask_mode == "first_frame_causal"
-            and clean_video_len < total
-        ):
+        if video_attention_mask_mode == "first_frame_causal" and clean_video_len < state_start:
             segments.append(
-                AttentionSegment(clean_video_len, total, ((0, total),))
+                AttentionSegment(clean_video_len, state_start, ((0, total),))
             )
+        if video_attention_mask_mode == "per_frame_causal" and video_len < state_start:
+            segments.append(AttentionSegment(video_len, state_start, ((0, total),)))
+        if video_attention_mask_mode != "bidirectional" and state_len:
+            segments.append(AttentionSegment(state_start, total, ((0, total),)))
         return build_structured_attention_mask(
             query_len=total,
             key_len=total,
@@ -231,6 +265,8 @@ class EasyWAMUnified(nn.Module):
             action_tokens=action_tokens,
             timestep_action=timestep_action.to(device=x.device, dtype=x.dtype),
             state_tokens=state_tokens,
+            timestep_state=torch.zeros_like(timestep_action, device=x.device, dtype=x.dtype),
+            state_position=self.state_position,
             context=context if projected_context is None else projected_context,
             context_mask=context_mask,
             context_is_projected=projected_context is not None,
@@ -243,6 +279,7 @@ class EasyWAMUnified(nn.Module):
             clean_video_len=tokens_per_frame,
             future_video_len=video_len - tokens_per_frame,
             action_len=action_tokens.shape[1],
+            state_len=(state_tokens.shape[1] if self.state_position == "sequence" else 0),
             device=tokens.device,
             video_attention_mask_mode=self.video_dit.video_attention_mask_mode,
         )
@@ -274,6 +311,7 @@ class EasyWAMUnified(nn.Module):
         *,
         action_dim: int,
         state_dim: int,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         skip_dit_load_from_pretrain: bool = False,
         device: str = "cuda",
@@ -301,6 +339,7 @@ class EasyWAMUnified(nn.Module):
             vae=components.vae,
             action_dim=action_dim,
             state_dim=state_dim,
+            state_position=state_position,
             text_encoder=components.text_encoder,
             tokenizer=components.tokenizer,
             text_dim=int(cfg["text_dim"]),
@@ -335,6 +374,7 @@ class EasyWAMUnified(nn.Module):
         video_dit_config: dict[str, Any] | None = None,
         action_dim: int | None = None,
         state_dim: int | None = None,
+        state_position: str = "context",
         projector_hidden_dim: int = 64,
         skip_dit_load_from_pretrain: bool = False,
         video_train_shift: float = 5.0,
@@ -366,6 +406,7 @@ class EasyWAMUnified(nn.Module):
             vae=components.vae,
             action_dim=int(action_dim),
             state_dim=int(state_dim),
+            state_position=state_position,
             text_encoder=components.text_encoder,
             tokenizer=components.tokenizer,
             text_dim=int(video_dit_config["text_dim"]),
@@ -817,6 +858,7 @@ class EasyWAMUnified(nn.Module):
                 "torch_dtype": str(self.torch_dtype),
                 "backbone_name": getattr(self, "backbone_name", "wan22"),
             }
+        payload["state_position"] = self.state_position
         if optimizer is not None:
             payload["optimizer"] = optimizer.state_dict()
         torch.save(payload, path)
@@ -829,6 +871,7 @@ class EasyWAMUnified(nn.Module):
         )
 
         payload = torch.load(path, map_location="cpu")
+        validate_checkpoint_state_position(payload, self.state_position)
         checkpoint_backbone = payload.get("backbone_name")
         if checkpoint_backbone is not None and checkpoint_backbone != getattr(self, "backbone_name", "wan22"):
             raise ValueError(

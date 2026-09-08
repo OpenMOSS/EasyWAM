@@ -44,6 +44,7 @@ Backbone 配置包含模型/checkpoint 路径、文本维度、Transformer 维�
 
 ```yaml
 state_dim: ${data.train.processor.proprio_output_dim}
+state_position: context
 action_dit_config:
   action_dim: ${data.train.processor.action_output_dim}
 ```
@@ -91,8 +92,9 @@ loss:
 
 ## 架构专属设置
 
+- `state_position` 可设为 `context` 或 `sequence`，默认值为 `context`。`context` 模式会将状态 token 与文本一起作为条件；`sequence` 模式会将其放入 Unified 的主序列，或 MoT 系列与 Hidden 使用的 ActionDiT 序列。加载 checkpoint 时必须选择相同的值；新 checkpoint 会记录该配置并拒绝不一致的加载。
 - `video_cond_noise_prob` 控制 MoT-IDM 在训练中对 teacher-forcing 条件视频加噪的概率，必须位于 `0` 到 `1` 之间，默认值为 `0.5`。
 - `video_hidden_layer` 是 Hidden 使用的 Video DiT block 零起始索引。仓库默认值来自 backbone，且必须小于层数。
 - `detach_video_hidden=true` 阻止动作损失通过 Hidden 的视频特征路径反向传播。设为 `false` 会让动作梯度进入该路径，并改变显存占用和优化行为。
 - `projector_hidden_dim` 控制较小的状态/动作投影 MLP；修改后 checkpoint shape 将不兼容。
-- `video_attention_mask_mode` 属于 backbone 行为设置。仓库内 Wan2.2 和 Cosmos2.5 recipe 使用 `first_frame_causal`；恢复使用其他模式训练的 checkpoint 时不要改变该值。
+- `video_attention_mask_mode` 可设为 `first_frame_causal`、`per_frame_causal` 或 `bidirectional`。在 `per_frame_causal` 模式下，同一视频帧内的 token 双向交互，每一帧可以看到当前帧及此前所有帧的视频 token。仓库内 Wan2.2 和 Cosmos2.5 recipe 使用 `first_frame_causal`；恢复使用其他模式训练的 checkpoint 时不要改变该值。
