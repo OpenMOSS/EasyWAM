@@ -148,7 +148,6 @@ pip install flash-attn --no-build-isolation
 git clone https://github.com/Dao-AILab/flash-attention.git
 cd flash-attention/hopper
 python setup.py install
-cd ../..
 
 # FlashAttention 4
 pip install flash-attn-4
@@ -186,8 +185,7 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
 
 # MoT、MoT-Joint 和 MoT-IDM 均有对应的 Cosmos25 task 配置
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=libero_easywam_mot_cosmos25
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_cosmos25
 
 # 4 张本机 GPU，DeepSpeed ZeRO-2 LoRA 训练
 NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_wan22_lora
