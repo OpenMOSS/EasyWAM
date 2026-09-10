@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONUNBUFFERED=1
 
 EXTRA_ARGS=("$@")
 NPROC_PER_NODE="${NPROC_PER_NODE:-${PET_NPROC_PER_NODE:-8}}"
@@ -44,6 +45,15 @@ for arg in "${EXTRA_ARGS[@]}"; do
   fi
 done
 
+TRAIN_OUTPUT_DIR="./runs/${TASK_BASENAME}/${RUN_ID}"
+mkdir -p "${TRAIN_OUTPUT_DIR}"
+if (( NUM_MACHINES > 1 )); then
+  TRAIN_LOG_PATH="${TRAIN_OUTPUT_DIR}/train_node_${MACHINE_RANK}.log"
+else
+  TRAIN_LOG_PATH="${TRAIN_OUTPUT_DIR}/train.log"
+fi
+exec > >(tee -a "${TRAIN_LOG_PATH}") 2>&1
+
 echo "[launch] nproc_per_node=${NPROC_PER_NODE} num_processes=${GLOBAL_NUM_PROCESSES} num_machines=${NUM_MACHINES} machine_rank=${MACHINE_RANK} run_id=${RUN_ID}"
 
 accelerate launch \
@@ -55,6 +65,6 @@ accelerate launch \
   --main_process_port "${MAIN_PROCESS_PORT}" \
   --deepspeed_multinode_launcher standard \
   scripts/train.py \
-  "output_dir=./runs/${TASK_BASENAME}/${RUN_ID}" \
+  "output_dir=${TRAIN_OUTPUT_DIR}" \
   "wandb.name=${TASK_BASENAME}" \
   "${EXTRA_ARGS[@]}"
