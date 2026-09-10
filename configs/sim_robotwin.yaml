@@ -65,3 +65,7 @@ hydra:
   run:
     dir: .
   output_subdir: null
+  job_logging:
+    handlers:
+      file:
+        filename: /dev/null
