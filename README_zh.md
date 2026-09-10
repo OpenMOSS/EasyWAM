@@ -109,7 +109,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 
 > 以下所有效率结果均使用 **Wan2.2-TI2V-5B** 作为 backbone。**实际训练时长会随 CPU 和 GPU 配置而变化，以上数据仅供参考。** 请参阅[效率配置指南](docs/instructions/config/efficiency_zh.md)，根据自己的机器选择合适的配置，以提升训练与推理效率。
 
-EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一致的条件下对比 EasyWAM 训练框架与 FastWAM 原始代码框架。在 **8 × NVIDIA H100 GPUs**、**per-device batch size 为 16** 的配置下，EasyWAM-MoT 的吞吐量达到 **153.6 samples/s**，是 FastWAM（51.5 samples/s）的 **2.98 倍**；每 step 的数据读取、前向传播和反向传播耗时分别降低 **91.3%**、**72.2%** 和 **55.5%**。
+EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一致的条件下对比 EasyWAM 训练框架与 FastWAM 原始代码框架。在 **8 × NVIDIA H100 GPUs**、**per-device batch size 为 16** 的配置下，EasyWAM-MoT 的吞吐量达到 **138.2 samples/s**，是 FastWAM（51.5 samples/s）的 **2.68 倍**；每 step 的数据读取、前向传播和反向传播耗时分别降低 **85.8%**、**70.5%** 和 **49.5%**。
 
 <p align="center">
   <img src="assets/efficiency_comparison.svg" alt="EasyWAM 与 FastWAM 训练效率对比" width="100%">
@@ -117,10 +117,10 @@ EasyWAM-MoT 与 FastWAM 使用相同的模型架构，因此可以在架构一�
 
 | 代码框架 | 吞吐量（samples/s）↑ | 数据读取耗时（s）↓ | 前向传播耗时（s）↓ | 反向传播耗时（s）↓ |
 | --- | :---: | :---: | :---: | :---: |
-| EasyWAM-MoT | **153.6** | **0.0066** | **0.3447** | **0.4756** |
+| EasyWAM-MoT | **138.2** | **0.0108** | **0.3663** | **0.5392** |
 | FastWAM | 51.5 | 0.0759 | 1.2412 | 1.0680 |
 
-在 LIBERO 数据集上训练 **20,000 steps**，EasyWAM 约需 **4.5 小时**，而使用 FastWAM 原始代码框架约需 **14 小时**，整体训练时长缩短约 **67.9%**。
+在 LIBERO 数据集上训练 **20,000 steps**，EasyWAM 约需 **5 小时**，而使用 FastWAM 原始代码框架约需 **14 小时**，整体训练时长缩短约 **64.3%**。
 
 > 🌟 **愿景：** World Action Model 的训练与评测通常需要大量计算资源。EasyWAM 希望通过高效且轻量的代码框架降低这一研究门槛，让研究者即使在计算资源有限的情况下，也能完成模型训练与评测、快速验证想法并持续迭代。通过不断优化效率，我们希望研究者能够将更多资源投入模型与算法创新，也让更多社区成员参与到 WAM 研究中。
 

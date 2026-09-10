@@ -109,7 +109,7 @@ See the [complete benchmark results](docs/results/result.md) for more results an
 
 > All efficiency results reported below use **Wan2.2-TI2V-5B** as the backbone. **Actual training time may vary with the CPU and GPU configuration; these figures are provided for reference only.** Please refer to the [efficiency configuration guide](docs/instructions/config/efficiency.md) to choose settings appropriate for your machine and improve training and inference efficiency.
 
-EasyWAM-MoT and FastWAM use the same model architecture, enabling an architecture-matched comparison between the EasyWAM training framework and the original FastWAM codebase. Measured on **8 × NVIDIA H100 GPUs** with a **per-device batch size of 16**, EasyWAM-MoT achieves **153.6 samples/s**, a **2.98×** throughput improvement over FastWAM's 51.5 samples/s. It also reduces data, forward, and backward time per step by **91.3%**, **72.2%**, and **55.5%**, respectively.
+EasyWAM-MoT and FastWAM use the same model architecture, enabling an architecture-matched comparison between the EasyWAM training framework and the original FastWAM codebase. Measured on **8 × NVIDIA H100 GPUs** with a **per-device batch size of 16**, EasyWAM-MoT achieves **138.2 samples/s**, a **2.68×** throughput improvement over FastWAM's 51.5 samples/s. It also reduces data, forward, and backward time per step by **85.8%**, **70.5%**, and **49.5%**, respectively.
 
 <p align="center">
   <img src="assets/efficiency_comparison.svg" alt="EasyWAM and FastWAM training efficiency comparison" width="100%">
@@ -117,10 +117,10 @@ EasyWAM-MoT and FastWAM use the same model architecture, enabling an architectur
 
 | Framework | Throughput (samples/s) ↑ | Data Time (s) ↓ | Forward Time (s) ↓ | Backward Time (s) ↓ |
 | --- | :---: | :---: | :---: | :---: |
-| EasyWAM-MoT | **153.6** | **0.0066** | **0.3447** | **0.4756** |
+| EasyWAM-MoT | **138.2** | **0.0108** | **0.3663** | **0.5392** |
 | FastWAM | 51.5 | 0.0759 | 1.2412 | 1.0680 |
 
-On LIBERO, training for **20,000 steps** takes approximately **4.5 hours** with EasyWAM, compared with approximately **14 hours** using the original FastWAM codebase—a **67.9% reduction** in overall training time.
+On LIBERO, training for **20,000 steps** takes approximately **5 hours** with EasyWAM, compared with approximately **14 hours** using the original FastWAM codebase—a **64.3% reduction** in overall training time.
 
 > 🌟 **Hope:** Training and evaluating World Action Models often requires substantial computational resources. EasyWAM aims to lower this barrier with an efficient and lightweight codebase, enabling researchers to train models, run evaluations, and iterate quickly even with limited compute. Through continuous efficiency improvements, we hope researchers can devote more of their resources to model and algorithm innovation and that more members of the community can participate in WAM research.
 
