@@ -33,7 +33,9 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 
 ## 📰 最新动态
 
-- **[2026-08]** EasyWAM 正式发布，为 World Action Model 提供统一的训练与评测工作流。
+- **[2026-09-12]** EasyWAM 新增动态批量评测，仅需少量 worker 即可执行评测，大幅降低测评显存占用并提升 GPU 利用率。本次更新还加入任务/trial 进度展示、LeRobot v3 支持、优化了文本 padding mask 语义的 FlashAttention 2/3/4、可配置的 state token 位置与因果注意力、执行与缓存优化、自动 run 日志、更完善的文档以及新的 Benchmark 结果。
+- **[2026-09-03]** EasyWAM 新增 FLUX.2/ImageWAM backbone 集成。
+- **[2026-09-02]** EasyWAM 正式发布，为 World Action Model 提供统一的训练与评测工作流。
 
 ## 🤖 支持的模型与 Benchmark
 
@@ -243,7 +245,11 @@ EasyWAM/
 
 ## 🤝 参与贡献
 
-欢迎参与 EasyWAM 建设。Issue 与 Pull Request 的提交说明请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+EasyWAM 由社区共同建设，我们欢迎各种规模的贡献。你可以帮助修复 bug、完善文档与示例、支持新的模型或 Benchmark、优化训练与评测流程，或分享可复现的实验结果。
+
+对于 bug 修复和较小的改进，可以直接提交 Issue 或 Pull Request。对于较大的功能，或可能影响公共接口、配置和兼容性的改动，请先创建 Issue 讨论范围与设计。Pull Request 应保持改动聚焦，提供相关验证，并在面向用户的行为发生变化时同步更新中英文文档。
+
+问题反馈要求、开发约定和 Pull Request 检查项请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 🙏 致谢
 

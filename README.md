@@ -33,7 +33,9 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 ## 📰 News
 
-- **[2026-08]** EasyWAM is released with unified training and evaluation workflows for World Action Models.
+- **[2026-09-12]** EasyWAM introduces dynamic batched evaluation, requiring only a small number of workers while significantly reducing evaluation GPU memory usage and improving GPU utilization. This update also adds task/trial progress reporting, LeRobot v3 support, FlashAttention 2/3/4 with optimized text-padding mask semantics, configurable state-token placement and causal attention, execution and caching optimizations, automatic run logging, expanded documentation, and new benchmark results.
+- **[2026-09-03]** EasyWAM adds FLUX.2/ImageWAM backbone integration.
+- **[2026-09-02]** EasyWAM is released with unified training and evaluation workflows for World Action Models.
 
 ## 🤖 Supported Models and Benchmarks
 
@@ -243,7 +245,11 @@ EasyWAM/
 
 ## 🤝 Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for issue and pull-request guidelines.
+EasyWAM is built with the community, and contributions of all sizes are welcome. You can help by fixing bugs, improving documentation and examples, supporting new models or benchmarks, optimizing training and evaluation, or sharing reproducible results.
+
+For bugs and small improvements, feel free to open an Issue or Pull Request. For substantial features or changes that may affect public interfaces, configurations, or compatibility, please open an Issue first so the scope and design can be discussed. Pull Requests should stay focused, include relevant verification, and update both English and Chinese documentation when user-facing behavior changes.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reporting guidelines, development expectations, and the Pull Request checklist.
 
 ## 🙏 Acknowledgements
 
