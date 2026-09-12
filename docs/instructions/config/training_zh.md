@@ -77,12 +77,13 @@ NNODES=2 NODE_RANK=0 MASTER_ADDR=<host> MASTER_PORT=29500 \
 | `output_dir` | 当前运行的 checkpoint、日志和评测产物目录。 |
 | `log_every` | 训练指标记录间隔。 |
 | `save_every` | Checkpoint 保存间隔。 |
+| `checkpoint_save_limit` | 权重 checkpoint 和可恢复训练 state 的最大保留数量。代码默认值为 `5`，`train.yaml` 中配置为 `3`。 |
 | `eval_every` | 存在验证集时，验证推理的步数间隔。 |
 | `eval_num_inference_steps` | 训练时评测采用的去噪步数。 |
 | `eval_save_video` | 每个 rank 在评测时保存一份拼接后的预测/VAE/真值视频。 |
 | `wandb.*` | 启用 WandB 并配置 workspace、project、运行名称、group 和 mode。 |
 
-各间隔可根据 `max_steps` 设为正数，也可设为 `0` 以关闭对应行为。保存视频有助于定性检查，但会增加解码、同步和存储开销。
+各间隔可根据 `max_steps` 设为正数，也可设为 `0` 以关闭对应行为。`checkpoint_save_limit` 必须为正数，在每次保存后同时应用于权重 checkpoint 和训练 state。保存视频有助于定性检查，但会增加解码、同步和存储开销。
 
 ## 评测配置
 

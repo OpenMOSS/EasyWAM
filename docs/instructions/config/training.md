@@ -77,12 +77,13 @@ Set the second node's `NODE_RANK=1`. All nodes must use the same `NNODES`, addre
 | `output_dir` | Checkpoints, logs, and evaluation artifacts for the run. |
 | `log_every` | Step interval for training metrics. |
 | `save_every` | Step interval for checkpoint saving. |
+| `checkpoint_save_limit` | Maximum number of recent weight checkpoints and resumable training states to retain. The trainer default is `5`; `train.yaml` sets it to `3`. |
 | `eval_every` | Step interval for validation inference when a validation dataset exists. |
 | `eval_num_inference_steps` | Denoising steps used by training-time evaluation. |
 | `eval_save_video` | Save one stitched prediction/VAE/ground-truth video per rank at evaluation. |
 | `wandb.*` | Enable WandB and set workspace, project, run name, group, and mode. |
 
-Choose positive intervals relative to `max_steps`, or set an interval to `0` to disable that behavior. Video saving is useful for qualitative checks but adds decoding, synchronization, and storage cost.
+Choose positive intervals relative to `max_steps`, or set an interval to `0` to disable that behavior. `checkpoint_save_limit` must be positive and applies to both weight checkpoints and training states after saving. Video saving is useful for qualitative checks but adds decoding, synchronization, and storage cost.
 
 ## Evaluation configuration
 

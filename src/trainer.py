@@ -3,6 +3,7 @@ import json
 import inspect
 import os
 import re
+import shutil
 from contextlib import nullcontext
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -97,6 +98,12 @@ class EasyWAMTrainer:
             raise ValueError(f"`max_steps` must be > 0, got {self.max_steps}.")
         self.log_every = int(cfg.log_every)
         self.save_every = int(cfg.save_every)
+        self.checkpoint_save_limit = int(cfg.get("checkpoint_save_limit", 5))
+        if self.checkpoint_save_limit <= 0:
+            raise ValueError(
+                "`checkpoint_save_limit` must be > 0, "
+                f"got {self.checkpoint_save_limit}."
+            )
         self.eval_every = int(cfg.eval_every)
         self.eval_num_inference_steps = int(cfg.eval_num_inference_steps)
         self.eval_save_video = bool(cfg.get("eval_save_video", False))
@@ -800,6 +807,40 @@ class EasyWAMTrainer:
         with open(state_file, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=True, indent=2)
 
+    @staticmethod
+    def _prune_step_artifacts(directory: str, max_to_keep: int, *, suffix: str = ""):
+        pattern = re.compile(rf"^step_(\d+){re.escape(suffix)}$")
+        artifacts = []
+        for path in Path(directory).iterdir():
+            match = pattern.fullmatch(path.name)
+            if match is None:
+                continue
+            if suffix:
+                if not path.is_file():
+                    continue
+            elif not path.is_dir() or path.is_symlink():
+                continue
+            artifacts.append((int(match.group(1)), path))
+
+        artifacts.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+        for _, path in artifacts[max_to_keep:]:
+            if suffix:
+                path.unlink()
+            else:
+                shutil.rmtree(path)
+            logger.info("[ckpt] removed old artifact: %s", path)
+
+    def _prune_saved_checkpoints(self):
+        self._prune_step_artifacts(
+            self.weights_dir,
+            self.checkpoint_save_limit,
+            suffix=".pt",
+        )
+        self._prune_step_artifacts(
+            self.state_dir,
+            self.checkpoint_save_limit,
+        )
+
     def save_checkpoint(self):
         step_tag = f"step_{self.global_step:06d}"
 
@@ -822,6 +863,10 @@ class EasyWAMTrainer:
                 state_path,
                 time.perf_counter() - state_started_at,
             )
+        self.accelerator.wait_for_everyone()
+
+        if self.accelerator.is_main_process:
+            self._prune_saved_checkpoints()
         self.accelerator.wait_for_everyone()
 
         return {"weights_path": ckpt_path, "state_path": state_path}
