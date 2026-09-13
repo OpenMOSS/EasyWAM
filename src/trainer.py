@@ -98,10 +98,13 @@ class EasyWAMTrainer:
             raise ValueError(f"`max_steps` must be > 0, got {self.max_steps}.")
         self.log_every = int(cfg.log_every)
         self.save_every = int(cfg.save_every)
-        self.checkpoint_save_limit = int(cfg.get("checkpoint_save_limit", 5))
-        if self.checkpoint_save_limit <= 0:
+        checkpoint_save_limit = cfg.get("checkpoint_save_limit", 5)
+        self.checkpoint_save_limit = (
+            None if checkpoint_save_limit is None else int(checkpoint_save_limit)
+        )
+        if self.checkpoint_save_limit is not None and self.checkpoint_save_limit <= 0:
             raise ValueError(
-                "`checkpoint_save_limit` must be > 0, "
+                "`checkpoint_save_limit` must be null or > 0, "
                 f"got {self.checkpoint_save_limit}."
             )
         self.eval_every = int(cfg.eval_every)
@@ -831,6 +834,8 @@ class EasyWAMTrainer:
             logger.info("[ckpt] removed old artifact: %s", path)
 
     def _prune_saved_checkpoints(self):
+        if self.checkpoint_save_limit is None:
+            return
         self._prune_step_artifacts(
             self.weights_dir,
             self.checkpoint_save_limit,
