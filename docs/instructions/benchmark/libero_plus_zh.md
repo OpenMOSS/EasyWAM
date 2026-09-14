@@ -31,15 +31,6 @@ pip install --no-deps -e <path/to/LIBERO-plus>
 
 评测必须提供 `dataset_stats.json`。如果没有设置 `EVALUATION.dataset_stats_path`，manager 会在 checkpoint 向上的四层父目录中自动查找。
 
-可以先验证安装并生成任务清单，不执行 rollout：
-
-```bash
-python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot_wan22 \
-  MULTIRUN.create_only=true \
-  EVALUATION.output_dir=./evaluate_results/libero_plus/validation
-```
-
 ## 完整评测
 
 官方配置对每个选中的扰动任务评测一次，四个 suite 共包含 10,030 个任务。

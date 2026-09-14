@@ -2,11 +2,33 @@
 
 [English](libero.md) | [Benchmark 索引](README_zh.md) | [数据与训练指南](../data/libero_zh.md) | [返回项目 README](../../../README_zh.md)
 
-请在同一环境中安装 EasyWAM 和官方 [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) 仿真器。项目使用 MuJoCo 3.3.2：
+## 安装
+
+在 EasyWAM 所在的 Python 3.10 环境中安装 LIBERO：
 
 ```bash
-pip install mujoco==3.3.2
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git third_party/LIBERO
+
+# 这里只安装 LIBERO 评测需要、但 EasyWAM 未声明的包。
+pip install mujoco==3.3.2 easydict==1.9 \
+  robosuite==1.4.0 bddl==1.0.1 future==0.18.2 \
+  cloudpickle==2.1.0 gym==0.25.2
+
+# LIBERO 的 setup.py 没有运行时依赖，避免重复安装或降级 EasyWAM 的包。
+pip install --no-deps -e third_party/LIBERO
 ```
+
+首次导入时，LIBERO 会询问 demonstration dataset 的保存位置。评测只使用源码中自带的 BDDL、assets 和初始状态，因此选择默认路径即可：
+
+```bash
+printf 'n\n' | python -c "import libero.libero"
+```
+
+这会生成 `~/.libero/config.yaml`。如果设置了 `LIBERO_CONFIG_PATH`，配置会写到该目录；运行评测时需要保持这个环境变量一致。官方依赖中的 `robomimic` 和 `thop` 只服务于 LIBERO 自带的策略训练，EasyWAM 评测不会使用，因此不安装。Hydra、NumPy、Weights & Biases、Transformers、Einops、PyTorch、Pillow、Termcolor 和 tqdm 已由 EasyWAM 提供。
+
+上游源码及版本清单见官方 [LIBERO 仓库](https://github.com/Lifelong-Robot-Learning/LIBERO)。
+
+## 评测
 
 使用训练 checkpoint 及其对应的归一化统计进行评测：
 
@@ -28,10 +50,6 @@ python experiments/libero/run_libero_manager.py \
   'MULTIRUN.task_suite_names=[libero_spatial,libero_object]' \
   MULTIRUN.num_gpus=4 MULTIRUN.env_num_per_gpu=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
-
-# 仅检查安装并生成任务清单，不启动 rollout
-python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> MULTIRUN.create_only=true
 ```
 
 默认协议会评测四个 suite，每个任务执行 50 次。每张 GPU 只加载一个模型，环境动态领取任务并共享推理组批器。单环境使用 EGL，并发环境使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。

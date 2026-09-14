@@ -2,11 +2,33 @@
 
 [中文](libero_zh.md) | [Benchmark index](README.md) | [Data and training guide](../data/libero.md) | [Back to project README](../../../README.md)
 
-Install EasyWAM and the official [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) simulator in the same environment. The project uses MuJoCo 3.3.2:
+## Installation
+
+Install LIBERO in the same Python 3.10 environment as EasyWAM:
 
 ```bash
-pip install mujoco==3.3.2
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git third_party/LIBERO
+
+# Only packages needed by LIBERO evaluation that are not declared by EasyWAM.
+pip install mujoco==3.3.2 easydict==1.9 \
+  robosuite==1.4.0 bddl==1.0.1 future==0.18.2 \
+  cloudpickle==2.1.0 gym==0.25.2
+
+# LIBERO's setup.py has no runtime dependencies; avoid reinstalling EasyWAM packages.
+pip install --no-deps -e third_party/LIBERO
 ```
+
+On the first import, LIBERO asks where to store demonstration datasets. Evaluation only uses the BDDL files, assets, and initial states bundled with the source tree, so accept the default:
+
+```bash
+printf 'n\n' | python -c "import libero.libero"
+```
+
+This creates `~/.libero/config.yaml`. If `LIBERO_CONFIG_PATH` is set, it is created under that directory instead; keep that environment variable set when running evaluation. The official requirements also list `robomimic` and `thop`, but EasyWAM does not use LIBERO's built-in policy training stack, so they are not needed here. EasyWAM already provides Hydra, NumPy, Weights & Biases, Transformers, Einops, PyTorch, Pillow, Termcolor, and tqdm.
+
+See the official [LIBERO repository](https://github.com/Lifelong-Robot-Learning/LIBERO) for the upstream source and dependency versions.
+
+## Evaluation
 
 Evaluate a trained checkpoint with its matching normalization statistics:
 
@@ -28,10 +50,6 @@ python experiments/libero/run_libero_manager.py \
   'MULTIRUN.task_suite_names=[libero_spatial,libero_object]' \
   MULTIRUN.num_gpus=4 MULTIRUN.env_num_per_gpu=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
-
-# Validate installation and create the task manifest without starting rollouts
-python experiments/libero/run_libero_manager.py \
-  task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> MULTIRUN.create_only=true
 ```
 
 The default protocol evaluates all four suites for 50 trials per task. Each GPU loads one model; environments claim tasks dynamically and share its inference batcher. One environment uses EGL and concurrent environments use OSMesa. Videos and progress rendering are disabled by default and can be controlled with `EVALUATION.video_mode`, `EVALUATION.visualize_future_video`, and `EVALUATION.progress`.

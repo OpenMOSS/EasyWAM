@@ -31,15 +31,6 @@ Use any EasyWAM checkpoint trained with a LIBERO task, for example:
 
 `dataset_stats.json` is required. If `EVALUATION.dataset_stats_path` is omitted, the manager searches up to four parent directories of the checkpoint.
 
-Validate the installation and build a task manifest without running rollouts:
-
-```bash
-python experiments/libero_plus/run_libero_plus_manager.py \
-  task=libero_easywam_mot_wan22 \
-  MULTIRUN.create_only=true \
-  EVALUATION.output_dir=./evaluate_results/libero_plus/validation
-```
-
 ## Full Evaluation
 
 The official configuration evaluates every selected perturbation task once. The four suites contain 10,030 tasks in total.
