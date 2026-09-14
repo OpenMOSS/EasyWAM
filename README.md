@@ -222,7 +222,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
-Evaluation concurrency is controlled by `MULTIRUN.num_gpus`, `MULTIRUN.workers_per_gpu`, and `MULTIRUN.env_num_per_worker`. Every model worker loads its own model copy and owns an independent dynamic inference batcher, so increasing `workers_per_gpu` also increases GPU memory use. Tune `MULTIRUN.inference_batch_size` and `MULTIRUN.inference_batch_wait_ms` per worker. See the data and benchmark guides for dataset layout, simulator installation, checkpoint examples, filtering, and resume behavior.
+Evaluation concurrency is controlled by `MULTIRUN.num_gpus`, `MULTIRUN.gpu_ids`, `MULTIRUN.workers_per_gpu`, and `MULTIRUN.env_num_per_worker`. `gpu_ids=null` uses the first `num_gpus` devices; otherwise `gpu_ids` is an ordered candidate pool and its first `num_gpus` entries are selected. For example, `MULTIRUN.num_gpus=3 'MULTIRUN.gpu_ids=[2,3,5,6]'` uses GPUs 2, 3, and 5. Every model worker loads its own model copy and owns an independent dynamic inference batcher, so increasing `workers_per_gpu` also increases GPU memory use. Tune `MULTIRUN.inference_batch_size` and `MULTIRUN.inference_batch_wait_ms` per worker, or use `scripts/tune_eval_concurrency.py` to benchmark candidate settings on the target machine. See the data and benchmark guides for dataset layout, simulator installation, checkpoint examples, filtering, and resume behavior.
 
 ## 📚 Documentation
 

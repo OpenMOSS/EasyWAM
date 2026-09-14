@@ -28,6 +28,7 @@ from experiments.robocasa.result_utils import valid_result_path  # noqa: E402
 from experiments.task_dispatch import (  # noqa: E402
     build_worker_slots,
     count_workers_by_gpu,
+    resolve_gpu_ids,
 )
 
 
@@ -128,6 +129,10 @@ def run_evaluation(
         return
 
     num_gpus = int(cfg.MULTIRUN.num_gpus)
+    gpu_ids = resolve_gpu_ids(
+        num_gpus=num_gpus,
+        gpu_ids=cfg.MULTIRUN.get("gpu_ids"),
+    )
     workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
     envs_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
@@ -140,13 +145,14 @@ def run_evaluation(
         )
     slots = build_worker_slots(
         num_gpus=num_gpus,
+        gpu_ids=gpu_ids,
         workers_per_gpu=workers_per_gpu,
         pending_jobs=len(pending),
     )
     active_workers = count_workers_by_gpu(slots)
     print(
         f"Model workers: {len(slots)} "
-        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"(gpu_ids={gpu_ids}, workers_per_gpu={workers_per_gpu}, "
         f"env_num_per_worker={envs_per_worker})"
     )
     worker_dir = output_dir / "workers"
@@ -241,7 +247,11 @@ def run_evaluation(
     )
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robocasa.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robocasa.yaml",
+)
 def main(cfg: DictConfig) -> None:
     if cfg.ckpt is None and not bool(cfg.MULTIRUN.get("create_only", False)):
         raise ValueError("ckpt must not be None.")

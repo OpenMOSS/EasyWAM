@@ -37,7 +37,11 @@ from experiments.batched_inference import DynamicInferenceBatcher  # noqa: E402
 from experiments.task_dispatch import FileTaskDispatcher  # noqa: E402
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_libero_plus.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_libero_plus.yaml",
+)
 def main(cfg: DictConfig) -> None:
     if int(cfg.EVALUATION.num_trials) != 1:
         raise ValueError("LIBERO-Plus requires EVALUATION.num_trials=1.")

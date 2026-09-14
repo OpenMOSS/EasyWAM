@@ -48,11 +48,12 @@ python experiments/libero/run_libero_manager.py \
   task=libero_easywam_mot_wan22 ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   'MULTIRUN.task_suite_names=[libero_spatial,libero_object]' \
-  MULTIRUN.num_gpus=4 MULTIRUN.workers_per_gpu=2 \
+  MULTIRUN.num_gpus=3 'MULTIRUN.gpu_ids=[1,3,5,7]' \
+  MULTIRUN.workers_per_gpu=2 \
   MULTIRUN.env_num_per_worker=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
-默认协议会评测四个 suite，每个任务执行 50 次。模型 worker 按 GPU 轮询分配；每个 worker 独立加载一份模型，其 rollout actor 动态领取任务并共享该 worker 的推理组批器。提高 `workers_per_gpu` 会增加模型显存占用。同一 GPU 只有一个活动环境时使用 EGL，存在并发环境时使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。
+默认协议会评测四个 suite，每个任务执行 50 次。`MULTIRUN.gpu_ids=null` 时使用前 `num_gpus` 张卡；否则从有序的 `gpu_ids` 候选池中选择前 `num_gpus` 项。模型 worker 在选中的 GPU 间轮询分配；每个 worker 独立加载一份模型，其 rollout actor 动态领取任务并共享该 worker 的推理组批器。提高 `workers_per_gpu` 会增加模型显存占用。同一 GPU 只有一个活动环境时使用 EGL，存在并发环境时使用 OSMesa。默认关闭视频和进度渲染，可通过 `EVALUATION.video_mode`、`EVALUATION.visualize_future_video` 和 `EVALUATION.progress` 调整。
 
 结果保存在 `evaluate_results/libero/<task>/<timestamp>/`，其中包括 worker 日志、逐任务 JSON、`summary.json`、`summary.csv` 和 `task_success_rates.csv`。重新指定同一个 `EVALUATION.output_dir` 即可续评，manager 会跳过结果完整的任务。

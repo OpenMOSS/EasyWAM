@@ -58,7 +58,7 @@ Unified 和 Hidden 在模型顶层暴露 `action_dim`；MoT 系列将其放在 `
 | Backbone 路径字段 | 定位预训练 Video DiT、VAE/tokenizer 和可选文本 encoder。 |
 | `action_dit_pretrained_path` | MoT 系列和 Hidden 使用的可选插值 ActionDiT 初始化权重。 |
 | `skip_dit_load_from_pretrain` | 跳过预训练 DiT 权重；评测会设为 `true`，随后加载 EasyWAM checkpoint。 |
-| `ckpt` | `configs/sim_*.yaml` 定义的评测 checkpoint 路径。 |
+| `ckpt` | `configs/benchmark/sim_*.yaml` 定义的评测 checkpoint 路径。 |
 | `resume` | Trainer 恢复训练所使用的 checkpoint 或目录。 |
 
 使用 `scripts/preprocess_action_dit_backbone.py` 生成 [Wan2.2](../backbone/wan22.md) 或 [Cosmos2.5](../backbone/cosmos25.md) 文档中说明的 ActionDiT 初始化权重。EasyWAM-Unified 不使用独立的 ActionDiT checkpoint。

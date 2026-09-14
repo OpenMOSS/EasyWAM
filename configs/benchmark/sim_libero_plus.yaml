@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - train
+  - /train
   - override /task: libero_easywam_mot_wan22
   - _self_
 
@@ -61,9 +61,10 @@ MULTIRUN:
   difficulty_levels: null
   task_ids: null
   num_gpus: 8
-  workers_per_gpu: 1
+  gpu_ids: null
+  workers_per_gpu: 2
   env_num_per_worker: 20
-  inference_batch_size: 20
+  inference_batch_size: 16
   inference_batch_wait_ms: 10
   prompt_cache_size: 40
 

@@ -87,7 +87,7 @@ NNODES=2 NODE_RANK=0 MASTER_ADDR=<host> MASTER_PORT=29500 \
 
 ## 评测配置
 
-评测根配置是 `configs/sim_libero.yaml`、`configs/sim_libero_plus.yaml` 和 `configs/sim_robotwin.yaml`。它们继承 `train.yaml`，选择 task，启用运行时 text encoder，跳过重复的基础 DiT 初始化，并从 `ckpt` 加载训练权重。
+评测根配置统一放在 `configs/benchmark/` 下，包括 `sim_libero.yaml`、`sim_libero_plus.yaml`、`sim_robocasa.yaml` 和 `sim_robotwin.yaml`。它们继承 `train.yaml`，选择 task，启用运行时 text encoder，跳过重复的基础 DiT 初始化，并从 `ckpt` 加载训练权重。
 
 通用 policy 设置包括：
 
@@ -104,4 +104,4 @@ NNODES=2 NODE_RANK=0 MASTER_ADDR=<host> MASTER_PORT=29500 \
 
 运行时会将 `replan_steps` 限制在预测 action horizon 内。缩短 replanning 间隔可以更频繁地响应环境，但会更频繁地调用模型。`num_inference_steps` 必须为正数；减少步数会降低去噪计算量，但可能损失 policy 质量。
 
-`MULTIRUN.num_gpus`、`workers_per_gpu` 和 `env_num_per_worker` 分别控制评测 GPU、模型副本和 rollout actor，不是训练 world size；推理组批选项按每个模型 worker 独立生效。Benchmark 专属筛选条件和断点续评规则请参阅 [LIBERO](../benchmark/libero_zh.md)、[LIBERO-Plus](../benchmark/libero_plus_zh.md)、[RoboTwin](../benchmark/robotwin_zh.md) 和 [RoboCasa365](../benchmark/robocasa_zh.md) 指南。
+`MULTIRUN.num_gpus`、`gpu_ids`、`workers_per_gpu` 和 `env_num_per_worker` 分别控制评测 GPU、模型副本和 rollout actor，不是训练 world size。`gpu_ids=null` 时使用前 `num_gpus` 张卡；否则 `gpu_ids` 是有序候选池，实际选择其中前 `num_gpus` 项。推理组批选项按每个模型 worker 独立生效。Benchmark 专属筛选条件和断点续评规则请参阅 [LIBERO](../benchmark/libero_zh.md)、[LIBERO-Plus](../benchmark/libero_plus_zh.md)、[RoboTwin](../benchmark/robotwin_zh.md) 和 [RoboCasa365](../benchmark/robocasa_zh.md) 指南。

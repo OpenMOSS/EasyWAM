@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import fcntl
 from dataclasses import dataclass
+from numbers import Integral
 from pathlib import Path
+from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -12,22 +14,55 @@ class WorkerSlot:
     gpu_worker_index: int
 
 
-def build_worker_slots(
-    *, num_gpus: int, workers_per_gpu: int, pending_jobs: int
-) -> list[WorkerSlot]:
-    """Assign model workers across GPUs in round-robin order."""
+def resolve_gpu_ids(
+    *, num_gpus: int, gpu_ids: Sequence[int] | None = None
+) -> list[int]:
+    """Select ``num_gpus`` physical devices from an optional ordered candidate pool."""
     if num_gpus <= 0:
         raise ValueError("num_gpus must be positive.")
+    if gpu_ids is None:
+        return list(range(num_gpus))
+
+    if any(
+        isinstance(gpu_id, bool) or not isinstance(gpu_id, Integral)
+        for gpu_id in gpu_ids
+    ):
+        raise ValueError("gpu_ids must contain integer device IDs.")
+    resolved = [int(gpu_id) for gpu_id in gpu_ids]
+    if not resolved:
+        raise ValueError("gpu_ids must not be empty when configured.")
+    if any(gpu_id < 0 for gpu_id in resolved):
+        raise ValueError("gpu_ids must contain only non-negative device IDs.")
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("gpu_ids must not contain duplicate device IDs.")
+    if len(resolved) < num_gpus:
+        raise ValueError(
+            f"gpu_ids provides {len(resolved)} candidates, fewer than "
+            f"num_gpus={num_gpus}."
+        )
+    return resolved[:num_gpus]
+
+
+def build_worker_slots(
+    *,
+    num_gpus: int,
+    workers_per_gpu: int,
+    pending_jobs: int,
+    gpu_ids: Sequence[int] | None = None,
+) -> list[WorkerSlot]:
+    """Assign model workers across GPUs in round-robin order."""
+    resolved_gpu_ids = resolve_gpu_ids(num_gpus=num_gpus, gpu_ids=gpu_ids)
     if workers_per_gpu <= 0:
         raise ValueError("workers_per_gpu must be positive.")
     if pending_jobs < 0:
         raise ValueError("pending_jobs must not be negative.")
-    worker_count = min(pending_jobs, num_gpus * workers_per_gpu)
+    gpu_count = len(resolved_gpu_ids)
+    worker_count = min(pending_jobs, gpu_count * workers_per_gpu)
     return [
         WorkerSlot(
             worker_index=index,
-            gpu_id=index % num_gpus,
-            gpu_worker_index=index // num_gpus,
+            gpu_id=resolved_gpu_ids[index % gpu_count],
+            gpu_worker_index=index // gpu_count,
         )
         for index in range(worker_count)
     ]

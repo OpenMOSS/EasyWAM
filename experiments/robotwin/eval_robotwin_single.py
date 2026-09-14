@@ -109,7 +109,9 @@ def _model_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) -> 
     values = {
         "ckpt_setting": str(checkpoint),
         "seed": cfg.seed,
-        "sim_cfg_path": str((PROJECT_ROOT / "configs" / "sim_robotwin.yaml").resolve()),
+        "sim_cfg_path": str(
+            (PROJECT_ROOT / "configs" / "benchmark" / "sim_robotwin.yaml").resolve()
+        ),
         "sim_task": HydraConfig.get().runtime.choices.get("task"),
         "mixed_precision": cfg.mixed_precision,
         "device": cfg.EVALUATION.device,
@@ -137,7 +139,11 @@ def _model_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) -> 
     return overrides
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robotwin.yaml",
+)
 def main(cfg: DictConfig) -> None:
     from experiments.robotwin.upstream import (
         build_eval_command,

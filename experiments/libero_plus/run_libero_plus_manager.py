@@ -34,6 +34,7 @@ from experiments.libero.render_backend import (  # noqa: E402
 from experiments.task_dispatch import (  # noqa: E402
     build_worker_slots,
     count_workers_by_gpu,
+    resolve_gpu_ids,
 )
 
 
@@ -140,6 +141,10 @@ def _run_workers(
     pending: list[TaskSpec],
 ) -> None:
     num_gpus = int(cfg.MULTIRUN.get("num_gpus", 1))
+    gpu_ids = resolve_gpu_ids(
+        num_gpus=num_gpus,
+        gpu_ids=cfg.MULTIRUN.get("gpu_ids"),
+    )
     workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
     env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
@@ -152,13 +157,14 @@ def _run_workers(
         )
     slots = build_worker_slots(
         num_gpus=num_gpus,
+        gpu_ids=gpu_ids,
         workers_per_gpu=workers_per_gpu,
         pending_jobs=len(pending),
     )
     active_workers = count_workers_by_gpu(slots)
     print(
         f"Model workers: {len(slots)} "
-        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"(gpu_ids={gpu_ids}, workers_per_gpu={workers_per_gpu}, "
         f"env_num_per_worker={env_num_per_worker})"
     )
 
@@ -251,7 +257,11 @@ def _run_workers(
             log_handle.close()
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_libero_plus.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_libero_plus.yaml",
+)
 def main(cfg: DictConfig) -> None:
     if int(cfg.EVALUATION.num_trials) != 1:
         raise ValueError("Official LIBERO-Plus evaluation requires EVALUATION.num_trials=1.")

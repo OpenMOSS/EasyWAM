@@ -36,7 +36,11 @@ def _read_tasks(path: Path) -> list[tuple[str, int]]:
     return rows
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_libero.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_libero.yaml",
+)
 def main(cfg: DictConfig) -> None:
     task_file_value = cfg.WORKER.get("task_file")
     if not task_file_value:

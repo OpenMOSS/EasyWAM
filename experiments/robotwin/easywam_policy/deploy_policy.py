@@ -109,7 +109,7 @@ def _resolve_sim_cfg_name(sim_cfg_path: Optional[str], sim_cfg_name: Optional[st
         return relative.as_posix()
 
     if _is_none_like(sim_cfg_name):
-        return "sim_robotwin.yaml"
+        return "benchmark/sim_robotwin.yaml"
     return str(sim_cfg_name)
 
 

@@ -60,11 +60,42 @@ VAE micro-batching 会同时应用于训练和评测的模型构造，但不会�
 | `EVALUATION.torch_compile` | 编译各架构声明的张量密集推理函数。首次调用编译可能较慢，适合之后重复使用稳定 shape。 |
 | `EVALUATION.torch_compile_mode` | 默认 `reduce-overhead`，适合重复的 batch-1 推理，条件允许时可能使用 CUDA Graph。 |
 | `EVALUATION.video_mode`、`visualize_future_video`、`eval_save_video` | 视频编码、解码、可视化和磁盘写入都会增加开销；吞吐测试应保持关闭。 |
-| `MULTIRUN.num_gpus`、`workers_per_gpu`、`env_num_per_worker` | 控制 GPU 数、每张 GPU 的模型副本数和每个模型 worker 的 rollout actor 数；每增加一个 worker 都会再加载一份模型。 |
+| `MULTIRUN.num_gpus`、`gpu_ids`、`workers_per_gpu`、`env_num_per_worker` | 控制 GPU、每张 GPU 的模型副本数和每个模型 worker 的 rollout actor 数；`gpu_ids=null` 时选择前 `num_gpus` 张卡，否则从有序的 `gpu_ids` 候选池中选择前 `num_gpus` 项；每增加一个 worker 都会再加载一份模型。 |
 | `MULTIRUN.inference_batch_size`、`inference_batch_wait_ms` | 控制动态推理 batch 上限和等待窗口。 |
 | `MULTIRUN.prompt_cache_size` | 控制每个模型 worker 最多缓存的 prompt embedding 数量。 |
 
 `torch_compile_backend`、`torch_compile_fullgraph`、`torch_compile_dynamic` 和 `torch_compile_options` 会传给 `torch.compile`。应先使用仓库默认值。已经加载的模型不允许切换到另一套 compile 配置；修改这些设置后需要重启 worker。
+
+### 在目标机器上调优评测并发
+
+使用 `scripts/tune_eval_concurrency.py`，让同一份有代表性的评测负载扫描多组候选值。例如：
+
+```bash
+python scripts/tune_eval_concurrency.py \
+  --benchmark robocasa \
+  --env-counts 4,8 \
+  --batch-sizes 2,4,8 \
+  --wait-ms 0,10 \
+  --repeats 1 \
+  --timeout-seconds 3600 \
+  --monitor-gpu-ids 2,3,5 \
+  -- \
+  task=robocasa_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt> \
+  EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
+  EVALUATION.num_trials=2 \
+  'MULTIRUN.task_sets=[atomic_seen]' \
+  MULTIRUN.num_gpus=3 \
+  'MULTIRUN.gpu_ids=[2,3,5,6]'
+```
+
+`--` 后面的参数会原样传给所选 benchmark manager。调优脚本只接管并替换 `EVALUATION.output_dir`、`env_num_per_worker`、`inference_batch_size` 和 `inference_batch_wait_ms`。脚本会跳过 batch 大于 actor 数的组合，为每次运行使用独立目录，识别非零退出、超时和常见 OOM 信息；系统存在 `nvidia-smi` 时还会采样显存。
+
+结果保存在 `evaluate_results/concurrency_tuning/<benchmark>/<timestamp>/`，包括 `results.json`、`summary.csv`、逐次运行命令和 manager 日志。推荐值是在全部重复运行均成功的组合中，选择与最快中位耗时相差不超过 3% 的最小配置。可先加 `--dry-run`，只检查命令而不启动评测。
+
+建议先运行上面的小范围网格，再围绕最优结果缩小候选范围，并使用 `--repeats 2` 或更大的值复测后再采用。
+
+所有候选必须使用相同的任务、episode 数、checkpoint、推理步数和 GPU 池。负载中同时待处理的任务数要足以压满最大的 `env_num_per_worker`；只有一个任务时无法衡量 actor 并发。总耗时包含模型启动，因此应安排足够多的 rollout，使启动时间只占较小比例。测试时应保持所选 GPU 空闲，因为显存采样会统计设备上的所有进程。
 
 ## 起始配置方案
 

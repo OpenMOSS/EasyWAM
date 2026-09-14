@@ -10,7 +10,7 @@ eval_num_episodes: 100
 # EasyWAM policy arguments
 sim_cfg_path: null
 sim_task: null
-sim_cfg_name: sim_robotwin.yaml
+sim_cfg_name: benchmark/sim_robotwin.yaml
 mixed_precision: bf16
 device: cuda
 dataset_stats_path: null

@@ -32,7 +32,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=./runs/robocasa_easywam_mot_wan22/<run-id>/dataset_stats.json
 ```
 
-默认使用 8 张 GPU、每张卡一个模型 worker、每个 worker 4 个 rollout actor，动态推理 batch 上限 4、等待窗口 10 ms；模型预测 32 个 action，每执行 16 步重新规划。worker 按 GPU 轮询分配；每个 worker 独立加载一份模型并持有自己的动态推理 batcher，因此提高 `workers_per_gpu` 也会增加显存占用。
+默认使用 8 张 GPU、每张卡一个模型 worker、每个 worker 4 个 rollout actor，动态推理 batch 上限 4、等待窗口 10 ms；模型预测 32 个 action，每执行 16 步重新规划。`MULTIRUN.gpu_ids=null` 时使用前 `num_gpus` 张卡；否则从有序的 `gpu_ids` 候选池中选择前 `num_gpus` 项。worker 在选中的 GPU 间轮询分配；每个 worker 独立加载一份模型并持有自己的动态推理 batcher，因此提高 `workers_per_gpu` 也会增加显存占用。
 
 常用 override：
 
@@ -41,7 +41,8 @@ python experiments/robocasa/run_robocasa_manager.py \
 python experiments/robocasa/run_robocasa_manager.py \
   task=robocasa_easywam_mot_wan22 ckpt=<checkpoint> \
   EVALUATION.dataset_stats_path=<dataset_stats.json> \
-  'MULTIRUN.task_sets=[atomic_seen]' MULTIRUN.num_gpus=4 \
+  'MULTIRUN.task_sets=[atomic_seen]' MULTIRUN.num_gpus=3 \
+  'MULTIRUN.gpu_ids=[1,3,5,7]' \
   MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4
 
 # 只评测一个任务

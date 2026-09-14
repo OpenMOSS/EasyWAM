@@ -467,7 +467,11 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robocasa.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robocasa.yaml",
+)
 def main(cfg: DictConfig) -> None:
     if cfg.get("seed") is not None:
         set_global_seed(int(cfg.seed), get_worker_init_fn=False)

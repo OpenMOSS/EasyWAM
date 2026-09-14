@@ -87,7 +87,7 @@ Choose positive intervals relative to `max_steps`, or set an interval to `0` to 
 
 ## Evaluation configuration
 
-Evaluation roots are `configs/sim_libero.yaml`, `configs/sim_libero_plus.yaml`, and `configs/sim_robotwin.yaml`. They inherit `train.yaml`, select a task, enable the runtime text encoder, skip redundant base-DiT initialization, and load the trained weights from `ckpt`.
+Evaluation roots are under `configs/benchmark/`: `sim_libero.yaml`, `sim_libero_plus.yaml`, `sim_robocasa.yaml`, and `sim_robotwin.yaml`. They inherit `train.yaml`, select a task, enable the runtime text encoder, skip redundant base-DiT initialization, and load the trained weights from `ckpt`.
 
 Common policy controls include:
 
@@ -104,4 +104,4 @@ Common policy controls include:
 
 `replan_steps` is bounded by the predicted action horizon at runtime. Shorter replanning reacts more frequently but invokes the model more often. `num_inference_steps` must be positive; reducing it trades denoising compute for possible policy-quality loss.
 
-`MULTIRUN.num_gpus`, `workers_per_gpu`, and `env_num_per_worker` control evaluation GPUs, model copies, and rollout actors rather than training world size. Inference batching options apply independently to each model worker. See the [LIBERO](../benchmark/libero.md), [LIBERO-Plus](../benchmark/libero_plus.md), [RoboTwin](../benchmark/robotwin.md), and [RoboCasa365](../benchmark/robocasa.md) guides for benchmark-specific selectors and resume rules.
+`MULTIRUN.num_gpus`, `gpu_ids`, `workers_per_gpu`, and `env_num_per_worker` control evaluation GPUs, model copies, and rollout actors rather than training world size. With `gpu_ids=null`, the first `num_gpus` devices are used; otherwise `gpu_ids` is an ordered candidate pool and its first `num_gpus` entries are selected. Inference batching options apply independently to each model worker. See the [LIBERO](../benchmark/libero.md), [LIBERO-Plus](../benchmark/libero_plus.md), [RoboTwin](../benchmark/robotwin.md), and [RoboCasa365](../benchmark/robocasa.md) guides for benchmark-specific selectors and resume rules.

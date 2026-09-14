@@ -222,7 +222,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
-评测并发由 `MULTIRUN.num_gpus`、`MULTIRUN.workers_per_gpu` 和 `MULTIRUN.env_num_per_worker` 控制。每个模型 worker 都会独立加载一份模型并持有自己的动态推理 batcher，因此提高 `workers_per_gpu` 也会增加显存占用；`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 按 worker 生效。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。
+评测并发由 `MULTIRUN.num_gpus`、`MULTIRUN.gpu_ids`、`MULTIRUN.workers_per_gpu` 和 `MULTIRUN.env_num_per_worker` 控制。`gpu_ids=null` 时使用前 `num_gpus` 张卡；否则 `gpu_ids` 是有序候选池，实际使用其中前 `num_gpus` 张。例如 `MULTIRUN.num_gpus=3 'MULTIRUN.gpu_ids=[2,3,5,6]'` 会使用 GPU 2、3、5。每个模型 worker 都会独立加载一份模型并持有自己的动态推理 batcher，因此提高 `workers_per_gpu` 也会增加显存占用；`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 按 worker 生效，也可以使用 `scripts/tune_eval_concurrency.py` 在目标机器上扫描候选配置。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。
 
 ## 📚 文档
 

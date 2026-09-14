@@ -24,7 +24,7 @@ from experiments.robotwin.result_utils import (  # noqa: E402
     task_is_complete,
 )
 from experiments.robotwin.upstream import validate_robotwin_root  # noqa: E402
-from experiments.task_dispatch import build_worker_slots  # noqa: E402
+from experiments.task_dispatch import build_worker_slots, resolve_gpu_ids  # noqa: E402
 
 WORKER_ENTRY = PROJECT_ROOT / "experiments" / "robotwin" / "eval_robotwin_worker.py"
 
@@ -101,7 +101,11 @@ def _write_summary(output_dir: Path, tasks: list[str]) -> None:
     (output_dir / "summary.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robotwin.yaml",
+)
 def main(cfg: DictConfig) -> None:
     if cfg.ckpt is None:
         raise ValueError("ckpt must not be None.")
@@ -136,6 +140,10 @@ def main(cfg: DictConfig) -> None:
         return
 
     num_gpus = int(cfg.MULTIRUN.num_gpus)
+    gpu_ids = resolve_gpu_ids(
+        num_gpus=num_gpus,
+        gpu_ids=cfg.MULTIRUN.get("gpu_ids"),
+    )
     workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
     env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
@@ -148,12 +156,13 @@ def main(cfg: DictConfig) -> None:
         )
     slots = build_worker_slots(
         num_gpus=num_gpus,
+        gpu_ids=gpu_ids,
         workers_per_gpu=workers_per_gpu,
         pending_jobs=len(pending_tasks),
     )
     print(
         f"Model workers: {len(slots)} "
-        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"(gpu_ids={gpu_ids}, workers_per_gpu={workers_per_gpu}, "
         f"env_num_per_worker={env_num_per_worker})"
     )
 

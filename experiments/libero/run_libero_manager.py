@@ -24,6 +24,7 @@ from experiments.libero.result_utils import valid_result_path  # noqa: E402
 from experiments.task_dispatch import (  # noqa: E402
     build_worker_slots,
     count_workers_by_gpu,
+    resolve_gpu_ids,
 )
 
 
@@ -100,6 +101,10 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
         summarize_results(str(output_dir))
         return
     num_gpus = int(cfg.MULTIRUN.num_gpus)
+    gpu_ids = resolve_gpu_ids(
+        num_gpus=num_gpus,
+        gpu_ids=cfg.MULTIRUN.get("gpu_ids"),
+    )
     workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
     env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
@@ -112,13 +117,14 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
         )
     slots = build_worker_slots(
         num_gpus=num_gpus,
+        gpu_ids=gpu_ids,
         workers_per_gpu=workers_per_gpu,
         pending_jobs=len(tasks),
     )
     active_workers = count_workers_by_gpu(slots)
     print(
         f"Model workers: {len(slots)} "
-        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"(gpu_ids={gpu_ids}, workers_per_gpu={workers_per_gpu}, "
         f"env_num_per_worker={env_num_per_worker})"
     )
 
@@ -209,7 +215,9 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
 
 
 @hydra.main(
-    version_base="1.3", config_path="../../configs", config_name="sim_libero.yaml"
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_libero.yaml",
 )
 def main(cfg: DictConfig) -> None:
     if cfg.ckpt is None:

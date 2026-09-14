@@ -58,7 +58,7 @@ Unified and Hidden expose `action_dim` at the model level; MoT-family models pla
 | Backbone path fields | Locate the pretrained Video DiT, VAE/tokenizer, and optional text encoder. |
 | `action_dit_pretrained_path` | Optional interpolated ActionDiT initialization used by the MoT family and Hidden recipes. |
 | `skip_dit_load_from_pretrain` | Skip loading pretrained DiT weights; evaluation sets this to `true` before loading the EasyWAM checkpoint. |
-| `ckpt` | Evaluation checkpoint path, defined by `configs/sim_*.yaml`. |
+| `ckpt` | Evaluation checkpoint path, defined by `configs/benchmark/sim_*.yaml`. |
 | `resume` | Training checkpoint/directory consumed by the trainer's resume workflow. |
 
 Use `scripts/preprocess_action_dit_backbone.py` to build the ActionDiT initialization described in the [Wan2.2](../backbone/wan22.md) and [Cosmos2.5](../backbone/cosmos25.md) guides. EasyWAM-Unified does not use a separate ActionDiT checkpoint.

@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - train
+  - /train
   - override /task: robocasa_easywam_mot_wan22
   - _self_
 
@@ -54,9 +54,10 @@ MULTIRUN:
     - composite_seen
     - composite_unseen
   num_gpus: 8
-  workers_per_gpu: 1
-  env_num_per_worker: 4
-  inference_batch_size: 4
+  gpu_ids: null
+  workers_per_gpu: 2
+  env_num_per_worker: 20
+  inference_batch_size: 16
   inference_batch_wait_ms: 10
   prompt_cache_size: 40
 

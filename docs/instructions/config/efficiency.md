@@ -60,11 +60,42 @@ VAE micro-batching applies to both training and evaluation model construction. I
 | `EVALUATION.torch_compile` | Compiles architecture-specific tensor-heavy inference functions. Useful for repeated stable shapes after a potentially expensive first-call compile. |
 | `EVALUATION.torch_compile_mode` | Defaults to `reduce-overhead`, which is suitable for repeated batch-1 inference and may use CUDA graphs when eligible. |
 | `EVALUATION.video_mode`, `visualize_future_video`, `eval_save_video` | Video encoding, decoding, visualization, and disk writes add overhead; leave disabled for throughput measurements. |
-| `MULTIRUN.num_gpus`, `workers_per_gpu`, `env_num_per_worker` | Control GPUs, model copies per GPU, and rollout actors per model worker. Each additional worker loads another model copy. |
+| `MULTIRUN.num_gpus`, `gpu_ids`, `workers_per_gpu`, `env_num_per_worker` | Control GPUs, model copies per GPU, and rollout actors per model worker. `gpu_ids=null` selects the first `num_gpus` devices; otherwise the first `num_gpus` entries of the ordered `gpu_ids` candidate pool are selected. Each additional worker loads another model copy. |
 | `MULTIRUN.inference_batch_size`, `inference_batch_wait_ms` | Control dynamic inference batch size and queue window. |
 | `MULTIRUN.prompt_cache_size` | Control the maximum number of prompt embeddings cached by each model worker. |
 
 `torch_compile_backend`, `torch_compile_fullgraph`, `torch_compile_dynamic`, and `torch_compile_options` are forwarded to `torch.compile`. Keep the checked-in defaults first. Reusing a loaded model with a different compile configuration is rejected; restart the worker when changing compile settings.
+
+### Tune evaluation concurrency on the target machine
+
+Use `scripts/tune_eval_concurrency.py` to run a fixed, representative evaluation workload across candidate values. For example:
+
+```bash
+python scripts/tune_eval_concurrency.py \
+  --benchmark robocasa \
+  --env-counts 4,8 \
+  --batch-sizes 2,4,8 \
+  --wait-ms 0,10 \
+  --repeats 1 \
+  --timeout-seconds 3600 \
+  --monitor-gpu-ids 2,3,5 \
+  -- \
+  task=robocasa_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt> \
+  EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
+  EVALUATION.num_trials=2 \
+  'MULTIRUN.task_sets=[atomic_seen]' \
+  MULTIRUN.num_gpus=3 \
+  'MULTIRUN.gpu_ids=[2,3,5,6]'
+```
+
+The values after `--` are forwarded to the selected benchmark manager. The tuner owns and replaces only `EVALUATION.output_dir`, `env_num_per_worker`, `inference_batch_size`, and `inference_batch_wait_ms`. It skips combinations where the batch size exceeds the actor count, gives every run an isolated output directory, detects nonzero exits, timeouts, and common OOM messages, and samples `nvidia-smi` memory when available.
+
+Results are stored under `evaluate_results/concurrency_tuning/<benchmark>/<timestamp>/` as `results.json`, `summary.csv`, per-run commands, and manager logs. The recommendation is the smallest fully successful configuration within 3% of the fastest median wall time. Use `--dry-run` to inspect commands without launching evaluation.
+
+Start with the small grid above, then rerun the best neighboring values with `--repeats 2` or more before adopting the result.
+
+Use the same tasks, episode count, checkpoint, inference steps, and GPU pool for every candidate. The workload must contain enough simultaneously pending tasks to exercise the largest `env_num_per_worker`; a single task cannot measure actor concurrency. Model startup is included in wall time, so use enough rollouts to make startup a small fraction of the run. Run on otherwise idle GPUs because memory samples include all processes on the selected devices.
 
 ## Starting profiles
 

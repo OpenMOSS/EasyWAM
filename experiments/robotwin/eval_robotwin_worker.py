@@ -57,7 +57,11 @@ def _wait_for_server(process: subprocess.Popen, port: int, timeout: float = 600)
     raise TimeoutError(f"Timed out waiting for model server on port {port}.")
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robotwin.yaml",
+)
 def main(cfg: DictConfig) -> None:
     task_file = cfg.WORKER.get("task_file")
     cursor_file = cfg.WORKER.get("task_cursor")

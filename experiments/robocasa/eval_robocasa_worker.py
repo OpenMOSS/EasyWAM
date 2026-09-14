@@ -38,7 +38,11 @@ def read_tasks(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robocasa.yaml")
+@hydra.main(
+    version_base="1.3",
+    config_path="../../configs",
+    config_name="benchmark/sim_robocasa.yaml",
+)
 def main(cfg: DictConfig) -> None:
     task_file_value = cfg.WORKER.get("task_file")
     cursor_value = cfg.WORKER.get("task_cursor")
