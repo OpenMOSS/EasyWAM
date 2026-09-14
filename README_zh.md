@@ -70,6 +70,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | LIBERO | ✅ | 全参数训练和 LoRA | 标准四 suite 评测 |
 | LIBERO-Plus | ✅ | 使用 LIBERO checkpoint | 鲁棒性评测 |
 | RoboTwin | ✅ | 全参数训练和 LoRA | Clean 和 randomized 评测 |
+| RoboCasa365 | ✅ | 全参数训练和 LoRA | 官方 50-task 评测 |
 
 ## 🏆 Benchmark 结果
 
@@ -175,6 +176,7 @@ pip install flash-attn-4
 ```bash
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 # 或：python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+# 或：python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
@@ -212,6 +214,12 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
+
+# RoboCasa365
+python experiments/robocasa/run_robocasa_manager.py \
+  task=robocasa_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt> \
+  EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
 manager 默认使用 8 张 GPU，每张 GPU 启动 4 个环境，动态推理 batch 上限为 4，等待窗口为 10 ms。可通过 `MULTIRUN.num_gpus`、`MULTIRUN.env_num_per_gpu`、`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 适配实际机器。每个 GPU worker 只加载一个模型，其环境共享该模型。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。

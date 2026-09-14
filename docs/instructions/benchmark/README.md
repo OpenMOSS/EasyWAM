@@ -11,3 +11,4 @@ Published metrics across backbones are collected in the [benchmark results](../.
 | LIBERO | Standard four-suite evaluation | [Setup and evaluation](libero.md) |
 | LIBERO-Plus | Robustness evaluation with LIBERO checkpoints | [Setup and evaluation](libero_plus.md) |
 | RoboTwin | Clean and randomized evaluation | [Setup and evaluation](robotwin.md) |
+| RoboCasa365 | Official 50-task Human300 evaluation | [Setup and evaluation](robocasa.md) |

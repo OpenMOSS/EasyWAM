@@ -11,3 +11,4 @@
 | LIBERO | 标准四 suite 评测 | [准备与评测](libero_zh.md) |
 | LIBERO-Plus | 使用 LIBERO checkpoint 的鲁棒性评测 | [准备与评测](libero_plus_zh.md) |
 | RoboTwin | Clean 与 randomized 评测 | [准备与评测](robotwin_zh.md) |
+| RoboCasa365 | 官方 50-task Human300 评测 | [准备与评测](robocasa_zh.md) |

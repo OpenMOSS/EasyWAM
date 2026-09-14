@@ -70,6 +70,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | LIBERO | ✅ | Full-parameter and LoRA | Standard evaluation |
 | LIBERO-Plus | ✅ | Uses LIBERO checkpoints | Robustness evaluation |
 | RoboTwin | ✅ | Full-parameter and LoRA | Clean and randomized evaluation |
+| RoboCasa365 | ✅ | Full-parameter and LoRA | Official 50-task evaluation |
 
 ## 🏆 Benchmark Results
 
@@ -175,6 +176,7 @@ Run this once after preparing a benchmark dataset:
 ```bash
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 # Or: python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
+# Or: python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
@@ -212,6 +214,12 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
+
+# RoboCasa365
+python experiments/robocasa/run_robocasa_manager.py \
+  task=robocasa_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt> \
+  EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
 The managers default to 8 GPUs, 4 environments per GPU, dynamic inference batches of up to 4, and a 10 ms batching window. Override `MULTIRUN.num_gpus`, `MULTIRUN.env_num_per_gpu`, `MULTIRUN.inference_batch_size`, and `MULTIRUN.inference_batch_wait_ms` to match your machine. Each GPU worker loads one model while its environments share that model. See the data and benchmark guides for dataset layout, simulator installation, checkpoint examples, filtering, and resume behavior.
