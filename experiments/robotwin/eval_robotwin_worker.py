@@ -109,7 +109,7 @@ def main(cfg: DictConfig) -> None:
         )
         try:
             _wait_for_server(server, port)
-            actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+            actor_count = int(cfg.MULTIRUN.env_num_per_worker)
             print(
                 f"Worker {worker_index} loaded one model for {actor_count} actors",
                 flush=True,

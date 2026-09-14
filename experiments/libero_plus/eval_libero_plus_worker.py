@@ -62,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     # without an explicit weights_only argument when tasks are evaluated.
     os.environ.pop("TORCH_FORCE_WEIGHTS_ONLY_LOAD", None)
     os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
-    actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+    actor_count = int(cfg.MULTIRUN.env_num_per_worker)
     runtime.batcher = DynamicInferenceBatcher(
         runtime.model, max_batch_size=int(cfg.MULTIRUN.inference_batch_size),
         wait_ms=float(cfg.MULTIRUN.inference_batch_wait_ms),

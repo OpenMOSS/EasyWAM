@@ -60,7 +60,7 @@ VAE micro-batching 会同时应用于训练和评测的模型构造，但不会�
 | `EVALUATION.torch_compile` | 编译各架构声明的张量密集推理函数。首次调用编译可能较慢，适合之后重复使用稳定 shape。 |
 | `EVALUATION.torch_compile_mode` | 默认 `reduce-overhead`，适合重复的 batch-1 推理，条件允许时可能使用 CUDA Graph。 |
 | `EVALUATION.video_mode`、`visualize_future_video`、`eval_save_video` | 视频编码、解码、可视化和磁盘写入都会增加开销；吞吐测试应保持关闭。 |
-| `MULTIRUN.num_gpus`、`env_num_per_gpu` | 控制模型 worker 数和并发环境数；每张 GPU 只加载一个模型。 |
+| `MULTIRUN.num_gpus`、`workers_per_gpu`、`env_num_per_worker` | 控制 GPU 数、每张 GPU 的模型副本数和每个模型 worker 的 rollout actor 数；每增加一个 worker 都会再加载一份模型。 |
 | `MULTIRUN.inference_batch_size`、`inference_batch_wait_ms` | 控制动态推理 batch 上限和等待窗口。 |
 | `MULTIRUN.prompt_cache_size` | 控制每个模型 worker 最多缓存的 prompt embedding 数量。 |
 

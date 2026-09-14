@@ -30,7 +30,10 @@ from experiments.libero_plus.libero_plus_utils import (  # noqa: E402
 )
 from experiments.libero.render_backend import (  # noqa: E402
     configure_mujoco_worker_env,
-    select_mujoco_render_backend,
+)
+from experiments.task_dispatch import (  # noqa: E402
+    build_worker_slots,
+    count_workers_by_gpu,
 )
 
 
@@ -137,16 +140,27 @@ def _run_workers(
     pending: list[TaskSpec],
 ) -> None:
     num_gpus = int(cfg.MULTIRUN.get("num_gpus", 1))
-    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
+    env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
-    if batch_size > env_num_per_gpu:
-        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
-    render_backend = select_mujoco_render_backend(env_num_per_gpu)
-    print(
-        f"MuJoCo rendering backend: {render_backend} "
-        f"(num_gpus={num_gpus}, env_num_per_gpu={env_num_per_gpu})"
+    if env_num_per_worker <= 0:
+        raise ValueError("env_num_per_worker must be positive.")
+    if batch_size <= 0 or batch_size > env_num_per_worker:
+        raise ValueError(
+            "inference_batch_size must be positive and cannot exceed "
+            "env_num_per_worker."
+        )
+    slots = build_worker_slots(
+        num_gpus=num_gpus,
+        workers_per_gpu=workers_per_gpu,
+        pending_jobs=len(pending),
     )
-    worker_count = min(num_gpus, len(pending))
+    active_workers = count_workers_by_gpu(slots)
+    print(
+        f"Model workers: {len(slots)} "
+        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"env_num_per_worker={env_num_per_worker})"
+    )
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -160,8 +174,9 @@ def _run_workers(
         write_jsonl(shared_task_path, (task.to_dict() for task in pending))
         cursor_path = worker_dir / "task_cursor.txt"
         cursor_path.write_text("0", encoding="utf-8")
-        for worker_index in range(worker_count):
-            gpu_id = worker_index
+        for slot in slots:
+            worker_index = slot.worker_index
+            gpu_id = slot.gpu_id
             log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log"
             log_handle = log_path.open("a", encoding="utf-8")
             log_handles.append(log_handle)
@@ -176,7 +191,8 @@ def _run_workers(
                 _string_override("WORKER.task_file", shared_task_path),
                 _string_override("WORKER.task_cursor", cursor_path),
                 f"WORKER.worker_index={worker_index}",
-                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.workers_per_gpu={workers_per_gpu}",
+                f"MULTIRUN.env_num_per_worker={env_num_per_worker}",
                 f"MULTIRUN.inference_batch_size={batch_size}",
                 f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
                 f"MULTIRUN.prompt_cache_size={int(cfg.MULTIRUN.prompt_cache_size)}",
@@ -184,7 +200,8 @@ def _run_workers(
             ]
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            configure_mujoco_worker_env(env, env_num_per_gpu)
+            concurrent_envs = active_workers[gpu_id] * env_num_per_worker
+            render_backend = configure_mujoco_worker_env(env, concurrent_envs)
             env.setdefault("PYTHONFAULTHANDLER", "1")
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
@@ -200,19 +217,27 @@ def _run_workers(
             )
             print(
                 f"Started model worker {worker_index} on GPU {gpu_id}: "
-                f"envs={env_num_per_gpu}, log={log_path}"
+                f"gpu_worker={slot.gpu_worker_index}, "
+                f"envs={env_num_per_worker}, render={render_backend}, log={log_path}"
             )
 
         while processes:
-            failed = next(
-                (process for process in processes if process.poll() not in (None, 0)),
+            failed_index = next(
+                (
+                    index
+                    for index, process in enumerate(processes)
+                    if process.poll() not in (None, 0)
+                ),
                 None,
             )
-            if failed is not None:
-                return_code = int(failed.returncode)
+            if failed_index is not None:
+                return_code = int(processes[failed_index].returncode)
+                slot = slots[failed_index]
                 _terminate_processes(processes)
                 raise RuntimeError(
-                    f"LIBERO-Plus worker failed with return code {return_code}. "
+                    f"LIBERO-Plus worker {slot.worker_index} on GPU {slot.gpu_id} "
+                    f"(gpu_worker={slot.gpu_worker_index}) failed with return code "
+                    f"{return_code}. "
                     f"Other workers were terminated; inspect {log_dir} and {output_dir / 'errors'}."
                 )
             if all(process.poll() == 0 for process in processes):

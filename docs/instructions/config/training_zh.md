@@ -104,4 +104,4 @@ NNODES=2 NODE_RANK=0 MASTER_ADDR=<host> MASTER_PORT=29500 \
 
 运行时会将 `replan_steps` 限制在预测 action horizon 内。缩短 replanning 间隔可以更频繁地响应环境，但会更频繁地调用模型。`num_inference_steps` 必须为正数；减少步数会降低去噪计算量，但可能损失 policy 质量。
 
-`MULTIRUN.num_gpus` 控制评测模型 worker；`env_num_per_gpu` 和推理组批选项控制环境与 GPU 并发，不是训练 world size。Benchmark 专属筛选条件和断点续评规则请参阅 [LIBERO](../benchmark/libero_zh.md)、[LIBERO-Plus](../benchmark/libero_plus_zh.md) 和 [RoboTwin](../benchmark/robotwin_zh.md) 指南。
+`MULTIRUN.num_gpus`、`workers_per_gpu` 和 `env_num_per_worker` 分别控制评测 GPU、模型副本和 rollout actor，不是训练 world size；推理组批选项按每个模型 worker 独立生效。Benchmark 专属筛选条件和断点续评规则请参阅 [LIBERO](../benchmark/libero_zh.md)、[LIBERO-Plus](../benchmark/libero_plus_zh.md)、[RoboTwin](../benchmark/robotwin_zh.md) 和 [RoboCasa365](../benchmark/robocasa_zh.md) 指南。

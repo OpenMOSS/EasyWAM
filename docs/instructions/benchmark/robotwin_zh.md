@@ -59,7 +59,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
@@ -75,4 +75,4 @@ python experiments/robotwin/run_robotwin_manager.py \
 
 manager 会依次评测每个任务的 `demo_clean` 和 `demo_randomized`。没有传入 instruction override 时，使用当前 RoboTwin 各任务配置声明的划分。`EVALUATION.eval_num_episodes` 控制每个阶段的 episode 数量，`EVALUATION.replan_steps` 控制重新规划前连续执行的预测动作数。
 
-每个 GPU worker 只加载一次 EasyWAM。rollout 客户端使用相互隔离的 XPolicyLab 会话并共享动态推理 batch。结果仍保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括上游产物、各阶段结果、worker 日志、`summary.json` 和 `summary.csv`。复用相同的 `EVALUATION.output_dir` 时，只续评尚无有效结果的阶段。
+模型 worker 按 GPU 轮询分配。每个 worker 独立加载一份 EasyWAM，其 rollout 客户端使用相互隔离的 XPolicyLab 会话并共享该 worker 的动态推理 batcher；提高 `workers_per_gpu` 会增加模型显存占用。结果仍保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括上游产物、各阶段结果、worker 日志、`summary.json` 和 `summary.csv`。复用相同的 `EVALUATION.output_dir` 时，只续评尚无有效结果的阶段。

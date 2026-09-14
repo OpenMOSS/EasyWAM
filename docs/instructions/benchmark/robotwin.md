@@ -59,7 +59,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=./data/robotwin2.0-lerobot-v3.0/dataset_stats.json \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
@@ -75,4 +75,4 @@ python experiments/robotwin/run_robotwin_manager.py \
 
 The manager evaluates `demo_clean` and `demo_randomized` sequentially for each task. With no instruction override, it uses the split declared by each current RoboTwin task config. `EVALUATION.eval_num_episodes` controls the number of episodes per phase, while `EVALUATION.replan_steps` controls how many predicted actions are executed before replanning.
 
-Each GPU worker loads EasyWAM once. Its rollout clients use isolated XPolicyLab sessions and share dynamic inference batches. Results remain under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, including the upstream artifacts, per-phase result files, worker logs, `summary.json`, and `summary.csv`. Reusing the same `EVALUATION.output_dir` resumes phases whose result file is not yet valid.
+Model workers are distributed across GPUs in round-robin order. Every worker loads EasyWAM independently; its rollout clients use isolated XPolicyLab sessions and share that worker's dynamic inference batcher. Increasing `workers_per_gpu` increases model memory use. Results remain under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, including the upstream artifacts, per-phase result files, worker logs, `summary.json`, and `summary.csv`. Reusing the same `EVALUATION.output_dir` resumes phases whose result file is not yet valid.

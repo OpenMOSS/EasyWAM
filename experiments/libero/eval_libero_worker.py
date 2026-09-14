@@ -52,7 +52,7 @@ def main(cfg: DictConfig) -> None:
 
     output_dir = Path(str(cfg.EVALUATION.output_dir)).expanduser().resolve()
     runtime = build_eval_runtime(cfg)
-    actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+    actor_count = int(cfg.MULTIRUN.env_num_per_worker)
     runtime.batcher = DynamicInferenceBatcher(
         runtime.model,
         max_batch_size=int(cfg.MULTIRUN.inference_batch_size),

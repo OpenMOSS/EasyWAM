@@ -54,7 +54,8 @@ MULTIRUN:
     - composite_seen
     - composite_unseen
   num_gpus: 8
-  env_num_per_gpu: 4
+  workers_per_gpu: 1
+  env_num_per_worker: 4
   inference_batch_size: 4
   inference_batch_wait_ms: 10
   prompt_cache_size: 40

@@ -60,7 +60,7 @@ VAE micro-batching applies to both training and evaluation model construction. I
 | `EVALUATION.torch_compile` | Compiles architecture-specific tensor-heavy inference functions. Useful for repeated stable shapes after a potentially expensive first-call compile. |
 | `EVALUATION.torch_compile_mode` | Defaults to `reduce-overhead`, which is suitable for repeated batch-1 inference and may use CUDA graphs when eligible. |
 | `EVALUATION.video_mode`, `visualize_future_video`, `eval_save_video` | Video encoding, decoding, visualization, and disk writes add overhead; leave disabled for throughput measurements. |
-| `MULTIRUN.num_gpus`, `env_num_per_gpu` | Control model workers and concurrent environments. Each GPU loads one model. |
+| `MULTIRUN.num_gpus`, `workers_per_gpu`, `env_num_per_worker` | Control GPUs, model copies per GPU, and rollout actors per model worker. Each additional worker loads another model copy. |
 | `MULTIRUN.inference_batch_size`, `inference_batch_wait_ms` | Control dynamic inference batch size and queue window. |
 | `MULTIRUN.prompt_cache_size` | Control the maximum number of prompt embeddings cached by each model worker. |
 

@@ -41,7 +41,7 @@ python experiments/libero_plus/run_libero_plus_manager.py \
   ckpt=<path/to/checkpoint.pt> \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json> \
   MULTIRUN.num_gpus=8 \
-  MULTIRUN.env_num_per_gpu=4 \
+  MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4 \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
@@ -60,6 +60,6 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 
 有效类别为 `layout`、`camera`、`robot`、`language`、`light`、`background` 和 `noise`；难度范围为 1–5。task ID 会应用到每一个选中的 suite。
 
-manager 每张 GPU 只加载一个模型。rollout actor 动态领取任务并共享推理组批器，同时根据 actor 并发数选择 EGL 或 OSMesa。默认关闭视频和进度输出。
+manager 将模型 worker 按 GPU 轮询分配。每个 worker 独立加载一份模型，其 rollout actor 动态领取任务并共享该 worker 的推理组批器；提高 `workers_per_gpu` 会增加模型显存占用。EGL 或 OSMesa 根据每张 GPU 上实际激活的环境总并发数选择。默认关闭视频和进度输出。
 
 结果写入 `evaluate_results/libero_plus/<task>/<timestamp>/`，包括 `tasks.jsonl`、worker 日志、逐任务结果、错误记录、`summary.json`、`summary.csv` 和 `task_results.csv`，并按 suite、扰动类别、难度以及类别与难度组合汇总。重新使用同一个 `EVALUATION.output_dir` 时会跳过有效结果，从中断位置继续。

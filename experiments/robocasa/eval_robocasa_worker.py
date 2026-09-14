@@ -59,7 +59,7 @@ def main(cfg: DictConfig) -> None:
         wait_ms=float(cfg.MULTIRUN.inference_batch_wait_ms),
         prompt_cache_size=int(cfg.MULTIRUN.prompt_cache_size),
     )
-    actor_count = int(cfg.MULTIRUN.env_num_per_gpu)
+    actor_count = int(cfg.MULTIRUN.env_num_per_worker)
     worker_index = int(cfg.WORKER.get("worker_index", cfg.gpu_id))
 
     def actor_main(actor_index: int) -> None:

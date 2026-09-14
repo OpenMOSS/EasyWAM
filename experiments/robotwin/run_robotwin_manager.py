@@ -24,6 +24,7 @@ from experiments.robotwin.result_utils import (  # noqa: E402
     task_is_complete,
 )
 from experiments.robotwin.upstream import validate_robotwin_root  # noqa: E402
+from experiments.task_dispatch import build_worker_slots  # noqa: E402
 
 WORKER_ENTRY = PROJECT_ROOT / "experiments" / "robotwin" / "eval_robotwin_worker.py"
 
@@ -135,11 +136,26 @@ def main(cfg: DictConfig) -> None:
         return
 
     num_gpus = int(cfg.MULTIRUN.num_gpus)
-    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
+    env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
-    if batch_size > env_num_per_gpu:
-        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
-    worker_count = min(len(pending_tasks), num_gpus)
+    if env_num_per_worker <= 0:
+        raise ValueError("env_num_per_worker must be positive.")
+    if batch_size <= 0 or batch_size > env_num_per_worker:
+        raise ValueError(
+            "inference_batch_size must be positive and cannot exceed "
+            "env_num_per_worker."
+        )
+    slots = build_worker_slots(
+        num_gpus=num_gpus,
+        workers_per_gpu=workers_per_gpu,
+        pending_jobs=len(pending_tasks),
+    )
+    print(
+        f"Model workers: {len(slots)} "
+        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"env_num_per_worker={env_num_per_worker})"
+    )
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -162,8 +178,9 @@ def main(cfg: DictConfig) -> None:
         )
         cursor_path = worker_dir / "task_cursor.txt"
         cursor_path.write_text("0", encoding="utf-8")
-        for worker_index in range(worker_count):
-            gpu_id = worker_index
+        for slot in slots:
+            worker_index = slot.worker_index
+            gpu_id = slot.gpu_id
             log_path = log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log"
             handle = log_path.open("a", encoding="utf-8")
             handles.append(handle)
@@ -177,7 +194,8 @@ def main(cfg: DictConfig) -> None:
                 f"WORKER.task_cursor={cursor_path}",
                 f"EVALUATION.output_dir={output_dir}",
                 f"WORKER.worker_index={worker_index}",
-                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.workers_per_gpu={workers_per_gpu}",
+                f"MULTIRUN.env_num_per_worker={env_num_per_worker}",
                 f"MULTIRUN.inference_batch_size={batch_size}",
                 f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
                 f"MULTIRUN.prompt_cache_size={int(cfg.MULTIRUN.prompt_cache_size)}",
@@ -199,15 +217,26 @@ def main(cfg: DictConfig) -> None:
             )
             print(
                 f"Started model worker {worker_index}: "
-                f"gpu={gpu_id}, envs={env_num_per_gpu}"
+                f"gpu={gpu_id}, gpu_worker={slot.gpu_worker_index}, "
+                f"envs={env_num_per_worker}"
             )
         while not all(process.poll() == 0 for process in processes):
-            failed = next((p for p in processes if p.poll() not in (None, 0)), None)
-            if failed is not None:
-                code = failed.returncode
+            failed_index = next(
+                (
+                    index
+                    for index, process in enumerate(processes)
+                    if process.poll() not in (None, 0)
+                ),
+                None,
+            )
+            if failed_index is not None:
+                code = processes[failed_index].returncode
+                slot = slots[failed_index]
                 _terminate(processes)
                 raise RuntimeError(
-                    f"RoboTwin worker failed with return code {code}; "
+                    f"RoboTwin worker {slot.worker_index} on GPU {slot.gpu_id} "
+                    f"(gpu_worker={slot.gpu_worker_index}) failed with return "
+                    f"code {code}; "
                     f"inspect {log_dir}."
                 )
             time.sleep(2)

@@ -19,9 +19,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from experiments.libero.render_backend import (  # noqa: E402
     configure_mujoco_worker_env,
-    select_mujoco_render_backend,
 )
 from experiments.libero.result_utils import valid_result_path  # noqa: E402
+from experiments.task_dispatch import (  # noqa: E402
+    build_worker_slots,
+    count_workers_by_gpu,
+)
 
 
 def create_task_file(output_file: Path, task_suite_names: list[str]) -> Path:
@@ -97,16 +100,27 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
         summarize_results(str(output_dir))
         return
     num_gpus = int(cfg.MULTIRUN.num_gpus)
-    env_num_per_gpu = int(cfg.MULTIRUN.env_num_per_gpu)
+    workers_per_gpu = int(cfg.MULTIRUN.workers_per_gpu)
+    env_num_per_worker = int(cfg.MULTIRUN.env_num_per_worker)
     batch_size = int(cfg.MULTIRUN.inference_batch_size)
-    if batch_size > env_num_per_gpu:
-        raise ValueError("inference_batch_size cannot exceed env_num_per_gpu.")
-    render_backend = select_mujoco_render_backend(env_num_per_gpu)
-    print(
-        f"MuJoCo rendering backend: {render_backend} "
-        f"(num_gpus={num_gpus}, env_num_per_gpu={env_num_per_gpu})"
+    if env_num_per_worker <= 0:
+        raise ValueError("env_num_per_worker must be positive.")
+    if batch_size <= 0 or batch_size > env_num_per_worker:
+        raise ValueError(
+            "inference_batch_size must be positive and cannot exceed "
+            "env_num_per_worker."
+        )
+    slots = build_worker_slots(
+        num_gpus=num_gpus,
+        workers_per_gpu=workers_per_gpu,
+        pending_jobs=len(tasks),
     )
-    worker_count = min(len(tasks), num_gpus)
+    active_workers = count_workers_by_gpu(slots)
+    print(
+        f"Model workers: {len(slots)} "
+        f"(num_gpus={num_gpus}, workers_per_gpu={workers_per_gpu}, "
+        f"env_num_per_worker={env_num_per_worker})"
+    )
 
     worker_dir = output_dir / "workers"
     log_dir = output_dir / "logs"
@@ -120,8 +134,9 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
         shared_task_path.write_text("\n".join(tasks) + "\n", encoding="utf-8")
         cursor_path = worker_dir / "task_cursor.txt"
         cursor_path.write_text("0", encoding="utf-8")
-        for worker_index in range(worker_count):
-            gpu_id = worker_index
+        for slot in slots:
+            worker_index = slot.worker_index
+            gpu_id = slot.gpu_id
             handle = (log_dir / f"worker_{worker_index:03d}_gpu_{gpu_id}.log").open(
                 "a", encoding="utf-8"
             )
@@ -136,7 +151,8 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
                 f"WORKER.task_file={shared_task_path}",
                 f"WORKER.task_cursor={cursor_path}",
                 f"WORKER.worker_index={worker_index}",
-                f"MULTIRUN.env_num_per_gpu={env_num_per_gpu}",
+                f"MULTIRUN.workers_per_gpu={workers_per_gpu}",
+                f"MULTIRUN.env_num_per_worker={env_num_per_worker}",
                 f"MULTIRUN.inference_batch_size={batch_size}",
                 f"MULTIRUN.inference_batch_wait_ms={float(cfg.MULTIRUN.inference_batch_wait_ms)}",
                 f"MULTIRUN.prompt_cache_size={int(cfg.MULTIRUN.prompt_cache_size)}",
@@ -144,23 +160,41 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
             ]
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            configure_mujoco_worker_env(env, env_num_per_gpu)
+            concurrent_envs = active_workers[gpu_id] * env_num_per_worker
+            render_backend = configure_mujoco_worker_env(env, concurrent_envs)
             env.setdefault("PYTHONFAULTHANDLER", "1")
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
-            processes.append(subprocess.Popen(command, cwd=PROJECT_ROOT, env=env, stdout=handle, stderr=subprocess.STDOUT))
-            print(f"Started model worker {worker_index}: gpu={gpu_id}, envs={env_num_per_gpu}")
+            processes.append(
+                subprocess.Popen(
+                    command,
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                )
+            )
+            print(
+                f"Started model worker {worker_index}: gpu={gpu_id}, "
+                f"gpu_worker={slot.gpu_worker_index}, "
+                f"envs={env_num_per_worker}, render={render_backend}"
+            )
         while not all(process.poll() == 0 for process in processes):
             failed_index = next(
-                (index for index, process in enumerate(processes) if process.poll() not in (None, 0)),
+                (
+                    index
+                    for index, process in enumerate(processes)
+                    if process.poll() not in (None, 0)
+                ),
                 None,
             )
             if failed_index is not None:
                 code = int(processes[failed_index].returncode)
-                gpu_id = failed_index
+                slot = slots[failed_index]
                 _terminate(processes)
                 raise RuntimeError(
-                    f"LIBERO worker {failed_index} on GPU {gpu_id} failed "
+                    f"LIBERO worker {slot.worker_index} on GPU {slot.gpu_id} "
+                    f"(gpu_worker={slot.gpu_worker_index}) failed "
                     f"with return code {_format_return_code(code)}; inspect {log_dir}."
                 )
             time.sleep(2)
@@ -174,14 +208,22 @@ def run_evaluation(cfg: DictConfig, task_file: Path, task_choice: str, output_di
     summarize_results(str(output_dir))
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_libero.yaml")
+@hydra.main(
+    version_base="1.3", config_path="../../configs", config_name="sim_libero.yaml"
+)
 def main(cfg: DictConfig) -> None:
     if cfg.ckpt is None:
         raise ValueError("ckpt must not be None.")
-    output_dir = Path(os.path.expanduser(os.path.expandvars(str(cfg.EVALUATION.output_dir)))).resolve()
+    output_dir = Path(
+        os.path.expanduser(os.path.expandvars(str(cfg.EVALUATION.output_dir)))
+    ).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     task_file_cfg = cfg.MULTIRUN.get("task_file")
-    task_file = Path(str(task_file_cfg)).expanduser().resolve() if task_file_cfg else output_dir / "tasks.txt"
+    task_file = (
+        Path(str(task_file_cfg)).expanduser().resolve()
+        if task_file_cfg
+        else output_dir / "tasks.txt"
+    )
     create_task_file(task_file, [str(value) for value in cfg.MULTIRUN.task_suite_names])
     OmegaConf.save(cfg, output_dir / "manager_config.yaml")
     if bool(cfg.MULTIRUN.get("create_only", False)):

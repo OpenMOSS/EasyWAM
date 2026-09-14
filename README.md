@@ -222,7 +222,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
-The managers default to 8 GPUs, 4 environments per GPU, dynamic inference batches of up to 4, and a 10 ms batching window. Override `MULTIRUN.num_gpus`, `MULTIRUN.env_num_per_gpu`, `MULTIRUN.inference_batch_size`, and `MULTIRUN.inference_batch_wait_ms` to match your machine. Each GPU worker loads one model while its environments share that model. See the data and benchmark guides for dataset layout, simulator installation, checkpoint examples, filtering, and resume behavior.
+Evaluation concurrency is controlled by `MULTIRUN.num_gpus`, `MULTIRUN.workers_per_gpu`, and `MULTIRUN.env_num_per_worker`. Every model worker loads its own model copy and owns an independent dynamic inference batcher, so increasing `workers_per_gpu` also increases GPU memory use. Tune `MULTIRUN.inference_batch_size` and `MULTIRUN.inference_batch_wait_ms` per worker. See the data and benchmark guides for dataset layout, simulator installation, checkpoint examples, filtering, and resume behavior.
 
 ## 📚 Documentation
 

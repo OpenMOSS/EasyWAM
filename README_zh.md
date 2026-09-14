@@ -222,7 +222,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=<path/to/dataset_stats.json>
 ```
 
-manager 默认使用 8 张 GPU，每张 GPU 启动 4 个环境，动态推理 batch 上限为 4，等待窗口为 10 ms。可通过 `MULTIRUN.num_gpus`、`MULTIRUN.env_num_per_gpu`、`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 适配实际机器。每个 GPU worker 只加载一个模型，其环境共享该模型。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。
+评测并发由 `MULTIRUN.num_gpus`、`MULTIRUN.workers_per_gpu` 和 `MULTIRUN.env_num_per_worker` 控制。每个模型 worker 都会独立加载一份模型并持有自己的动态推理 batcher，因此提高 `workers_per_gpu` 也会增加显存占用；`MULTIRUN.inference_batch_size` 和 `MULTIRUN.inference_batch_wait_ms` 按 worker 生效。数据目录、仿真环境安装、已发布权重、任务筛选和断点恢复等内容见对应的数据与 benchmark 指南。
 
 ## 📚 文档
 
