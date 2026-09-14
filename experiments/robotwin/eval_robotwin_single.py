@@ -1,37 +1,12 @@
-"""
-RobotWin single-task evaluation entrypoint (Hydra).
+"""Single-task EasyWAM evaluation against an external RoboTwin checkout."""
 
-Features:
-- Read `configs/sim_robotwin.yaml`.
-- Check or create the `easywam_policy` symlink in RoboTwin.
-- Forward config overrides to the official RoboTwin entrypoint
-  `script/eval_policy.py` and save logs.
-
-Common arguments:
-- `ckpt`: path to an EasyWAM checkpoint (required).
-- `EVALUATION.task_name`: task name to evaluate (required).
-- `gpu_id`: sets `CUDA_VISIBLE_DEVICES`.
-
-Examples:
-1) Minimal run
-   python experiments/robotwin/eval_robotwin_single.py \
-     ckpt=/path/to/ckpt.pt \
-     EVALUATION.task_name=click_alarmclock
-
-2) Run with more evaluation overrides
-   python experiments/robotwin/eval_robotwin_single.py \
-     ckpt=/path/to/ckpt.pt \
-     EVALUATION.task_name=click_alarmclock \
-     EVALUATION.task_config=demo_randomized \
-     EVALUATION.replan_steps=4 \
-     EVALUATION.num_inference_steps=4 \
-     gpu_id=0
-"""
+from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
-from datetime import datetime
+import time
 from pathlib import Path
 from typing import Any
 
@@ -40,14 +15,18 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 POLICY_NAME = "easywam_policy"
+SERVER_ENTRY = PROJECT_ROOT / "experiments" / "robotwin" / "policy_server.py"
+POLICY_CONFIG = (
+    PROJECT_ROOT / "experiments" / "robotwin" / POLICY_NAME / "deploy_policy.yml"
+)
 
 
-def _resolve_path(path_str: str, *, base: Path) -> Path:
+def _resolve_path(path_str: str, *, base: Path = PROJECT_ROOT) -> Path:
     path = Path(os.path.expanduser(os.path.expandvars(str(path_str))))
-    if not path.is_absolute():
-        path = (base / path).resolve()
-    return path.resolve()
+    return (base / path).resolve() if not path.is_absolute() else path.resolve()
 
 
 def _resolve_optional_path(path_value: Any, *, base: Path) -> Path | None:
@@ -60,73 +39,33 @@ def _resolve_optional_path(path_value: Any, *, base: Path) -> Path | None:
 
 
 def _resolve_dataset_stats_path(cfg: DictConfig, ckpt_path: Path) -> Path:
-    explicit = _resolve_optional_path(cfg.EVALUATION.dataset_stats_path, base=PROJECT_ROOT)
-    candidates: list[Path] = []
-    if explicit is not None:
-        candidates.append(explicit)
-
-    for parent in list(ckpt_path.parents)[:4]:
-        candidates.append((parent / "dataset_stats.json").resolve())
-
+    explicit = _resolve_optional_path(
+        cfg.EVALUATION.dataset_stats_path, base=PROJECT_ROOT
+    )
+    candidates = ([explicit] if explicit is not None else []) + [
+        (parent / "dataset_stats.json").resolve()
+        for parent in list(ckpt_path.parents)[:4]
+    ]
     seen: set[Path] = set()
     for path in candidates:
-        resolved = path.resolve()
-        if resolved in seen:
+        if path in seen:
             continue
-        seen.add(resolved)
-        if resolved.exists():
-            return resolved
-
+        seen.add(path)
+        if path.is_file():
+            return path
     raise FileNotFoundError(
-        "Failed to locate dataset_stats.json. Tried explicit "
-        "EVALUATION.dataset_stats_path and checkpoint parent directories. "
-        "Please pass EVALUATION.dataset_stats_path=/path/to/dataset_stats.json."
+        "Failed to locate dataset_stats.json. Pass "
+        "EVALUATION.dataset_stats_path=/path/to/dataset_stats.json."
     )
 
 
 def _resolve_ckpt_tag(ckpt_path: Path) -> str:
     parts = ckpt_path.resolve().parts
     if "runs" in parts:
-        runs_idx = parts.index("runs")
-        if runs_idx + 2 >= len(parts):
-            raise ValueError(
-                f"`ckpt` under runs must follow .../runs/<task>/<date_dir>/..., got: {ckpt_path}"
-            )
-        task_name = parts[runs_idx + 1]
-        date_dir = parts[runs_idx + 2]
-        if task_name == "" or date_dir == "":
-            raise ValueError(
-                f"`ckpt` under runs must follow .../runs/<task>/<date_dir>/..., got: {ckpt_path}"
-            )
-        return f"{task_name}_{date_dir}"
+        index = parts.index("runs")
+        if index + 2 < len(parts):
+            return f"{parts[index + 1]}_{parts[index + 2]}"
     return ckpt_path.stem
-
-
-def _ensure_policy_symlink(robotwin_root: Path, policy_source_dir: Path) -> Path:
-    policy_root = robotwin_root / "policy"
-    if not policy_root.is_dir():
-        raise FileNotFoundError(f"RoboTwin policy directory not found: {policy_root}")
-
-    policy_target = policy_root / POLICY_NAME
-    source_resolved = policy_source_dir.resolve()
-
-    if not policy_target.exists() and not policy_target.is_symlink():
-        policy_target.symlink_to(source_resolved, target_is_directory=True)
-        return policy_target
-
-    if policy_target.is_symlink():
-        target_resolved = policy_target.resolve()
-        if target_resolved != source_resolved:
-            raise RuntimeError(
-                f"Policy symlink conflict: {policy_target} -> {target_resolved}, "
-                f"expected -> {source_resolved}"
-            )
-        return policy_target
-
-    raise RuntimeError(
-        f"Path already exists and is not a symlink: {policy_target}. "
-        "Please handle it manually to avoid overriding existing policy files."
-    )
 
 
 def _format_override_value(value: Any) -> str:
@@ -139,132 +78,168 @@ def _format_override_value(value: Any) -> str:
     return repr(str(value))
 
 
-def _append_override(overrides: list[str], key: str, value: Any, *, skip_none: bool = True) -> None:
+def _append_override(
+    overrides: list[str], key: str, value: Any, *, skip_none: bool = True
+) -> None:
     if skip_none and value is None:
         return
     overrides.extend([f"--{key}", _format_override_value(value)])
 
 
-@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
-def main(cfg: DictConfig):
-    if cfg.ckpt is None:
-        raise ValueError("`ckpt` must not be None.")
-    if cfg.EVALUATION.task_name is None:
-        raise ValueError("`EVALUATION.task_name` must not be None.")
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
-    ckpt_path = _resolve_path(str(cfg.ckpt), base=PROJECT_ROOT)
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-    ckpt_tag = _resolve_ckpt_tag(ckpt_path)
 
-    robotwin_root = _resolve_path(str(cfg.EVALUATION.robotwin_root), base=PROJECT_ROOT)
-    if not robotwin_root.exists():
-        raise FileNotFoundError(f"RoboTwin root not found: {robotwin_root}")
+def _wait_for_server(process: subprocess.Popen, port: int, timeout: float = 600) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"Model server exited with return code {process.returncode}.")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return
+        except OSError:
+            time.sleep(1)
+    raise TimeoutError(f"Timed out waiting for model server on port {port}.")
 
-    policy_source_dir = (PROJECT_ROOT / "experiments" / "robotwin" / POLICY_NAME).resolve()
-    if not policy_source_dir.is_dir():
-        raise FileNotFoundError(f"Policy source directory not found: {policy_source_dir}")
 
-    _ensure_policy_symlink(robotwin_root=robotwin_root, policy_source_dir=policy_source_dir)
-
-    output_dir = _resolve_path(str(cfg.EVALUATION.output_dir), base=PROJECT_ROOT)
-    run_ts = output_dir.name
-    if run_ts == "":
-        raise ValueError(f"Invalid EVALUATION.output_dir (missing run_ts): {output_dir}")
-    run_output_dir = (
-        PROJECT_ROOT
-        / "evaluate_results"
-        / "robotwin"
-        / ckpt_tag
-        / run_ts
-    )
-    run_output_dir.mkdir(parents=True, exist_ok=True)
-    log_file = run_output_dir / (
-        f"eval_{str(cfg.EVALUATION.task_name)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    )
-    robotwin_eval_base = (
-        PROJECT_ROOT
-        / "evaluate_results"
-        / "robotwin"
-        / ckpt_tag
-        / run_ts
-        / str(cfg.EVALUATION.task_name)
-    )
-
-    sim_cfg_path = (PROJECT_ROOT / "configs" / "sim_robotwin.yaml").resolve()
-    sim_task = HydraConfig.get().runtime.choices.get("task")
-
-    dataset_stats_path = _resolve_dataset_stats_path(cfg, ckpt_path)
-
+def _model_overrides(cfg: DictConfig, checkpoint: Path, dataset_stats: Path) -> list[str]:
+    values = {
+        "ckpt_setting": str(checkpoint),
+        "seed": cfg.seed,
+        "sim_cfg_path": str((PROJECT_ROOT / "configs" / "sim_robotwin.yaml").resolve()),
+        "sim_task": HydraConfig.get().runtime.choices.get("task"),
+        "mixed_precision": cfg.mixed_precision,
+        "device": cfg.EVALUATION.device,
+        "dataset_stats_path": str(dataset_stats),
+        "action_horizon": cfg.EVALUATION.action_horizon,
+        "replan_steps": cfg.EVALUATION.replan_steps,
+        "num_inference_steps": cfg.EVALUATION.num_inference_steps,
+        "sigma_shift": cfg.EVALUATION.sigma_shift,
+        "text_cfg_scale": cfg.EVALUATION.text_cfg_scale,
+        "negative_prompt": cfg.EVALUATION.negative_prompt,
+        "rand_device": cfg.EVALUATION.rand_device,
+        "timing_enabled": cfg.EVALUATION.timing_enabled,
+        "torch_compile": cfg.EVALUATION.torch_compile,
+        "torch_compile_mode": cfg.EVALUATION.torch_compile_mode,
+        "torch_compile_backend": cfg.EVALUATION.torch_compile_backend,
+        "torch_compile_fullgraph": cfg.EVALUATION.torch_compile_fullgraph,
+        "torch_compile_dynamic": cfg.EVALUATION.torch_compile_dynamic,
+        "inference_batch_size": cfg.MULTIRUN.inference_batch_size,
+        "inference_batch_wait_ms": cfg.MULTIRUN.inference_batch_wait_ms,
+        "prompt_cache_size": cfg.MULTIRUN.prompt_cache_size,
+    }
     overrides: list[str] = []
-    _append_override(overrides, "task_name", cfg.EVALUATION.task_name)
-    _append_override(overrides, "task_config", cfg.EVALUATION.task_config)
-    _append_override(overrides, "ckpt_setting", str(ckpt_path))
-    _append_override(overrides, "seed", cfg.seed)
-    _append_override(overrides, "policy_name", cfg.EVALUATION.policy_name)
-    _append_override(overrides, "instruction_type", cfg.EVALUATION.instruction_type)
-    _append_override(overrides, "eval_num_episodes", cfg.EVALUATION.eval_num_episodes)
+    for key, value in values.items():
+        _append_override(overrides, key, value)
+    return overrides
 
-    _append_override(overrides, "sim_cfg_path", str(sim_cfg_path))
-    _append_override(overrides, "sim_task", sim_task)
-    _append_override(overrides, "eval_output_dir", str(robotwin_eval_base))
-    _append_override(overrides, "mixed_precision", cfg.mixed_precision)
-    _append_override(overrides, "device", cfg.EVALUATION.device)
-    _append_override(overrides, "dataset_stats_path", str(dataset_stats_path))
-    _append_override(overrides, "action_horizon", cfg.EVALUATION.action_horizon)
-    _append_override(overrides, "replan_steps", cfg.EVALUATION.replan_steps)
-    _append_override(overrides, "num_inference_steps", cfg.EVALUATION.num_inference_steps)
-    _append_override(overrides, "sigma_shift", cfg.EVALUATION.sigma_shift)
-    _append_override(overrides, "text_cfg_scale", cfg.EVALUATION.text_cfg_scale)
-    _append_override(overrides, "negative_prompt", cfg.EVALUATION.negative_prompt)
-    _append_override(overrides, "rand_device", cfg.EVALUATION.rand_device)
-    _append_override(overrides, "timing_enabled", cfg.EVALUATION.timing_enabled)
-    _append_override(
-        overrides,
-        "skip_get_obs_within_replan",
-        cfg.EVALUATION.skip_get_obs_within_replan,
+
+@hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
+def main(cfg: DictConfig) -> None:
+    from experiments.robotwin.upstream import (
+        build_eval_command,
+        normalize_phase_result,
+        optional_text,
+        validate_robotwin_root,
     )
 
-    cmd = [
-        sys.executable,
-        "-u",
-        "script/eval_policy.py",
-        "--config",
-        f"policy/{POLICY_NAME}/deploy_policy.yml",
-        "--overrides",
-        *overrides,
-    ]
-
+    if cfg.ckpt is None or cfg.EVALUATION.task_name is None:
+        raise ValueError("ckpt and EVALUATION.task_name are required.")
+    checkpoint = _resolve_path(str(cfg.ckpt))
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint}")
+    robotwin_root = validate_robotwin_root(
+        _resolve_path(str(cfg.EVALUATION.robotwin_root))
+    )
+    dataset_stats = _resolve_dataset_stats_path(cfg, checkpoint)
+    output_hint = _resolve_path(str(cfg.EVALUATION.output_dir))
+    run_output = (
+        PROJECT_ROOT
+        / "evaluate_results"
+        / "robotwin"
+        / _resolve_ckpt_tag(checkpoint)
+        / output_hint.name
+    )
+    task_name = str(cfg.EVALUATION.task_name)
+    task_config = str(cfg.EVALUATION.task_config)
+    phase = "random" if task_config == "demo_randomized" else "clean"
+    phase_root = run_output / task_name / "upstream" / phase
+    phase_root.mkdir(parents=True, exist_ok=True)
+    previous = {path.resolve() for path in phase_root.rglob("_result.txt")}
+    log_dir = run_output / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    port = _free_port()
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu_id)
+    env.setdefault("PYTHONUTF8", "1")
     env["PYTHONUNBUFFERED"] = "1"
 
-    with open(log_file, "w", encoding="utf-8") as log_f:
-        process = subprocess.Popen(
-            cmd,
-            cwd=str(robotwin_root),
+    server_log_path = log_dir / f"server_{task_name}_{phase}.log"
+    with server_log_path.open("w", encoding="utf-8") as server_log:
+        server = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                str(SERVER_ENTRY),
+                "--robotwin-root",
+                str(robotwin_root),
+                "--config",
+                str(POLICY_CONFIG),
+                "--port",
+                str(port),
+                "--overrides",
+                *_model_overrides(cfg, checkpoint, dataset_stats),
+            ],
+            cwd=PROJECT_ROOT,
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=server_log,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
         )
-        assert process.stdout is not None
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            log_f.write(line)
-            log_f.flush()
-        return_code = process.wait()
+        try:
+            _wait_for_server(server, port)
+            command = build_eval_command(
+                robotwin_root=robotwin_root,
+                task_name=task_name,
+                task_config=task_config,
+                policy_name=str(cfg.EVALUATION.policy_name),
+                checkpoint_tag=checkpoint.stem,
+                host="127.0.0.1",
+                port=port,
+                env_cfg_type=str(cfg.EVALUATION.env_cfg_type),
+                action_type=str(cfg.EVALUATION.action_type),
+                seed=int(cfg.seed),
+                episodes=int(cfg.EVALUATION.eval_num_episodes),
+                instruction_type=optional_text(cfg.EVALUATION.instruction_type),
+            )
+            client_log_path = log_dir / f"eval_{task_name}_{phase}.log"
+            with client_log_path.open("w", encoding="utf-8") as client_log:
+                subprocess.run(
+                    command,
+                    cwd=phase_root,
+                    env=env,
+                    stdout=client_log,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+        finally:
+            if server.poll() is None:
+                server.terminate()
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait()
 
-    if return_code != 0:
-        raise RuntimeError(f"RoboTwin evaluation failed with return code {return_code}. Log: {log_file}")
-
-    print(f"Evaluation finished successfully. Log saved to: {log_file}")
-    OmegaConf.save(
-        config=cfg,
-        f=str(run_output_dir / f"eval_config_{str(cfg.EVALUATION.task_name)}.yaml"),
+    result = normalize_phase_result(
+        phase_root,
+        previous_results=previous,
+        canonical_result=run_output / task_name / f"_result_{phase}.txt",
     )
+    OmegaConf.save(cfg, run_output / f"eval_config_{task_name}_{phase}.yaml")
+    print(f"RoboTwin evaluation complete: {result}")
 
 
 if __name__ == "__main__":

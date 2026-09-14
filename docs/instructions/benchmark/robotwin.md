@@ -2,9 +2,56 @@
 
 [中文](robotwin_zh.md) | [Benchmark index](README.md) | [Data and training guide](../data/robotwin.md) | [Back to project README](../../../README.md)
 
-EasyWAM expects the benchmark at `third_party/RoboTwin`. Follow the official [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) instructions to install the simulator and download its assets. The evaluation worker automatically creates or refreshes the `easywam_policy` symlink inside RoboTwin.
+## Installation
 
-Run all tasks listed by RoboTwin's `_eval_step_limit.yml`:
+Clone the current RoboTwin repository and its XPolicyLab submodule:
+
+```bash
+git clone --recurse-submodules https://github.com/RoboTwin-Platform/RoboTwin.git third_party/RoboTwin
+```
+
+Use Python 3.10 and install the evaluation dependencies not provided by EasyWAM:
+
+```bash
+pip install scipy==1.10.1 transforms3d==0.4.2 sapien==3.0.0b1 \
+  mplib==0.2.1 gymnasium==0.29.1 trimesh==4.4.3 open3d==0.18.0 \
+  "pydantic>=2.5" "websockets>=14.0" "msgpack>=1.0.8" "msgpack-numpy>=0.4.8"
+
+git clone https://github.com/NVlabs/curobo.git third_party/RoboTwin/envs/curobo
+pip install --no-build-isolation -e third_party/RoboTwin/envs/curobo
+```
+
+RoboTwin rendering uses Vulkan and saves evaluation videos with the system `ffmpeg` executable. On Ubuntu, install:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libvulkan1 mesa-vulkan-drivers vulkan-tools ffmpeg unzip
+```
+
+## Assets
+
+Download and extract the official assets, then update their paths:
+
+```bash
+huggingface-cli download TianxingChen/RoboTwin2.0 \
+  background_texture.zip embodiments.zip objects.zip \
+  --repo-type dataset \
+  --local-dir third_party/RoboTwin/assets
+
+(
+  cd third_party/RoboTwin/assets
+  unzip -q -o background_texture.zip
+  unzip -q -o embodiments.zip
+  unzip -q -o objects.zip
+)
+(cd third_party/RoboTwin && python scripts/update_embodiment_config_path.py)
+```
+
+The clean, randomized, camera, embodiment, and task-limit configurations are included in the cloned repository under `env_cfg/task_config/`.
+
+## Evaluation
+
+Evaluate every task listed by RoboTwin's `_eval_step_limit.yml`:
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
@@ -16,7 +63,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
-Evaluate one task or change the language protocol with overrides:
+Evaluate one task or override its instruction split:
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
@@ -26,8 +73,6 @@ python experiments/robotwin/run_robotwin_manager.py \
   EVALUATION.instruction_type=seen
 ```
 
-The manager evaluates both `demo_clean` and `demo_randomized` for each task and defaults to unseen instructions. `EVALUATION.eval_num_episodes` controls episodes per phase.
+The manager evaluates `demo_clean` and `demo_randomized` sequentially for each task. With no instruction override, it uses the split declared by each current RoboTwin task config. `EVALUATION.eval_num_episodes` controls the number of episodes per phase, while `EVALUATION.replan_steps` controls how many predicted actions are executed before replanning.
 
-`EVALUATION.skip_get_obs_within_replan=true` skips RGB rendering while the remaining actions in a predicted chunk are executed. This speeds up evaluation, but saved video appears low frame-rate. Set it to `false` for fully rendered video. `EVALUATION.replan_steps` controls the action chunk executed before replanning.
-
-Each GPU runs one persistent model server. Rollout clients claim tasks dynamically, use isolated action-queue sessions, and share server-side inference batches; a task's clean and randomized phases remain sequential. Results are stored under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, with per-phase result files, worker logs, `summary.json`, and `summary.csv`. A task is skipped on resume only after both phases are valid; reuse the same `EVALUATION.output_dir` timestamp component to resume.
+Each GPU worker loads EasyWAM once. Its rollout clients use isolated XPolicyLab sessions and share dynamic inference batches. Results remain under `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`, including the upstream artifacts, per-phase result files, worker logs, `summary.json`, and `summary.csv`. Reusing the same `EVALUATION.output_dir` resumes phases whose result file is not yet valid.

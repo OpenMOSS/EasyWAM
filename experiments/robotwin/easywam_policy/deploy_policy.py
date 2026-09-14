@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _PolicySession:
     pending_actions: deque[np.ndarray] = field(default_factory=deque)
+    observation: Optional[Dict[str, Any]] = None
     episode_count: int = 0
     step_count: int = 0
     timing: Dict[str, float] = field(
@@ -149,6 +150,39 @@ def _resize_rgb(image: np.ndarray, size_wh: tuple[int, int]) -> np.ndarray:
     return np.asarray(resized, dtype=np.uint8)
 
 
+def pack_xpolicylab_joint_state(observation: Dict[str, Any]) -> np.ndarray:
+    """Pack RoboTwin's XPolicyLab dual-arm joint state in dataset order."""
+    state = observation.get("state")
+    if not isinstance(state, dict):
+        raise KeyError("XPolicyLab observation is missing the 'state' mapping.")
+    keys = (
+        "left_arm_joint_state",
+        "left_ee_joint_state",
+        "right_arm_joint_state",
+        "right_ee_joint_state",
+    )
+    missing = [key for key in keys if key not in state]
+    if missing:
+        raise KeyError(f"XPolicyLab observation is missing state keys: {missing}")
+    return np.concatenate(
+        [np.asarray(state[key], dtype=np.float32).reshape(-1) for key in keys]
+    )
+
+
+def action_vector_to_xpolicylab(action: np.ndarray) -> Dict[str, Any]:
+    """Convert EasyWAM's 14-D RoboTwin action to XPolicyLab joint fields."""
+    vector = np.asarray(action, dtype=np.float32).reshape(-1)
+    if vector.shape != (14,):
+        raise ValueError(f"Expected a 14-D RoboTwin action, got shape {vector.shape}.")
+    return {
+        "left_arm_joint_state": vector[:6],
+        "left_ee_joint_state": vector[6:7],
+        "right_arm_joint_state": vector[7:13],
+        "right_ee_joint_state": vector[13:14],
+        "action_type": "joint",
+    }
+
+
 class WorldActionRobotWinPolicy:
     def __init__(
         self,
@@ -242,7 +276,11 @@ class WorldActionRobotWinPolicy:
             raise ValueError("Expected exactly one merged state key in shape_meta['state'].")
         state_key = state_meta[0]["key"]
 
-        state_batch = {"state": {state_key: torch.as_tensor(state, dtype=torch.float32).unsqueeze(0)}}
+        state_batch = {
+            "state": {
+                state_key: torch.as_tensor(state, dtype=torch.float32).unsqueeze(0)
+            }
+        }
         state_batch = self.processor.action_state_transform(state_batch)
         state_batch = self.processor.normalizer.forward(state_batch)
         return state_batch["state"][state_key]
@@ -263,10 +301,19 @@ class WorldActionRobotWinPolicy:
         return denorm.numpy()
 
     def _build_robotwin_image_tensor(self, observation: Dict[str, Any]) -> torch.Tensor:
-        obs_data = observation["observation"]
-        head = _resize_rgb(obs_data["head_camera"]["rgb"], (320, 256))
-        left = _resize_rgb(obs_data["left_camera"]["rgb"], (160, 128))
-        right = _resize_rgb(obs_data["right_camera"]["rgb"], (160, 128))
+        vision = observation.get("vision")
+        if not isinstance(vision, dict):
+            raise KeyError("XPolicyLab observation is missing the 'vision' mapping.")
+
+        def camera_rgb(name: str) -> np.ndarray:
+            camera = vision.get(name)
+            if not isinstance(camera, dict) or "color" not in camera:
+                raise KeyError(f"XPolicyLab observation is missing vision.{name}.color.")
+            return np.asarray(camera["color"], dtype=np.uint8)
+
+        head = _resize_rgb(camera_rgb("cam_head"), (320, 256))
+        left = _resize_rgb(camera_rgb("cam_left_wrist"), (160, 128))
+        right = _resize_rgb(camera_rgb("cam_right_wrist"), (160, 128))
         bottom = np.concatenate([left, right], axis=1)
         image = np.concatenate([head, bottom], axis=0)  # [384, 320, 3]
 
@@ -278,7 +325,7 @@ class WorldActionRobotWinPolicy:
         self, observation: Dict[str, Any], instruction: str, session: _PolicySession
     ) -> np.ndarray:
         image_tensor = self._build_robotwin_image_tensor(observation)
-        state_vector = np.asarray(observation["joint_action"]["vector"], dtype=np.float32)
+        state_vector = pack_xpolicylab_joint_state(observation)
         proprio = self._normalize_state(state_vector)
 
         prompt = DEFAULT_PROMPT.format(task=instruction)
@@ -365,6 +412,7 @@ class WorldActionRobotWinPolicy:
     def reset(self) -> None:
         session = self._sessions["local"]
         session.pending_actions.clear()
+        session.observation = None
         session.episode_count += 1
         session.step_count = 0
         self.reset_timing_rollout()
@@ -372,15 +420,33 @@ class WorldActionRobotWinPolicy:
     def invoke(self, session_id: str, command: str, payload: Any = None) -> Any:
         with self._sessions_lock:
             session = self._sessions.setdefault(session_id, _PolicySession())
-        if command == "remote_step":
-            return self._remote_step(payload, session)
-        if command == "should_request_observation":
-            return not session.pending_actions
+        if command == "update_obs":
+            if not isinstance(payload, dict):
+                raise TypeError("update_obs expects one XPolicyLab observation mapping.")
+            session.observation = payload
+            return None
+        if command == "get_action":
+            if session.observation is None:
+                raise ValueError("get_action requires update_obs to be called first.")
+            instruction = str(session.observation.get("instruction", ""))
+            action_chunk = self._infer_action_chunk(
+                session.observation, instruction, session
+            )
+            n_exec = min(self.replan_steps, action_chunk.shape[0])
+            return [
+                action_vector_to_xpolicylab(action_chunk[index])
+                for index in range(n_exec)
+            ]
         if command == "reset":
             session.pending_actions.clear()
+            session.observation = None
             session.episode_count += 1
             session.step_count = 0
             session.timing = {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
+            return None
+        if command == "trial_end":
+            session.pending_actions.clear()
+            session.observation = None
             return None
         if command == "get_timing_rollout":
             return {key: float(value) for key, value in session.timing.items()}
@@ -417,7 +483,9 @@ def get_model(usr_args: Dict[str, Any]):
         logger.warning("CUDA is unavailable; fallback device to cpu.")
         device = "cpu"
 
-    mixed_precision = str(usr_args.get("mixed_precision") or cfg.get("mixed_precision", "bf16"))
+    mixed_precision = str(
+        usr_args.get("mixed_precision") or cfg.get("mixed_precision", "bf16")
+    )
     model_dtype = _mixed_precision_to_model_dtype(mixed_precision)
 
     dataset_stats_path = _resolve_dataset_stats_path(
@@ -427,7 +495,11 @@ def get_model(usr_args: Dict[str, Any]):
     action_horizon = _parse_optional_int(usr_args.get("action_horizon"))
     if action_horizon is None:
         eval_horizon = _parse_optional_int(cfg.EVALUATION.get("action_horizon"))
-        action_horizon = eval_horizon if eval_horizon is not None else int(cfg.data.train.num_frames) - 1
+        action_horizon = (
+            eval_horizon
+            if eval_horizon is not None
+            else int(cfg.data.train.num_frames) - 1
+        )
     if action_horizon <= 0:
         raise ValueError(f"`action_horizon` must be positive, got {action_horizon}")
 
@@ -437,15 +509,21 @@ def get_model(usr_args: Dict[str, Any]):
 
     num_inference_steps = _parse_optional_int(usr_args.get("num_inference_steps"))
     if num_inference_steps is None:
-        num_inference_steps = int(cfg.EVALUATION.get("num_inference_steps", cfg.eval_num_inference_steps))
+        num_inference_steps = int(
+            cfg.EVALUATION.get("num_inference_steps", cfg.eval_num_inference_steps)
+        )
 
     sigma_shift = _parse_optional_float(usr_args.get("sigma_shift"))
     if sigma_shift is None:
         sigma_shift = _parse_optional_float(cfg.EVALUATION.get("sigma_shift"))
 
     seed = _parse_optional_int(usr_args.get("seed"))
-    text_cfg_scale = float(usr_args.get("text_cfg_scale", cfg.EVALUATION.get("text_cfg_scale", 1.0)))
-    negative_prompt = str(usr_args.get("negative_prompt", cfg.EVALUATION.get("negative_prompt", "")))
+    text_cfg_scale = float(
+        usr_args.get("text_cfg_scale", cfg.EVALUATION.get("text_cfg_scale", 1.0))
+    )
+    negative_prompt = str(
+        usr_args.get("negative_prompt", cfg.EVALUATION.get("negative_prompt", ""))
+    )
     rand_device = str(usr_args.get("rand_device", cfg.EVALUATION.get("rand_device", "cpu")))
     timing_enabled = _parse_bool(
         usr_args.get("timing_enabled", cfg.EVALUATION.get("timing_enabled", False))
@@ -501,11 +579,19 @@ def get_model(usr_args: Dict[str, Any]):
         torch_compile_fullgraph=torch_compile_fullgraph,
         torch_compile_dynamic=torch_compile_dynamic,
         torch_compile_options=torch_compile_options,
-        num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
+        num_video_frames=(int(cfg.data.train.num_frames) - 1)
+        // int(cfg.data.train.action_video_freq_ratio)
+        + 1,
         vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
         inference_cross_kv_reuse=cfg.get("inference_cross_kv_reuse", True),
-        inference_batch_size=int(usr_args.get("inference_batch_size", cfg.MULTIRUN.inference_batch_size)),
-        inference_batch_wait_ms=float(usr_args.get("inference_batch_wait_ms", cfg.MULTIRUN.inference_batch_wait_ms)),
+        inference_batch_size=int(
+            usr_args.get("inference_batch_size", cfg.MULTIRUN.inference_batch_size)
+        ),
+        inference_batch_wait_ms=float(
+            usr_args.get(
+                "inference_batch_wait_ms", cfg.MULTIRUN.inference_batch_wait_ms
+            )
+        ),
         prompt_cache_size=int(
             usr_args.get("prompt_cache_size", cfg.MULTIRUN.prompt_cache_size)
         ),

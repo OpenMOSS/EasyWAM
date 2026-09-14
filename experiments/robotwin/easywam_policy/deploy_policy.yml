@@ -4,7 +4,7 @@ task_name: null
 task_config: null
 ckpt_setting: null
 seed: 0
-instruction_type: unseen
+instruction_type: null
 eval_num_episodes: 100
 
 # EasyWAM policy arguments
@@ -25,4 +25,3 @@ timing_enabled: false
 inference_batch_size: 4
 inference_batch_wait_ms: 10
 prompt_cache_size: 40
-skip_get_obs_within_replan: false

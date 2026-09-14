@@ -17,9 +17,11 @@ model:
 EVALUATION:
   robotwin_root: third_party/RoboTwin
   policy_name: easywam_policy
+  env_cfg_type: arx_x5
+  action_type: joint
   task_name: null
   task_config: demo_randomized
-  instruction_type: unseen
+  instruction_type: null
   eval_num_episodes: 100
   output_dir: ./evaluate_results/robotwin/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
 
@@ -39,8 +41,6 @@ EVALUATION:
   torch_compile_fullgraph: false
   torch_compile_dynamic: false
   torch_compile_options: {}
-  skip_get_obs_within_replan: true
-
   # Runtime inputs
   dataset_stats_path: null
   device: cuda

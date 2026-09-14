@@ -23,9 +23,9 @@ from experiments.robotwin.result_utils import (  # noqa: E402
     parse_success_rate,
     task_is_complete,
 )
+from experiments.robotwin.upstream import validate_robotwin_root  # noqa: E402
 
 WORKER_ENTRY = PROJECT_ROOT / "experiments" / "robotwin" / "eval_robotwin_worker.py"
-EVAL_STEP_LIMIT_FILE = PROJECT_ROOT / "third_party" / "RoboTwin" / "task_config" / "_eval_step_limit.yml"
 
 
 def _resolve_path(value: str, base: Path = PROJECT_ROOT) -> Path:
@@ -42,10 +42,11 @@ def _resolve_ckpt_tag(checkpoint: Path) -> str:
     return checkpoint.stem
 
 
-def _load_all_tasks() -> list[str]:
-    payload = yaml.safe_load(EVAL_STEP_LIMIT_FILE.read_text(encoding="utf-8"))
+def _load_all_tasks(robotwin_root: Path) -> list[str]:
+    task_file = robotwin_root / "env_cfg" / "task_config" / "_eval_step_limit.yml"
+    payload = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or not payload:
-        raise ValueError(f"Invalid task map: {EVAL_STEP_LIMIT_FILE}")
+        raise ValueError(f"Invalid task map: {task_file}")
     return list(dict.fromkeys(str(key) for key in payload))
 
 
@@ -106,12 +107,28 @@ def main(cfg: DictConfig) -> None:
     checkpoint = _resolve_path(str(cfg.ckpt))
     if not checkpoint.exists():
         raise FileNotFoundError(checkpoint)
+    robotwin_root = validate_robotwin_root(
+        _resolve_path(str(cfg.EVALUATION.robotwin_root))
+    )
     configured_task = cfg.EVALUATION.task_name
-    tasks = _load_all_tasks() if configured_task is None or not str(configured_task).strip() else [str(configured_task)]
+    tasks = (
+        _load_all_tasks(robotwin_root)
+        if configured_task is None or not str(configured_task).strip()
+        else [str(configured_task)]
+    )
     raw_output = _resolve_path(str(cfg.EVALUATION.output_dir))
-    output_dir = PROJECT_ROOT / "evaluate_results" / "robotwin" / _resolve_ckpt_tag(checkpoint) / raw_output.name
+    output_dir = (
+        PROJECT_ROOT
+        / "evaluate_results"
+        / "robotwin"
+        / _resolve_ckpt_tag(checkpoint)
+        / raw_output.name
+    )
     pending_tasks = [task for task in tasks if not task_is_complete(output_dir, task)]
-    print(f"Completed tasks: {len(tasks) - len(pending_tasks)}; pending tasks: {len(pending_tasks)}")
+    print(
+        f"Completed tasks: {len(tasks) - len(pending_tasks)}; "
+        f"pending tasks: {len(pending_tasks)}"
+    )
     if not pending_tasks:
         _write_summary(output_dir, tasks)
         print(f"RoboTwin evaluation already complete: {output_dir}")
@@ -130,13 +147,19 @@ def main(cfg: DictConfig) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(cfg, output_dir / "manager_config.yaml")
     task_choice = HydraConfig.get().runtime.choices.get("task")
-    extra = [value for value in HydraConfig.get().overrides.task if not _is_blocked_override(value)]
+    extra = [
+        value
+        for value in HydraConfig.get().overrides.task
+        if not _is_blocked_override(value)
+    ]
     processes: list[subprocess.Popen] = []
     handles = []
     try:
         jobs = [{"task_name": task} for task in pending_tasks]
         task_path = worker_dir / "pending_jobs.jsonl"
-        task_path.write_text("".join(json.dumps(job) + "\n" for job in jobs), encoding="utf-8")
+        task_path.write_text(
+            "".join(json.dumps(job) + "\n" for job in jobs), encoding="utf-8"
+        )
         cursor_path = worker_dir / "task_cursor.txt"
         cursor_path.write_text("0", encoding="utf-8")
         for worker_index in range(worker_count):
@@ -145,8 +168,12 @@ def main(cfg: DictConfig) -> None:
             handle = log_path.open("a", encoding="utf-8")
             handles.append(handle)
             command = [
-                sys.executable, str(WORKER_ENTRY), f"task={task_choice}", f"ckpt={checkpoint}",
-                f"gpu_id={gpu_id}", f"WORKER.task_file={task_path}",
+                sys.executable,
+                str(WORKER_ENTRY),
+                f"task={task_choice}",
+                f"ckpt={checkpoint}",
+                f"gpu_id={gpu_id}",
+                f"WORKER.task_file={task_path}",
                 f"WORKER.task_cursor={cursor_path}",
                 f"EVALUATION.output_dir={output_dir}",
                 f"WORKER.worker_index={worker_index}",
@@ -161,14 +188,28 @@ def main(cfg: DictConfig) -> None:
             env.setdefault("PYTHONFAULTHANDLER", "1")
             env.setdefault("PYTHONUNBUFFERED", "1")
             env.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
-            processes.append(subprocess.Popen(command, cwd=PROJECT_ROOT, env=env, stdout=handle, stderr=subprocess.STDOUT))
-            print(f"Started model worker {worker_index}: gpu={gpu_id}, envs={env_num_per_gpu}")
+            processes.append(
+                subprocess.Popen(
+                    command,
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                )
+            )
+            print(
+                f"Started model worker {worker_index}: "
+                f"gpu={gpu_id}, envs={env_num_per_gpu}"
+            )
         while not all(process.poll() == 0 for process in processes):
             failed = next((p for p in processes if p.poll() not in (None, 0)), None)
             if failed is not None:
                 code = failed.returncode
                 _terminate(processes)
-                raise RuntimeError(f"RoboTwin worker failed with return code {code}; inspect {log_dir}.")
+                raise RuntimeError(
+                    f"RoboTwin worker failed with return code {code}; "
+                    f"inspect {log_dir}."
+                )
             time.sleep(2)
     finally:
         _terminate(processes)

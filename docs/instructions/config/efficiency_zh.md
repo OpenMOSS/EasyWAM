@@ -59,7 +59,6 @@ VAE micro-batching 会同时应用于训练和评测的模型构造，但不会�
 | `EVALUATION.replan_steps` | 每次预测后执行的动作数。值越小，模型调用越频繁；运行时会将其限制在 action horizon 内。 |
 | `EVALUATION.torch_compile` | 编译各架构声明的张量密集推理函数。首次调用编译可能较慢，适合之后重复使用稳定 shape。 |
 | `EVALUATION.torch_compile_mode` | 默认 `reduce-overhead`，适合重复的 batch-1 推理，条件允许时可能使用 CUDA Graph。 |
-| `EVALUATION.skip_get_obs_within_replan` | RoboTwin 专属优化，在两次 replan 之间跳过 RGB 渲染；保存的视频会因此缺少中间渲染帧。 |
 | `EVALUATION.video_mode`、`visualize_future_video`、`eval_save_video` | 视频编码、解码、可视化和磁盘写入都会增加开销；吞吐测试应保持关闭。 |
 | `MULTIRUN.num_gpus`、`env_num_per_gpu` | 控制模型 worker 数和并发环境数；每张 GPU 只加载一个模型。 |
 | `MULTIRUN.inference_batch_size`、`inference_batch_wait_ms` | 控制动态推理 batch 上限和等待窗口。 |

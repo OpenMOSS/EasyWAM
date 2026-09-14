@@ -59,7 +59,6 @@ VAE micro-batching applies to both training and evaluation model construction. I
 | `EVALUATION.replan_steps` | Number of actions executed per prediction. Smaller values increase model-call frequency; runtime clips it to the action horizon. |
 | `EVALUATION.torch_compile` | Compiles architecture-specific tensor-heavy inference functions. Useful for repeated stable shapes after a potentially expensive first-call compile. |
 | `EVALUATION.torch_compile_mode` | Defaults to `reduce-overhead`, which is suitable for repeated batch-1 inference and may use CUDA graphs when eligible. |
-| `EVALUATION.skip_get_obs_within_replan` | RoboTwin-only optimization that skips RGB rendering between replans; saved videos then contain fewer rendered frames. |
 | `EVALUATION.video_mode`, `visualize_future_video`, `eval_save_video` | Video encoding, decoding, visualization, and disk writes add overhead; leave disabled for throughput measurements. |
 | `MULTIRUN.num_gpus`, `env_num_per_gpu` | Control model workers and concurrent environments. Each GPU loads one model. |
 | `MULTIRUN.inference_batch_size`, `inference_batch_wait_ms` | Control dynamic inference batch size and queue window. |

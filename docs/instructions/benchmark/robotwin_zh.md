@@ -2,7 +2,54 @@
 
 [English](robotwin.md) | [Benchmark 索引](README_zh.md) | [数据与训练指南](../data/robotwin_zh.md) | [返回项目 README](../../../README_zh.md)
 
-EasyWAM 默认在 `third_party/RoboTwin` 查找 benchmark。请按照官方 [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) 指南安装仿真环境并下载资源。评测 worker 会自动在 RoboTwin 中创建或刷新 `easywam_policy` 软链接。
+## 安装
+
+从 GitHub 克隆当前 RoboTwin 仓库及其 XPolicyLab 子模块：
+
+```bash
+git clone --recurse-submodules https://github.com/RoboTwin-Platform/RoboTwin.git third_party/RoboTwin
+```
+
+使用 Python 3.10，并安装 EasyWAM 尚未提供的评测依赖：
+
+```bash
+pip install scipy==1.10.1 transforms3d==0.4.2 sapien==3.0.0b1 \
+  mplib==0.2.1 gymnasium==0.29.1 trimesh==4.4.3 open3d==0.18.0 \
+  "pydantic>=2.5" "websockets>=14.0" "msgpack>=1.0.8" "msgpack-numpy>=0.4.8"
+
+git clone https://github.com/NVlabs/curobo.git third_party/RoboTwin/envs/curobo
+pip install --no-build-isolation -e third_party/RoboTwin/envs/curobo
+```
+
+RoboTwin 使用 Vulkan 渲染，并通过系统 `ffmpeg` 命令保存评测视频。在 Ubuntu 上安装：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libvulkan1 mesa-vulkan-drivers vulkan-tools ffmpeg unzip
+```
+
+## 资源
+
+下载并解压官方资源，然后更新资源路径：
+
+```bash
+huggingface-cli download TianxingChen/RoboTwin2.0 \
+  background_texture.zip embodiments.zip objects.zip \
+  --repo-type dataset \
+  --local-dir third_party/RoboTwin/assets
+
+(
+  cd third_party/RoboTwin/assets
+  unzip -q -o background_texture.zip
+  unzip -q -o embodiments.zip
+  unzip -q -o objects.zip
+)
+(cd third_party/RoboTwin && python scripts/update_embodiment_config_path.py)
+```
+
+clean、randomized、相机、embodiment 和任务步数配置已经包含在克隆仓库的 `env_cfg/task_config/` 中。
+
+## 评测
 
 评测 RoboTwin `_eval_step_limit.yml` 中列出的全部任务：
 
@@ -16,7 +63,7 @@ python experiments/robotwin/run_robotwin_manager.py \
   MULTIRUN.inference_batch_size=4 MULTIRUN.inference_batch_wait_ms=10
 ```
 
-可以通过 override 只评测一个任务或切换语言指令协议：
+只评测一个任务或覆盖语言指令划分：
 
 ```bash
 python experiments/robotwin/run_robotwin_manager.py \
@@ -26,8 +73,6 @@ python experiments/robotwin/run_robotwin_manager.py \
   EVALUATION.instruction_type=seen
 ```
 
-manager 会对每个任务分别评测 `demo_clean` 和 `demo_randomized`，默认使用 unseen instruction。每个阶段的 episode 数量由 `EVALUATION.eval_num_episodes` 控制。
+manager 会依次评测每个任务的 `demo_clean` 和 `demo_randomized`。没有传入 instruction override 时，使用当前 RoboTwin 各任务配置声明的划分。`EVALUATION.eval_num_episodes` 控制每个阶段的 episode 数量，`EVALUATION.replan_steps` 控制重新规划前连续执行的预测动作数。
 
-`EVALUATION.skip_get_obs_within_replan=true` 会在连续执行一次预测 action chunk 的剩余动作时跳过 RGB 渲染，从而加速评测，但保存的视频会显得帧率很低。如果需要完整渲染视频，请设置为 `false`。`EVALUATION.replan_steps` 控制每次重新规划前执行的动作数。
-
-每张 GPU 运行一个常驻模型服务。rollout 客户端动态领取任务，使用隔离的动作队列会话，并共享服务端推理 batch；同一任务的 clean 和 randomized 阶段仍按顺序执行。结果保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括各阶段结果文件、worker 日志、`summary.json` 和 `summary.csv`。只有两个阶段的结果都有效时，续评才会跳过该任务；使用相同的 `EVALUATION.output_dir` 时间戳部分即可继续。
+每个 GPU worker 只加载一次 EasyWAM。rollout 客户端使用相互隔离的 XPolicyLab 会话并共享动态推理 batch。结果仍保存在 `evaluate_results/robotwin/<checkpoint-tag>/<timestamp>/`，其中包括上游产物、各阶段结果、worker 日志、`summary.json` 和 `summary.csv`。复用相同的 `EVALUATION.output_dir` 时，只续评尚无有效结果的阶段。
