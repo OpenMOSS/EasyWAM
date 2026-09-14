@@ -8,5 +8,6 @@
 | --- | --- | --- |
 | LIBERO | Hub 下载、数据目录、文本缓存与训练 | [数据与训练](libero_zh.md) |
 | RoboTwin | Hub 下载、数据目录、统计、文本缓存与训练 | [数据与训练](robotwin_zh.md) |
+| RoboCasa365 | LeRobot v3 镜像、schema、统计与 MoT 训练 | [数据与训练](robocasa_zh.md) |
 
 仿真环境安装和 rollout 评测统一放在 [Benchmark 文档](../benchmark/README_zh.md)中。

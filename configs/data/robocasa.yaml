@@ -1,0 +1,68 @@
+train:
+  _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
+  dataset_dirs:
+    - ./data/robocasa365-lerobot-v3.0/pretrain-atomic
+    - ./data/robocasa365-lerobot-v3.0/pretrain-composite
+  shape_meta:
+    images:
+      - key: robot0_agentview_left
+        raw_shape: [3, 256, 256]
+        shape: [3, 256, 256]
+      - key: robot0_agentview_right
+        raw_shape: [3, 256, 256]
+        shape: [3, 256, 256]
+      - key: robot0_eye_in_hand
+        raw_shape: [3, 256, 256]
+        shape: [3, 256, 256]
+    action:
+      - key: default
+        # base_motion(4), control_mode(1; -1 arm / +1 base), eef_delta_pos(3),
+        # eef_delta_axis_angle(3), gripper(1)
+        raw_shape: 12
+        shape: 12
+    state:
+      - key: default
+        # base_pos(3), base_quat(4), eef_pos_rel(3),
+        # eef_quat_rel(4), gripper_qpos(2)
+        raw_shape: 16
+        shape: 16
+  num_frames: 33
+  global_sample_stride: 1
+  action_video_freq_ratio: 4 # 32 actions and 9 video frames at 20 Hz
+  video_size: [256, 768]
+  camera_key: null
+  val_set_proportion: 0.0
+  is_training_set: true
+  pretrained_norm_stats: null
+  skip_padding_as_possible: false
+  concat_multi_camera: "horizontal"
+  processor:
+    _target_: data.lerobot.processors.wam_processor.WAMProcessor
+    shape_meta: ${data.train.shape_meta}
+    num_obs_steps: ${data.train.num_frames}
+    num_output_cameras: 3
+    action_output_dim: 12
+    proprio_output_dim: 16
+    delta_action_dim_mask:
+      # Padding zeros only motion deltas; mode and gripper remain absolute.
+      default: [true, true, true, true, false, true, true, true, true, true, true, false]
+
+    action_state_transforms: null
+    use_stepwise_action_norm: false
+    norm_default_mode: min/max
+    norm_exception_mode: null
+
+    action_state_merger:
+      _target_: data.lerobot.transforms.action_state_merger.ConcatLeftAlign
+
+    train_transforms:
+      - _target_: data.lerobot.transforms.image.ToTensor
+      - _target_: torchvision.transforms.Resize
+        size: [256, 256]
+    val_transforms:
+      - _target_: data.lerobot.transforms.image.ToTensor
+      - _target_: torchvision.transforms.Resize
+        size: [256, 256]
+  text_embedding_cache_dir: ./data/text_embeds_cache/robocasa365/${model.backbone.name}
+  context_len: ${model.backbone.tokenizer_max_len}
+  text_encoder_id: ${model.backbone.text_encoder_id}

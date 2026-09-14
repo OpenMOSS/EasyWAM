@@ -8,5 +8,6 @@ This section covers dataset acquisition or conversion, the expected LeRobot layo
 | --- | --- | --- |
 | LIBERO | Hub download, dataset layout, text cache, and training | [Data and training](libero.md) |
 | RoboTwin | Hub download, dataset layout, statistics, text cache, and training | [Data and training](robotwin.md) |
+| RoboCasa365 | LeRobot v3 mirrors, schema, statistics, and MoT training | [Data and training](robocasa.md) |
 
 Simulator setup and rollout evaluation are intentionally kept in the [benchmark guides](../benchmark/README.md).
