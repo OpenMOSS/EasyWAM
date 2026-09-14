@@ -8,6 +8,7 @@ tmp/
 /evaluate_results/
 /results/
 /tests/
+/third_party/
 apex/
 .deepspeed*
 
