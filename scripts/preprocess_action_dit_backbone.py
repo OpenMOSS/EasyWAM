@@ -284,7 +284,6 @@ def main() -> None:
             "text_dim": int(action_cfg["text_dim"]),
             "freq_dim": int(action_cfg["freq_dim"]),
             "eps": float(action_cfg["eps"]),
-            "preprojected_context": bool(action_cfg.get("preprojected_context", False)),
         },
     }
     torch.save(payload, str(output_path))
