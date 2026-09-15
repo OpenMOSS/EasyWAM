@@ -6,7 +6,7 @@ defaults:
 _target_: runtime.create_easywam_mot_joint
 attention_backend: ${model.backbone.attention_backend}
 state_dim: ${data.train.processor.proprio_output_dim}
-state_position: context
+state_position: sequence
 projector_hidden_dim: 64
 action_dit_pretrained_path: ${model.backbone.action_dit_pretrained_path}
 skip_dit_load_from_pretrain: false

@@ -211,8 +211,8 @@ class ActionDiTFlux2(nn.Module):
         }
 
     def post_dit(self, tokens: torch.Tensor, pre_state: dict[str, Any]) -> torch.Tensor:
-        state_len = int(pre_state.get("meta", {}).get("state_len", 0))
-        return self.head(tokens[:, state_len:], pre_state["t_mod"]["vec"])
+        action_len = int(pre_state.get("meta", {}).get("action_len", tokens.shape[1]))
+        return self.head(tokens[:, :action_len], pre_state["t_mod"]["vec"])
 
     @staticmethod
     def _expand_modulation(value: Any, length: int) -> Any:
@@ -237,7 +237,7 @@ class ActionDiTFlux2(nn.Module):
             )
         raise TypeError("FLUX.2 modulation structures must have matching types.")
 
-    def prepend_state_tokens(
+    def append_state_tokens(
         self,
         pre_state: dict[str, Any],
         state_tokens: torch.Tensor,
@@ -266,7 +266,7 @@ class ActionDiTFlux2(nn.Module):
             "single": self.single_stream_modulation(zero_vec)[0],
         }
         action_mod = pre_state["t_mod"]
-        pre_state["tokens"] = torch.cat([state_tokens, action_tokens], dim=1)
+        pre_state["tokens"] = torch.cat([action_tokens, state_tokens], dim=1)
         pre_state["ids"] = self.build_action_ids(
             action_tokens.shape[0],
             total_len,
@@ -276,12 +276,12 @@ class ActionDiTFlux2(nn.Module):
         pre_state["t_mod"] = {
             "vec": action_mod["vec"],
             "double_img": self._concat_modulation(
-                self._expand_modulation(state_mod["double_img"], state_len),
                 self._expand_modulation(action_mod["double_img"], action_len),
+                self._expand_modulation(state_mod["double_img"], state_len),
             ),
             "single": self._concat_modulation(
-                self._expand_modulation(state_mod["single"], state_len),
                 self._expand_modulation(action_mod["single"], action_len),
+                self._expand_modulation(state_mod["single"], state_len),
             ),
         }
         pre_state["meta"].update(

@@ -421,10 +421,10 @@ class ActionDiT(nn.Module):
         }
 
     def post_dit(self, tokens: torch.Tensor, pre_state: Dict[str, Any]) -> torch.Tensor:
-        state_len = int(pre_state.get("meta", {}).get("state_len", 0))
-        return self.action_decoder(tokens[:, state_len:])
+        action_len = int(pre_state.get("meta", {}).get("action_len", tokens.shape[1]))
+        return self.action_decoder(tokens[:, :action_len])
 
-    def prepend_state_tokens(
+    def append_state_tokens(
         self,
         pre_state: Dict[str, Any],
         state_tokens: torch.Tensor,
@@ -452,14 +452,14 @@ class ActionDiT(nn.Module):
         )
         state_t_mod = self.time_projection(state_t).unflatten(1, (6, self.hidden_dim))
         action_t_mod = pre_state["t_mod"]
-        pre_state["tokens"] = torch.cat([state_tokens, action_tokens], dim=1)
+        pre_state["tokens"] = torch.cat([action_tokens, state_tokens], dim=1)
         pre_state["freqs"] = self.freqs[:total_len].view(total_len, 1, -1).to(
             action_tokens.device
         )
         pre_state["t_mod"] = torch.cat(
             [
-                state_t_mod[:, None].expand(-1, state_len, -1, -1),
                 action_t_mod[:, None].expand(-1, action_len, -1, -1),
+                state_t_mod[:, None].expand(-1, state_len, -1, -1),
             ],
             dim=1,
         )

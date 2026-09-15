@@ -92,7 +92,7 @@ The total objective is `lambda_video * loss_video + lambda_action * loss_action`
 
 ## Architecture-specific settings
 
-- `state_position` accepts `context` or `sequence` and defaults to `context`. In `context` mode, state tokens join the text conditioning context. In `sequence` mode, they join Unified's main sequence or the ActionDiT sequence used by MoT-family and Hidden models. Select the same value when loading a checkpoint; new checkpoints record it and reject mismatches.
+- `state_position` accepts `context` or `sequence` and defaults to `context`. In `context` mode, state tokens join the text conditioning context. In `sequence` mode, state tokens are always placed after the action tokens and join Unified's main sequence or the ActionDiT sequence used by MoT-family and Hidden models. Select the same value when loading a checkpoint; new checkpoints record it and reject mismatches.
 - `video_cond_noise_prob` controls how often MoT-IDM adds noise to the teacher-forced conditional video during training. It must be between `0` and `1` and defaults to `0.5`.
 - `video_hidden_layer` is a zero-based Video DiT block index used by Hidden. The checked-in value comes from the backbone and must remain within its layer count.
 - `detach_video_hidden=true` prevents the action loss from backpropagating through Hidden's video feature path. Setting it to `false` couples action gradients into that path and changes training memory and optimization behavior.

@@ -312,7 +312,7 @@ class EasyWAMHidden(nn.Module):
             cross_kv_cache=action_cross_kv_cache,
         )
         if self.state_position == "sequence":
-            action_pre = self.action_dit.prepend_state_tokens(action_pre, state_tokens)
+            action_pre = self.action_dit.append_state_tokens(action_pre, state_tokens)
         tokens = action_pre["tokens"]
 
         for layer_index, block in enumerate(self.action_dit.blocks):

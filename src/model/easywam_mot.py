@@ -410,7 +410,7 @@ class EasyWAMMoT(torch.nn.Module):
             torch.cat([context_mask, state_mask], dim=1),
         )
 
-    def _prepend_state_to_action_sequence(
+    def _append_state_to_action_sequence(
         self,
         action_pre: dict[str, Any],
         state: Optional[torch.Tensor],
@@ -428,7 +428,7 @@ class EasyWAMMoT(torch.nn.Module):
         state_tokens = self.state_encoder(
             state.to(device=self.device, dtype=action_pre["tokens"].dtype).unsqueeze(1)
         ).to(dtype=action_pre["tokens"].dtype)
-        return self.action_expert.prepend_state_tokens(action_pre, state_tokens)
+        return self.action_expert.append_state_tokens(action_pre, state_tokens)
 
     def _state_sequence_length(self, state: Optional[torch.Tensor]) -> int:
         return int(
@@ -838,7 +838,7 @@ class EasyWAMMoT(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
-        action_pre = self._prepend_state_to_action_sequence(
+        action_pre = self._append_state_to_action_sequence(
             action_pre, inputs.get("state")
         )
 
@@ -960,7 +960,7 @@ class EasyWAMMoT(torch.nn.Module):
                 timestep_action, self.train_action_scheduler
             ),
         )
-        action_pre = self._prepend_state_to_action_sequence(
+        action_pre = self._append_state_to_action_sequence(
             action_pre, inputs.get("state")
         )
         attention_mask = self._build_mot_attention_mask_flux2(
@@ -1112,7 +1112,7 @@ class EasyWAMMoT(torch.nn.Module):
             context_is_projected=action_context is not None,
             cross_kv_cache=action_cross_kv_cache,
         )
-        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
+        action_pre = self._append_state_to_action_sequence(action_pre, state)
 
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_pre["tokens"].shape[1],
@@ -1178,7 +1178,7 @@ class EasyWAMMoT(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
-        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
+        action_pre = self._append_state_to_action_sequence(action_pre, state)
 
         attention_mask = self._build_mot_attention_mask(
             video_seq_len=video_pre["tokens"].shape[1],
@@ -1236,7 +1236,7 @@ class EasyWAMMoT(torch.nn.Module):
             context_is_projected=action_context is not None,
             cross_kv_cache=action_cross_kv_cache,
         )
-        action_pre = self._prepend_state_to_action_sequence(action_pre, state)
+        action_pre = self._append_state_to_action_sequence(action_pre, state)
         action_tokens = self.mot.forward_action_with_video_cache(
             action_tokens=action_pre["tokens"],
             action_freqs=action_pre["freqs"],
@@ -1779,7 +1779,7 @@ class EasyWAMMoT(torch.nn.Module):
                     self.infer_action_scheduler,
                 ),
             )
-            action_pre = self._prepend_state_to_action_sequence(action_pre, proprio)
+            action_pre = self._append_state_to_action_sequence(action_pre, proprio)
             action_tokens = self.mot.forward_flux2_action_with_video_cache(
                 action_tokens=action_pre["tokens"],
                 action_ids=action_pre["ids"],

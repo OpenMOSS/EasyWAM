@@ -213,7 +213,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             context=context,
             context_mask=context_mask,
         )
-        action_pre = self._prepend_state_to_action_sequence(
+        action_pre = self._append_state_to_action_sequence(
             action_pre, inputs.get("state")
         )
 
