@@ -9,7 +9,7 @@
 | 分区 | 内容 | English | 中文 |
 | --- | --- | --- | --- |
 | Backbone | 模型下载、预处理、训练与评测用法 | [Index](instructions/backbone/README.md) | [索引](instructions/backbone/README_zh.md) |
-| 数据 | LIBERO 与 RoboTwin 训练数据准备 | [Index](instructions/data/README.md) | [索引](instructions/data/README_zh.md) |
+| 数据 | LIBERO、RoboTwin、RoboDojo 与 RoboCasa 训练数据准备 | [Index](instructions/data/README.md) | [索引](instructions/data/README_zh.md) |
 | Benchmark | 仿真环境准备与评测 | [Index](instructions/benchmark/README.md) | [索引](instructions/benchmark/README_zh.md) |
 | 配置 | 模型、训练、效率与 Hydra 配置 | [Index](instructions/config/README.md) | [索引](instructions/config/README_zh.md) |
 

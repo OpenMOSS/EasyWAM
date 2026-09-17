@@ -9,7 +9,7 @@ This directory separates operational instructions, research articles, and result
 | Section | Contents | English | 中文 |
 | --- | --- | --- | --- |
 | Backbone | Model downloads, preprocessing, training, and evaluation usage | [Index](instructions/backbone/README.md) | [索引](instructions/backbone/README_zh.md) |
-| Data | LIBERO and RoboTwin training-data preparation | [Index](instructions/data/README.md) | [索引](instructions/data/README_zh.md) |
+| Data | LIBERO, RoboTwin, RoboDojo, and RoboCasa training-data preparation | [Index](instructions/data/README.md) | [索引](instructions/data/README_zh.md) |
 | Benchmark | Simulator preparation and evaluation | [Index](instructions/benchmark/README.md) | [索引](instructions/benchmark/README_zh.md) |
 | Config | Model, training, efficiency, and Hydra configuration | [Index](instructions/config/README.md) | [索引](instructions/config/README_zh.md) |
 

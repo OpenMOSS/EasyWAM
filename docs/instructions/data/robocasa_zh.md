@@ -4,21 +4,17 @@
 
 本文介绍 EasyWAM 中 RoboCasa365 的训练数据准备与训练流程。
 
-## 下载
+## 训练数据
 
-EMBER 镜像已经是扁平的 LeRobot v3.0 数据集，无需再次转换：
+从 [OpenMOSS-Team/robocasa365-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/robocasa365-lerobot-v3.0) 下载可直接使用的 LeRobot v3.0 数据集。下载位置与 `configs/data/robocasa.yaml` 中的默认路径一致：
 
 ```bash
-huggingface-cli download ember-lab-berkeley/robocasa365-pretrain-atomic \
+huggingface-cli download OpenMOSS-Team/robocasa365-lerobot-v3.0 \
   --repo-type dataset \
-  --local-dir data/robocasa365-lerobot-v3.0/pretrain-atomic
-
-huggingface-cli download ember-lab-berkeley/robocasa365-pretrain-composite \
-  --repo-type dataset \
-  --local-dir data/robocasa365-lerobot-v3.0/pretrain-composite
+  --local-dir data/robocasa365-lerobot-v3.0
 ```
 
-**configs/data/robocasa.yaml** 默认读取：
+默认的 `configs/data/robocasa.yaml` 使用以下目录：
 
 ```text
 data/robocasa365-lerobot-v3.0/
@@ -30,9 +26,9 @@ data/robocasa365-lerobot-v3.0/
 
 适配器严格保留数据 schema：三路 256 px 图像按 left、right、wrist 横向拼接；state 顺序为 base_pos(3) + base_quat(4) + eef_pos_rel(3) + eef_quat_rel(4) + gripper_qpos(2)；action 顺序为 base_motion(4) + control_mode(1) + eef_delta_pos(3) + eef_delta_axis_angle(3) + gripper(1)。
 
-## 统计与训练
+## 训练
 
-先生成文本特征，再开始训练：
+先预计算 RoboCasa365 文本 cache，再开始训练：
 
 ```bash
 python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
@@ -45,4 +41,4 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=robocasa_easywam_mot_wan22
 runs/robocasa_easywam_mot_wan22/<run-id>/dataset_stats.json
 ```
 
-请让此文件与 checkpoint 配套，并在评测时传入。上游两个数据目录中的空 **meta/stats.json** 不能作为模型归一化统计使用。
+请让此文件与 checkpoint 配套，并在评测时传入。
