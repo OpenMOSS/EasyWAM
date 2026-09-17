@@ -15,7 +15,7 @@ configs/
 │   ├── lora/                  # LoRA adapter 设置
 │   └── easywam_*.yaml         # EasyWAM 架构定义
 ├── task/                      # 可直接运行的数据、模型和训练组合
-└── sim_*.yaml                 # Benchmark 评测默认值
+└── benchmark/sim_*.yaml       # Benchmark 评测默认值
 ```
 
 `configs/train.yaml` 是训练配置根节点。task 配置会覆盖其中的 `data` 和 `model` 组，再设置特定 Benchmark 的训练参数。模型配置继续组合 backbone；LoRA 训练还会组合 LoRA 配置。
@@ -30,6 +30,33 @@ train.yaml
 ```
 
 常规训练和评测应优先选择 task 配置。只有在创建新 recipe 时才建议直接覆盖 `data=` 或 `model=`，并需要确认 action/state 维度和 backbone 维度兼容。
+
+## 编写 task 配置文件
+
+在 `configs/task/` 下创建 `<dataset>_easywam_<architecture>_<backbone>.yaml`。task 只选择已有的数据和模型配置，不重复定义相机、归一化或模型结构。以 RoboCasa 的 MoT-Joint 为例：
+
+```yaml
+# @package _global_
+defaults:
+  - override /data: robocasa
+  - override /model: easywam_mot_joint_wan22
+  - _self_
+
+batch_size: 16
+num_workers: 8
+lr_scheduler_type: cosine
+learning_rate: 1e-4
+max_steps: 30000
+log_every: 100
+save_every: 3000
+eval_every: 1000
+eval_num_inference_steps: 10
+gradient_accumulation_steps: 1
+weight_decay: 1e-2
+resume: null
+```
+
+将 `_self_` 放在组覆盖之后，以便 task 中的训练参数覆盖默认值。RoboTwin、RoboCasa、RoboDojo 各保留五种 Wan2.2 架构：`mot`、`hidden`、`unified`、`mot_joint`、`mot_idm`；RoboCasa 和 RoboDojo 的训练参数与 RoboTwin 相同。LIBERO 保留更完整的 task 配置集合。其他数据集没有预写 `_lora` task 不代表不支持 LoRA：创建一个选择对应 `_lora` 模型的 task 即可。新增数据集时，先编写 `configs/data/<dataset>.yaml`，确认 action/state 维度与模型兼容，再创建 task 文件。预计算文本 embedding 或训练前，用 `python scripts/train.py --cfg job task=<task-name>` 检查组合结果。各字段含义见[训练配置](training_zh.md)。
 
 ## 查看和覆盖配置
 

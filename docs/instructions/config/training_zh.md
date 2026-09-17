@@ -6,7 +6,7 @@
 
 ## 数据配置
 
-`configs/data/libero_2cam.yaml` 和 `configs/data/robotwin.yaml` 会实例化 `RobotVideoDataset` 与 `WAMProcessor`。添加或修改数据时应保持以下配置组一致：
+`configs/data/` 下的 LIBERO、RoboTwin、RoboCasa、RoboDojo 配置会实例化 `RobotVideoDataset` 与 `WAMProcessor`。添加或修改数据时应保持以下配置组一致：
 
 | 配置组 | 重要设置 |
 | --- | --- |
@@ -87,7 +87,7 @@ NNODES=2 NODE_RANK=0 MASTER_ADDR=<host> MASTER_PORT=29500 \
 
 ## 评测配置
 
-评测根配置统一放在 `configs/benchmark/` 下，包括 `sim_libero.yaml`、`sim_libero_plus.yaml`、`sim_robocasa.yaml` 和 `sim_robotwin.yaml`。它们继承 `train.yaml`，选择 task，启用运行时 text encoder，跳过重复的基础 DiT 初始化，并从 `ckpt` 加载训练权重。
+评测根配置统一放在 `configs/benchmark/` 下，包括 `sim_libero.yaml`、`sim_libero_plus.yaml`、`sim_robotwin.yaml`、`sim_robocasa.yaml` 和 `sim_robodojo.yaml`。它们继承 `train.yaml`，选择 task，启用运行时 text encoder，跳过重复的基础 DiT 初始化，并从 `ckpt` 加载训练权重。
 
 通用 policy 设置包括：
 

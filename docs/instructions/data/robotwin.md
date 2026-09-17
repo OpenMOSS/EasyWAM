@@ -34,24 +34,22 @@ Precompute the RoboTwin text cache. Each prompt is written to its own SHA-256-na
 
 ```bash
 python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
-python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_cosmos25
 ```
 
-Select a current task:
+Select one of the five Wan2.2 task recipes:
 
-| Model | Wan full | Wan LoRA | Cosmos full | Cosmos LoRA |
-| --- | --- | --- | --- | --- |
-| EasyWAM-MoT | `robotwin_easywam_mot_wan22` | `robotwin_easywam_mot_wan22_lora` | `robotwin_easywam_mot_cosmos25` | `robotwin_easywam_mot_cosmos25_lora` |
-| EasyWAM-Unified | `robotwin_easywam_unified_wan22` | `robotwin_easywam_unified_wan22_lora` | `robotwin_easywam_unified_cosmos25` | `robotwin_easywam_unified_cosmos25_lora` |
-| EasyWAM-Hidden | `robotwin_easywam_hidden_wan22` | `robotwin_easywam_hidden_wan22_lora` | `robotwin_easywam_hidden_cosmos25` | `robotwin_easywam_hidden_cosmos25_lora` |
+| Architecture | Task |
+| --- | --- |
+| MoT | `robotwin_easywam_mot_wan22` |
+| Hidden | `robotwin_easywam_hidden_wan22` |
+| Unified | `robotwin_easywam_unified_wan22` |
+| MoT-Joint | `robotwin_easywam_mot_joint_wan22` |
+| MoT-IDM | `robotwin_easywam_mot_idm_wan22` |
 
 For example:
 
 ```bash
 NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
-
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
-  task=robotwin_easywam_mot_cosmos25
 ```
 
 The default data config loads normalization statistics from `data/robotwin2.0-lerobot-v3.0/dataset_stats.json`. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.

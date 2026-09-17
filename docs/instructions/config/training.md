@@ -6,7 +6,7 @@ This guide covers the non-model portions of the composed Hydra configuration. De
 
 ## Data configuration
 
-`configs/data/libero_2cam.yaml` and `configs/data/robotwin.yaml` instantiate `RobotVideoDataset` and `WAMProcessor`. Keep these groups consistent when adding or modifying data:
+The configs under `configs/data/` (LIBERO, RoboTwin, RoboCasa, and RoboDojo) instantiate `RobotVideoDataset` and `WAMProcessor`. Keep these groups consistent when adding or modifying data:
 
 | Group | Important settings |
 | --- | --- |
@@ -87,7 +87,7 @@ Choose positive intervals relative to `max_steps`, or set an interval to `0` to 
 
 ## Evaluation configuration
 
-Evaluation roots are under `configs/benchmark/`: `sim_libero.yaml`, `sim_libero_plus.yaml`, `sim_robocasa.yaml`, and `sim_robotwin.yaml`. They inherit `train.yaml`, select a task, enable the runtime text encoder, skip redundant base-DiT initialization, and load the trained weights from `ckpt`.
+Evaluation roots are under `configs/benchmark/`: `sim_libero.yaml`, `sim_libero_plus.yaml`, `sim_robotwin.yaml`, `sim_robocasa.yaml`, and `sim_robodojo.yaml`. They inherit `train.yaml`, select a task, enable the runtime text encoder, skip redundant base-DiT initialization, and load the trained weights from `ckpt`.
 
 Common policy controls include:
 

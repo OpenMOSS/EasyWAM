@@ -20,8 +20,8 @@
 # LIBERO 上的 MoT-Joint + Cosmos2.5
 python scripts/train.py --cfg job task=libero_easywam_mot_joint_cosmos25
 
-# RoboTwin 上使用 LoRA 的 Hidden + Wan2.2
-python scripts/train.py --cfg job task=robotwin_easywam_hidden_wan22_lora
+# LIBERO 上使用 LoRA 的 Hidden + Wan2.2
+python scripts/train.py --cfg job task=libero_easywam_hidden_wan22_lora
 ```
 
 ## Backbone 支持
@@ -65,7 +65,7 @@ Unified 和 Hidden 在模型顶层暴露 `action_dim`；MoT 系列将其放在 `
 
 ## 全参数训练与 LoRA
 
-`_lora` 模型 recipe 会组合 `configs/model/lora/video_dit.yaml`。默认 adapter 的 rank 和 alpha 均为 `128`，dropout 为零，并使用各 backbone 自己的目标模块。应通过 `_lora` task 选择 LoRA；除非 checkpoint 加载协议明确包含 adapter，否则不要向已有全参数 checkpoint 临时附加 LoRA 组。
+`_lora` 模型 recipe 会组合 `configs/model/lora/video_dit.yaml`。默认 adapter 的 rank 和 alpha 均为 `128`，dropout 为零，并使用各 backbone 自己的目标模块。仓库现成的 `_lora` task 配置位于 LIBERO；其他数据集需要自行编写选择对应 `_lora` 模型的 task。除非 checkpoint 加载协议明确包含 adapter，否则不要向已有全参数 checkpoint 临时附加 LoRA 组。
 
 可以在组合配置时覆盖 LoRA 参数：
 

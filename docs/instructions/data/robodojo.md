@@ -28,25 +28,17 @@ The data config reads `cam_high`, `cam_left_wrist`, and `cam_right_wrist`, plus 
 
 ## Training
 
-Precompute the RoboDojo text cache once per backbone. Each prompt is stored in a SHA-256-named file and shared by task variants using that backbone:
+Precompute the RoboDojo Wan2.2 text cache. Each prompt is stored in a SHA-256-named file and shared by the five task variants:
 
 ```bash
 python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_wan22
-python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_cosmos25
-python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
-Launch training by passing the task as a Hydra override. For example:
+The five Wan2.2 recipes are `mot`, `hidden`, `unified`, `mot_joint`, and `mot_idm`, named `robodojo_easywam_<architecture>_wan22`. Their training values match the RoboTwin recipes. Launch training by passing the task as a Hydra override:
 
 ```bash
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=robodojo_easywam_mot_wan22
-
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=robodojo_easywam_mot_cosmos25
-
-NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
-  task=robodojo_easywam_unified_wan22_lora
 ```
 
-Use another `robodojo_*.yaml` recipe in `configs/task/` for a different model. The default data config loads normalization statistics from `data/robodojo_lerobot_v3.0/dataset_stats.json`. Training outputs, including the matching statistics, are saved under `runs/<task>/<run-id>/`.
+Use another `robodojo_*.yaml` recipe in `configs/task/` for a different architecture. The default data config loads normalization statistics from `data/robodojo_lerobot_v3.0/dataset_stats.json`. Training outputs, including the matching statistics, are saved under `runs/<task>/<run-id>/`.

@@ -42,16 +42,16 @@ The selected task determines the dataset directories and cache destination. The 
 
 ## Train
 
-Select a checked-in task named `<benchmark>_easywam_<architecture>_wan22`; append `_lora` for LoRA. For example:
+Select a checked-in task named `<benchmark>_easywam_<architecture>_wan22`. LIBERO also provides `_lora` task recipes. For example:
 
 ```bash
 # Full-parameter MoT training on LIBERO
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=libero_easywam_mot_wan22
 
-# LoRA Unified training on RoboTwin
+# LoRA Unified training on LIBERO
 NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
-  task=robotwin_easywam_unified_wan22_lora
+  task=libero_easywam_unified_wan22_lora
 ```
 
 Available architecture segments are `unified`, `mot`, `mot_joint`, `mot_idm`, and `hidden`. Training outputs are written below `runs/<task>/<run-id>/`.

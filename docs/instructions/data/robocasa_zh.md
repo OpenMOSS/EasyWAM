@@ -35,7 +35,7 @@ python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=robocasa_easywam_mot_wan22
 ```
 
-使用其他模型或 LoRA 时替换为对应 task 配置。数据配置没有指定预计算归一化统计；首次运行时，EasyWAM 会针对 atomic 与 composite 的组合数据计算统计，并保存到：
+五种 Wan2.2 task 配置命名为 `robocasa_easywam_<architecture>_wan22`，架构为 `mot`、`hidden`、`unified`、`mot_joint`、`mot_idm`；训练参数与 RoboTwin 相同。数据配置没有指定预计算归一化统计；首次运行时，EasyWAM 会针对 atomic 与 composite 的组合数据计算统计，并保存到：
 
 ```text
 runs/robocasa_easywam_mot_wan22/<run-id>/dataset_stats.json

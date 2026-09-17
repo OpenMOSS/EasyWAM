@@ -20,8 +20,8 @@ Use the corresponding task rather than editing `_target_` manually:
 # MoT-Joint + Cosmos2.5 on LIBERO
 python scripts/train.py --cfg job task=libero_easywam_mot_joint_cosmos25
 
-# Hidden + Wan2.2 with LoRA on RoboTwin
-python scripts/train.py --cfg job task=robotwin_easywam_hidden_wan22_lora
+# Hidden + Wan2.2 with LoRA on LIBERO
+python scripts/train.py --cfg job task=libero_easywam_hidden_wan22_lora
 ```
 
 ## Backbone support
@@ -65,7 +65,7 @@ Use `scripts/preprocess_action_dit_backbone.py` to build the ActionDiT initializ
 
 ## Full training and LoRA
 
-A `_lora` model recipe adds `configs/model/lora/video_dit.yaml`. The default adapter uses rank and alpha `128`, zero dropout, and backbone-specific target modules. Choose LoRA by selecting a `_lora` task; do not attach the group to an already trained full-model checkpoint unless that checkpoint's loading contract expects adapters.
+A `_lora` model recipe adds `configs/model/lora/video_dit.yaml`. The default adapter uses rank and alpha `128`, zero dropout, and backbone-specific target modules. Checked-in `_lora` task recipes are under LIBERO; for another dataset, write a task recipe selecting the appropriate `_lora` model. Do not attach the group to an already trained full-model checkpoint unless that checkpoint's loading contract expects adapters.
 
 Override LoRA parameters when composing the run:
 

@@ -15,7 +15,7 @@ configs/
 │   ├── lora/                  # LoRA adapter settings
 │   └── easywam_*.yaml         # EasyWAM architecture definitions
 ├── task/                      # Ready-to-run data + model + training recipes
-└── sim_*.yaml                 # Benchmark evaluation defaults
+└── benchmark/sim_*.yaml       # Benchmark evaluation defaults
 ```
 
 `configs/train.yaml` is the root training configuration. A task config overrides its `data` and `model` groups and then applies benchmark-specific training values. Model configs compose a backbone and, for LoRA recipes, a LoRA config.
@@ -30,6 +30,33 @@ train.yaml
 ```
 
 Use a task recipe for normal training and evaluation. Override `data=` or `model=` directly only when building a new recipe and after checking that action/state dimensions and backbone dimensions remain compatible.
+
+## Write a task recipe
+
+Create `configs/task/<dataset>_easywam_<architecture>_<backbone>.yaml`. The task selects an existing data config and model config; it does not duplicate their camera, normalization, or architecture settings. For example, the RoboCasa MoT-Joint recipe is:
+
+```yaml
+# @package _global_
+defaults:
+  - override /data: robocasa
+  - override /model: easywam_mot_joint_wan22
+  - _self_
+
+batch_size: 16
+num_workers: 8
+lr_scheduler_type: cosine
+learning_rate: 1e-4
+max_steps: 30000
+log_every: 100
+save_every: 3000
+eval_every: 1000
+eval_num_inference_steps: 10
+gradient_accumulation_steps: 1
+weight_decay: 1e-2
+resume: null
+```
+
+Keep `_self_` after the group overrides so task values take precedence. RoboTwin, RoboCasa, and RoboDojo each ship five Wan2.2 architectures: `mot`, `hidden`, `unified`, `mot_joint`, and `mot_idm`; RoboCasa and RoboDojo use the same training values as RoboTwin. LIBERO retains its broader set of task recipes. The absence of a prewritten `_lora` task for another dataset does not remove LoRA support: create a task selecting the matching `_lora` model. To add another dataset, first define its `configs/data/<dataset>.yaml` and verify the action/state dimensions against the selected model, then create the task file. Check the result with `python scripts/train.py --cfg job task=<task-name>` before precomputing text embeddings or training. See [training configuration](training.md) for the meaning of each field.
 
 ## Inspect and override configuration
 

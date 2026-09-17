@@ -35,7 +35,7 @@ python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=robocasa_easywam_mot_wan22
 ```
 
-Use the matching task recipe for another model or LoRA training. No pretrained normalization file is configured. During the first run, EasyWAM computes the combined atomic-and-composite statistics and writes them to:
+The five Wan2.2 task recipes are `robocasa_easywam_<architecture>_wan22` with `mot`, `hidden`, `unified`, `mot_joint`, or `mot_idm`. Their training values match RoboTwin. No pretrained normalization file is configured. During the first run, EasyWAM computes the combined atomic-and-composite statistics and writes them to:
 
 ```text
 runs/robocasa_easywam_mot_wan22/<run-id>/dataset_stats.json

@@ -28,25 +28,17 @@ data/robodojo_lerobot_v3.0/
 
 ## 训练
 
-每个 backbone 预计算一次 RoboDojo 文本 cache。每条 prompt 按 SHA-256 哈希单独存储，使用该 backbone 的任务配置共享缓存：
+预计算一次 RoboDojo Wan2.2 文本 cache。每条 prompt 按 SHA-256 哈希单独存储，五种 task 配置共享该缓存：
 
 ```bash
 python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_wan22
-python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_cosmos25
-python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
-将 task 作为 Hydra override 启动训练，例如：
+五种 Wan2.2 配置为 `mot`、`hidden`、`unified`、`mot_joint`、`mot_idm`，命名为 `robodojo_easywam_<architecture>_wan22`。训练参数与 RoboTwin 配置相同。将 task 作为 Hydra override 启动训练：
 
 ```bash
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=robodojo_easywam_mot_wan22
-
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=robodojo_easywam_mot_cosmos25
-
-NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
-  task=robodojo_easywam_unified_wan22_lora
 ```
 
-需要训练其他模型时，换用 `configs/task/` 下对应的 `robodojo_*.yaml` 配方。默认数据配置从 `data/robodojo_lerobot_v3.0/dataset_stats.json` 加载归一化统计。训练结果及其配套统计保存在 `runs/<task>/<run-id>/`。
+需要训练其他架构时，换用 `configs/task/` 下对应的 `robodojo_*.yaml` 配方。默认数据配置从 `data/robodojo_lerobot_v3.0/dataset_stats.json` 加载归一化统计。训练结果及其配套统计保存在 `runs/<task>/<run-id>/`。

@@ -42,12 +42,9 @@ FLUX.2 training consumes the ImageWAM-compatible Qwen3 cache format. Use the sam
 
 ```bash
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_flux2_klein_4b
-python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_flux2_klein_4b
-python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_flux2_klein_4b
-python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
-Run only the command for datasets you use. Each task inherits its cache directory from its data configuration, and train/validation splits share it where applicable. LIBERO uses 128 tokens; RoboTwin, RoboCasa365, and RoboDojo use 512. A custom cache location can be supplied with `data.train.text_embedding_cache_dir` and, for datasets with a validation split, `data.val.text_embedding_cache_dir` in both precomputation and training commands.
+The precomputation script is dataset-agnostic; create a matching FLUX.2 task recipe as described in the [configuration guide](../config/README.md) when using another dataset. Each task inherits its cache directory from its data configuration, and train/validation splits share it where applicable. LIBERO uses 128 tokens; RoboTwin, RoboCasa365, and RoboDojo use 512. A custom cache location can be supplied with `data.train.text_embedding_cache_dir` and, for datasets with a validation split, `data.val.text_embedding_cache_dir` in both precomputation and training commands.
 
 Each cache file is named `<sha256>.qwen3_flux2_len<context_len>.pt` and contains `text_hidden_states` with shape `[context_len, D]` plus a boolean `text_attention_mask` with shape `[context_len]`.
 
@@ -58,9 +55,6 @@ After precomputation, train using the matching task. For example:
 ```bash
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=libero_easywam_mot_flux2_klein_4b
-
-NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
 FLUX.2 currently trains one endpoint image. Its MoT implementation uses Qwen3 text features, the FLUX.2 autoencoder, the official Klein image expert, and `ActionDiTFlux2`; it does not require `scripts/preprocess_action_dit_backbone.py`.
@@ -74,13 +68,8 @@ Use the matching FLUX.2 task recipe and an EasyWAM or ImageWAM-compatible checkp
 python experiments/libero/run_libero_manager.py \
   task=libero_easywam_mot_flux2_klein_4b \
   ckpt=<path/to/checkpoint.pt>
-
-# RoboTwin
-python experiments/robotwin/run_robotwin_manager.py \
-  task=robotwin_easywam_mot_flux2_klein_4b \
-  ckpt=<path/to/checkpoint.pt>
 ```
 
 The action-only closed-loop path encodes text, the current image, and proprioception once, caches the FLUX.2 prefix K/V tensors, and denoises the requested action horizon. ImageWAM checkpoints are migrated during loading and must have exact tensor coverage. Use the checkpoint's matching `dataset_stats.json`.
 
-Follow the [LIBERO evaluation guide](../benchmark/libero.md), [LIBERO-Plus guide](../benchmark/libero_plus.md), or [RoboTwin evaluation guide](../benchmark/robotwin.md) for simulator setup, batching, and result layout. The ImageWAM release contract uses a 16-step action chunk, executes 12 steps before replanning, and uses 10 denoising steps; pass those values explicitly when reproducing that policy.
+Follow the [LIBERO evaluation guide](../benchmark/libero.md) or [LIBERO-Plus guide](../benchmark/libero_plus.md) for simulator setup, batching, and result layout. The ImageWAM release contract uses a 16-step action chunk, executes 12 steps before replanning, and uses 10 denoising steps; pass those values explicitly when reproducing that policy.

@@ -1,5 +1,4 @@
 # @package _global_
-# Untuned RoboDojo training baseline.
 
 defaults:
   - override /data: robodojo

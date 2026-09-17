@@ -34,24 +34,22 @@ EasyWAM 仍兼容 LeRobot v2.1 数据，并为需要转换到 v3.0 的用户提�
 
 ```bash
 python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
-python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_cosmos25
 ```
 
-当前有效的任务名如下：
+当前提供五种 Wan2.2 task 配置：
 
-| 模型 | Wan 全量 | Wan LoRA | Cosmos 全量 | Cosmos LoRA |
-| --- | --- | --- | --- | --- |
-| EasyWAM-MoT | `robotwin_easywam_mot_wan22` | `robotwin_easywam_mot_wan22_lora` | `robotwin_easywam_mot_cosmos25` | `robotwin_easywam_mot_cosmos25_lora` |
-| EasyWAM-Unified | `robotwin_easywam_unified_wan22` | `robotwin_easywam_unified_wan22_lora` | `robotwin_easywam_unified_cosmos25` | `robotwin_easywam_unified_cosmos25_lora` |
-| EasyWAM-Hidden | `robotwin_easywam_hidden_wan22` | `robotwin_easywam_hidden_wan22_lora` | `robotwin_easywam_hidden_cosmos25` | `robotwin_easywam_hidden_cosmos25_lora` |
+| 架构 | Task |
+| --- | --- |
+| MoT | `robotwin_easywam_mot_wan22` |
+| Hidden | `robotwin_easywam_hidden_wan22` |
+| Unified | `robotwin_easywam_unified_wan22` |
+| MoT-Joint | `robotwin_easywam_mot_joint_wan22` |
+| MoT-IDM | `robotwin_easywam_mot_idm_wan22` |
 
 例如：
 
 ```bash
 NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
-
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
-  task=robotwin_easywam_mot_cosmos25
 ```
 
 默认数据配置从 `data/robotwin2.0-lerobot-v3.0/dataset_stats.json` 加载归一化统计。如果使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
