@@ -32,7 +32,7 @@ python experiments/robocasa/run_robocasa_manager.py \
   EVALUATION.dataset_stats_path=./runs/robocasa_easywam_mot_wan22/<run-id>/dataset_stats.json
 ```
 
-The default is 8 GPUs, one model worker per GPU, 4 rollout actors per worker, inference batches up to 4, a 10 ms batching window, a 32-action prediction horizon, and replanning every 16 actions. With `MULTIRUN.gpu_ids=null`, the first `num_gpus` devices are used; otherwise the first `num_gpus` entries of the ordered `gpu_ids` candidate pool are selected. Workers are assigned to the selected GPUs in round-robin order. Every worker loads its own model and owns an independent dynamic inference batcher, so increasing `workers_per_gpu` also increases GPU memory use.
+The default is 8 GPUs, two model workers per GPU, 20 rollout actors per worker, inference batches up to 16, a 5 ms batching window, a 32-action prediction horizon, and replanning every 16 actions. These defaults are resource-intensive; reduce `workers_per_gpu`, `env_num_per_worker`, and `inference_batch_size` together when memory is limited. With `MULTIRUN.gpu_ids=null`, the first `num_gpus` devices are used; otherwise the first `num_gpus` entries of the ordered `gpu_ids` candidate pool are selected. Workers are assigned to the selected GPUs in round-robin order. Every worker loads its own model and owns an independent dynamic inference batcher, so increasing `workers_per_gpu` also increases GPU memory use.
 
 Useful overrides:
 
@@ -41,9 +41,10 @@ Useful overrides:
 python experiments/robocasa/run_robocasa_manager.py \
   task=robocasa_easywam_mot_wan22 ckpt=<checkpoint> \
   EVALUATION.dataset_stats_path=<dataset_stats.json> \
-  'MULTIRUN.task_sets=[atomic_seen]' MULTIRUN.num_gpus=3 \
+  'MULTIRUN.task_sets=[atomic_seen]' MULTIRUN.num_gpus=4 \
   'MULTIRUN.gpu_ids=[1,3,5,7]' \
-  MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4
+  MULTIRUN.workers_per_gpu=2 MULTIRUN.env_num_per_worker=4 \
+  MULTIRUN.inference_batch_size=4
 
 # Evaluate one task
 python experiments/robocasa/run_robocasa_manager.py \
@@ -60,7 +61,7 @@ python experiments/robocasa/run_robocasa_manager.py \
 
 Set **EVALUATION.video_mode=failures** or **all** to save three-camera rollout videos. Videos are off by default.
 
-Results are stored under **evaluate_results/robocasa/robocasa_easywam_mot_wan22/<timestamp>/**. Each task has a result JSON and optional videos; the run root contains worker logs, the resolved config, simulator version/commit metadata, **summary.json**, **summary.csv**, and **task_success_rates.csv**. The overall rate is weighted across all evaluated episodes (equivalent to the 50-task leaderboard mean when every task has 50 trials).
+Results are stored under **evaluate_results/robocasa/robocasa_easywam_mot_wan22/<timestamp>/**. Each task has a result JSON and optional videos; the run root contains worker logs, the resolved config, simulator version/commit metadata, **summary.json**, **summary.csv**, and **task_success_rates.csv**. A worker failure still writes a partial summary before returning an error. The overall rate is weighted across all evaluated episodes (equivalent to the 50-task leaderboard mean when every task has 50 trials).
 
 To resume, reuse the exact output directory:
 

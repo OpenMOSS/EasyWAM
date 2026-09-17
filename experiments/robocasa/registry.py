@@ -46,6 +46,22 @@ def validate_task_sets(
 def load_official_jobs(
     requested: Iterable[str], robocasa_root: str | Path | None
 ) -> tuple[list[tuple[str, str]], object]:
+    try:
+        robosuite_version = importlib.metadata.version("robosuite")
+    except importlib.metadata.PackageNotFoundError as error:
+        raise RuntimeError(
+            "RoboCasa evaluation requires robosuite from its current master branch. "
+            "Install robosuite before loading the task registry."
+        ) from error
+    try:
+        if Version(robosuite_version) < Version("1.5.0"):
+            raise RuntimeError(
+                f"Installed robosuite {robosuite_version} is too old for RoboCasa365 "
+                "(it lacks PandaOmron). Install the robosuite master branch "
+                "as described in the RoboCasa evaluation guide."
+            )
+    except InvalidVersion as error:
+        raise RuntimeError(f"Could not parse robosuite version {robosuite_version!r}.") from error
     if robocasa_root:
         root = str(Path(robocasa_root).expanduser().resolve())
         if root not in sys.path:
@@ -55,8 +71,9 @@ def load_official_jobs(
         from robocasa.utils.dataset_registry_utils import get_task_horizon
     except Exception as error:
         raise RuntimeError(
-            "Could not import the official RoboCasa task registry. Install RoboCasa "
-            "in this environment or set EVALUATION.robocasa_root to its checkout."
+            "Could not import the official RoboCasa task registry: "
+            f"{type(error).__name__}: {error}. Check the RoboCasa and robosuite "
+            "installation, or set EVALUATION.robocasa_root to its checkout."
         ) from error
     try:
         installed_version = importlib.metadata.version("robocasa")

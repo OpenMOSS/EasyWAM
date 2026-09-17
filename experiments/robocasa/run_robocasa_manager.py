@@ -239,12 +239,11 @@ def run_evaluation(
         _terminate(processes)
         for handle in handles:
             handle.close()
+        from experiments.robocasa.summarize_results import summarize_results
 
-    from experiments.robocasa.summarize_results import summarize_results
-
-    summarize_results(
-        output_dir, jobs, split=split, expected_episodes=expected_episodes
-    )
+        summarize_results(
+            output_dir, jobs, split=split, expected_episodes=expected_episodes
+        )
 
 
 @hydra.main(
