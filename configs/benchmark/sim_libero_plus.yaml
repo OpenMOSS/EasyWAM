@@ -60,11 +60,11 @@ MULTIRUN:
   categories: null
   difficulty_levels: null
   task_ids: null
-  num_gpus: 2
+  num_gpus: 4
   gpu_ids: null
   workers_per_gpu: 5
   env_num_per_worker: 20
-  inference_batch_size: 16
+  inference_batch_size: 8
   inference_batch_wait_ms: 5
   prompt_cache_size: 40
 
