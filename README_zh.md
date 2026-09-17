@@ -11,7 +11,7 @@
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836.svg" alt="中文 README"></a>
   <a href="https://openmoss.github.io/EasyWAM/"><img src="https://img.shields.io/badge/Website-EasyWAM-0969da.svg" alt="EasyWAM Website"></a>
   <a href="https://huggingface.co/collections/OpenMOSS-Team/easywam"><img src="https://img.shields.io/badge/HF%20Model-Checkpoints-FFD21E.svg?logo=huggingface&logoColor=000000" alt="Hugging Face Models"></a>
-  <a href="https://github.com/OpenMOSS/EasyWAM/issues/1#issue-5314445304"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
+  <a href="#-联系我们"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
 </p>
 
 **从这里开始：** [快速开始](#-快速开始) · [支持的模型](#-支持的模型与-benchmark) · [评测结果](#-benchmark-结果) · [模型下载](https://huggingface.co/collections/OpenMOSS-Team/easywam) · [文档](#-文档)
@@ -285,6 +285,14 @@ EasyWAM 由社区共同建设，我们欢迎各种规模的贡献。你可以帮
   url    = {https://github.com/OpenMOSS/EasyWAM}
 }
 ```
+
+## 📮 联系我们
+
+如果你有任何问题或建议，欢迎加入我们的微信交流群。
+
+<p align="center">
+  <img src="assets/EasyWAM-community.png" alt="EasyWAM 微信交流群" width="320">
+</p>
 
 ## Star History
 

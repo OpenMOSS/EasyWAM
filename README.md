@@ -11,7 +11,7 @@
   <a href="./README_zh.md"><img src="https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-d14836.svg" alt="中文 README"></a>
   <a href="https://openmoss.github.io/EasyWAM/"><img src="https://img.shields.io/badge/Website-EasyWAM-0969da.svg" alt="EasyWAM Website"></a>
   <a href="https://huggingface.co/collections/OpenMOSS-Team/easywam"><img src="https://img.shields.io/badge/HF%20Model-Checkpoints-FFD21E.svg?logo=huggingface&logoColor=000000" alt="Hugging Face Models"></a>
-  <a href="https://github.com/OpenMOSS/EasyWAM/issues/1#issue-5314445304"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
+  <a href="#-contact"><img src="https://img.shields.io/badge/WeChat-Join%20Discussion%20Group-brightgreen?logo=wechat" alt="WeChat"></a>
 </p>
 
 **Start here:** [Quick start](#-quick-start) · [Supported models](#-supported-models-and-benchmarks) · [Benchmark results](#-benchmark-results) · [Checkpoints](https://huggingface.co/collections/OpenMOSS-Team/easywam) · [Documentation](#-documentation)
@@ -285,6 +285,14 @@ We welcome you to cite **EasyWAM**'s experimental results and codebase in your r
   url    = {https://github.com/OpenMOSS/EasyWAM}
 }
 ```
+
+## 📮 Contact
+
+If you have any questions or suggestions, feel free to join our WeChat discussion group.
+
+<p align="center">
+  <img src="assets/EasyWAM-community.png" alt="EasyWAM WeChat Group" width="320">
+</p>
 
 ## Star History
 
