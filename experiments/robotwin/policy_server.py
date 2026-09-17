@@ -44,13 +44,14 @@ def _load_config(path: Path, overrides: list[str]) -> dict[str, Any]:
     return payload
 
 
-def _install_xpolicylab_path(robotwin_root: Path) -> None:
-    xpolicylab_root = robotwin_root / "XPolicyLab"
+def _install_xpolicylab_path(sim_root: Path) -> None:
+    xpolicylab_root = sim_root / "XPolicyLab"
     if not (xpolicylab_root / "client_server" / "ws" / "model_server.py").is_file():
         raise FileNotFoundError(
-            "RoboTwin's XPolicyLab submodule is missing. Clone RoboTwin with "
+            "The XPolicyLab submodule is missing. Clone the simulator with "
             "--recurse-submodules or run git submodule update --init --recursive."
         )
+    sys.path.insert(0, str(sim_root))
     sys.path.insert(0, str(xpolicylab_root))
 
 
@@ -71,7 +72,7 @@ def _server_class():
                 if not isinstance(command, str) or not command or command.startswith("_"):
                     raise ValueError(f"Invalid model function: {command!r}")
                 payload = frame.payload.get("obs")
-                if payload is not None:
+                if payload is not None and command in {"update_obs", "update_obs_batch"}:
                     payload = await asyncio.to_thread(decode_obs_images, payload)
                 started = time.perf_counter()
                 result = await self._invoke(frame, command, payload)
@@ -117,8 +118,8 @@ def main() -> None:
     parser.add_argument("--overrides", nargs=argparse.REMAINDER, default=[])
     args = parser.parse_args()
 
-    robotwin_root = args.robotwin_root.expanduser().resolve()
-    _install_xpolicylab_path(robotwin_root)
+    sim_root = args.robotwin_root.expanduser().resolve()
+    _install_xpolicylab_path(sim_root)
     config = _load_config(args.config.expanduser().resolve(), args.overrides)
 
     from client_server.ws.model_server import PolicyServerConfig

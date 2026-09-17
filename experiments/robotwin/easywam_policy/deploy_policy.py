@@ -5,6 +5,7 @@ import time
 import inspect
 import threading
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -28,7 +29,7 @@ if str(SRC_ROOT) not in sys.path:
 from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
-from experiments.batched_inference import DynamicInferenceBatcher
+from experiments.robotwin.batched_inference import DynamicInferenceBatcher
 from model.helpers.inference import configure_inference_compile, configure_model_execution
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 class _PolicySession:
     pending_actions: deque[np.ndarray] = field(default_factory=deque)
     observation: Optional[Dict[str, Any]] = None
+    batch_observations: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     episode_count: int = 0
     step_count: int = 0
     timing: Dict[str, float] = field(
@@ -150,8 +152,15 @@ def _resize_rgb(image: np.ndarray, size_wh: tuple[int, int]) -> np.ndarray:
     return np.asarray(resized, dtype=np.uint8)
 
 
+def _observation_instruction(observation: Dict[str, Any]) -> str:
+    value = observation.get("instruction", observation.get("instructions", ""))
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value)
+
+
 def pack_xpolicylab_joint_state(observation: Dict[str, Any]) -> np.ndarray:
-    """Pack RoboTwin's XPolicyLab dual-arm joint state in dataset order."""
+    """Pack XPolicyLab dual-arm joint state in the joint-only dataset order."""
     state = observation.get("state")
     if not isinstance(state, dict):
         raise KeyError("XPolicyLab observation is missing the 'state' mapping.")
@@ -164,13 +173,16 @@ def pack_xpolicylab_joint_state(observation: Dict[str, Any]) -> np.ndarray:
     missing = [key for key in keys if key not in state]
     if missing:
         raise KeyError(f"XPolicyLab observation is missing state keys: {missing}")
-    return np.concatenate(
+    vector = np.concatenate(
         [np.asarray(state[key], dtype=np.float32).reshape(-1) for key in keys]
     )
+    if vector.shape != (14,):
+        raise ValueError(f"Expected a 14-D joint state, got shape {vector.shape}.")
+    return vector
 
 
 def action_vector_to_xpolicylab(action: np.ndarray) -> Dict[str, Any]:
-    """Convert EasyWAM's 14-D RoboTwin action to XPolicyLab joint fields."""
+    """Convert EasyWAM's 14-D action to XPolicyLab joint fields."""
     vector = np.asarray(action, dtype=np.float32).reshape(-1)
     if vector.shape != (14,):
         raise ValueError(f"Expected a 14-D RoboTwin action, got shape {vector.shape}.")
@@ -244,6 +256,7 @@ class WorldActionRobotWinPolicy:
             wait_ms=inference_batch_wait_ms,
             prompt_cache_size=prompt_cache_size,
         )
+        self._batch_executor = ThreadPoolExecutor(max_workers=max(1, inference_batch_size))
         self._supports_num_video_frames = (
             "num_video_frames" in inspect.signature(self.model.infer_action_batch).parameters
         )
@@ -413,6 +426,7 @@ class WorldActionRobotWinPolicy:
         session = self._sessions["local"]
         session.pending_actions.clear()
         session.observation = None
+        session.batch_observations.clear()
         session.episode_count += 1
         session.step_count = 0
         self.reset_timing_rollout()
@@ -425,10 +439,23 @@ class WorldActionRobotWinPolicy:
                 raise TypeError("update_obs expects one XPolicyLab observation mapping.")
             session.observation = payload
             return None
+        if command == "update_obs_batch":
+            if not isinstance(payload, list):
+                raise TypeError("update_obs_batch expects a list of observations.")
+            observations = {}
+            for observation in payload:
+                if not isinstance(observation, dict) or "env_idx" not in observation:
+                    raise TypeError("Each batch observation must contain env_idx.")
+                index = int(observation["env_idx"])
+                if index in observations:
+                    raise ValueError(f"Duplicate env_idx in batch: {index}")
+                observations[index] = observation
+            session.batch_observations = observations
+            return None
         if command == "get_action":
             if session.observation is None:
                 raise ValueError("get_action requires update_obs to be called first.")
-            instruction = str(session.observation.get("instruction", ""))
+            instruction = _observation_instruction(session.observation)
             action_chunk = self._infer_action_chunk(
                 session.observation, instruction, session
             )
@@ -437,9 +464,30 @@ class WorldActionRobotWinPolicy:
                 action_vector_to_xpolicylab(action_chunk[index])
                 for index in range(n_exec)
             ]
+        if command == "get_action_batch":
+            if not isinstance(payload, list):
+                raise TypeError("get_action_batch expects a list of environment indices.")
+            indices = [int(index) for index in payload]
+            if len(set(indices)) != len(indices):
+                raise ValueError("get_action_batch contains duplicate environment indices.")
+            missing = [index for index in indices if index not in session.batch_observations]
+            if missing:
+                raise ValueError(f"Missing observations for environment indices: {missing}")
+
+            def infer(index: int) -> list[Dict[str, Any]]:
+                observation = session.batch_observations[index]
+                instruction = _observation_instruction(observation)
+                chunk = self._infer_action_chunk(observation, instruction, session)
+                return [
+                    action_vector_to_xpolicylab(chunk[step])
+                    for step in range(min(self.replan_steps, chunk.shape[0]))
+                ]
+
+            return list(self._batch_executor.map(infer, indices))
         if command == "reset":
             session.pending_actions.clear()
             session.observation = None
+            session.batch_observations.clear()
             session.episode_count += 1
             session.step_count = 0
             session.timing = {"prompt_encode_s": 0.0, "infer_s": 0.0, "sim_s": 0.0}
@@ -447,6 +495,7 @@ class WorldActionRobotWinPolicy:
         if command == "trial_end":
             session.pending_actions.clear()
             session.observation = None
+            session.batch_observations.clear()
             return None
         if command == "get_timing_rollout":
             return {key: float(value) for key, value in session.timing.items()}
@@ -457,6 +506,7 @@ class WorldActionRobotWinPolicy:
             self._sessions.pop(session_id, None)
 
     def close(self) -> None:
+        self._batch_executor.shutdown(wait=True)
         self.batcher.close()
 
 
