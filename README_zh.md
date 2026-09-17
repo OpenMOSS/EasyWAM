@@ -194,7 +194,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_cosmos25
 
 # 4 张本机 GPU，DeepSpeed ZeRO-2 LoRA 训练
-NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_wan22_lora
+NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=libero_easywam_unified_wan22_lora
 
 # RoboDojo joint-only LeRobot v3 训练
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=robodojo_easywam_mot_wan22
