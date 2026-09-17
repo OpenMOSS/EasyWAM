@@ -275,7 +275,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
             if not cache_path.is_file():
                 raise FileNotFoundError(
                     f"Missing FLUX.2 Qwen3 text cache: {cache_path}. "
-                    "Run ImageWAM scripts/flux2/precompute_flux2_qwen3_embeds.py."
+                    "Run scripts/precompute_text_embeds.py for the selected task."
                 )
             payload = torch.load(cache_path, map_location="cpu", weights_only=True)
             context = payload["text_hidden_states"]

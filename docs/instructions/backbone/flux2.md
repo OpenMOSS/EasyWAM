@@ -2,7 +2,7 @@
 
 [Backbone index](README.md) | [Backbone configuration](../config/models.md) | [Back to project README](../../../README.md)
 
-EasyWAM integrates the official FLUX.2 double-stream and single-stream blocks with the ImageWAM-compatible ActionDiT and checkpoint contract. The checked-in recipes support EasyWAM-MoT on LIBERO and RoboTwin. The default paths and runtime settings live in `configs/model/backbone/flux2_klein_4b.yaml`.
+EasyWAM integrates the official FLUX.2 double-stream and single-stream blocks with the ImageWAM-compatible ActionDiT and checkpoint contract. The checked-in training recipes support EasyWAM-MoT on LIBERO, RoboTwin, RoboCasa365, and RoboDojo. The default paths and runtime settings live in `configs/model/backbone/flux2_klein_4b.yaml`.
 
 ## Prepare the backbone
 
@@ -27,7 +27,7 @@ huggingface-cli download black-forest-labs/FLUX.2-dev \
   --local-dir checkpoints/flux2/FLUX.2-dev
 ```
 
-The text encoder defaults to `Qwen/Qwen3-4B` and is downloaded by Transformers when evaluation first loads it. For an offline installation, download it explicitly and override the config:
+The text encoder defaults to `Qwen/Qwen3-4B` and is downloaded by Transformers when text precomputation or evaluation first loads it. For an offline installation, download it explicitly and override the config:
 
 ```bash
 huggingface-cli download Qwen/Qwen3-4B \
@@ -38,45 +38,29 @@ Then pass `model.backbone.qwen3_model_spec=./checkpoints/Qwen3-4B` to training a
 
 ## Prepare text embeddings
 
-FLUX.2 training consumes the ImageWAM Qwen3 cache format. Clone [ImageWAM](https://github.com/yuyangalin/ImageWAM), then run its cache script against the prepared [LIBERO](../data/libero.md) or [RoboTwin](../data/robotwin.md) dataset. For example, from the ImageWAM root:
+FLUX.2 training consumes the ImageWAM-compatible Qwen3 cache format. Use the same EasyWAM precomputation command as for Wan2.2 and Cosmos2.5, selecting the training task for your dataset:
 
 ```bash
-torchrun --standalone --nproc_per_node=8 \
-  scripts/flux2/precompute_flux2_qwen3_embeds.py \
-  task=libero_flux2_imagewam \
-  'data.train.dataset_dirs=[/absolute/path/to/libero_spatial,/absolute/path/to/libero_object,/absolute/path/to/libero_goal,/absolute/path/to/libero_10]' \
-  data.train.qwen_text_cache_dir=/absolute/path/to/qwen3/cache \
-  data.train.qwen_context_len=128 \
-  data.train.qwen_text_cache_format=qwen3_flux2 \
-  model.flux2_src_path=/absolute/path/to/third_party/flux2 \
-  model.variant=klein-base-4b
+python scripts/precompute_text_embeds.py task=libero_easywam_mot_flux2_klein_4b
+python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_flux2_klein_4b
+python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_flux2_klein_4b
+python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
-Use `qwen_context_len=128` for the checked-in LIBERO recipe and `qwen_context_len=512` for the checked-in RoboTwin recipe. Point both EasyWAM dataset splits to the generated directory:
+Run only the command for datasets you use. Each task inherits its cache directory from its data configuration, and train/validation splits share it where applicable. LIBERO uses 128 tokens; RoboTwin, RoboCasa365, and RoboDojo use 512. A custom cache location can be supplied with `data.train.text_embedding_cache_dir` and, for datasets with a validation split, `data.val.text_embedding_cache_dir` in both precomputation and training commands.
 
-```text
-data.train.text_embedding_cache_dir=/path/to/qwen3/cache
-data.val.text_embedding_cache_dir=/path/to/qwen3/cache
-```
-
-Each cache file must be named `<sha256>.qwen3_flux2_len<context_len>.pt` and contain `text_hidden_states` with shape `[context_len, D]` plus a boolean `text_attention_mask` with shape `[context_len]`. `scripts/precompute_text_embeds.py` currently handles Wan2.2 and Cosmos2.5 only; it does not produce this format.
+Each cache file is named `<sha256>.qwen3_flux2_len<context_len>.pt` and contains `text_hidden_states` with shape `[context_len, D]` plus a boolean `text_attention_mask` with shape `[context_len]`.
 
 ## Train
 
-Pass the cache location required by the FLUX.2 task recipe:
+After precomputation, train using the matching task. For example:
 
 ```bash
-# LIBERO
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=libero_easywam_mot_flux2_klein_4b \
-  data.train.text_embedding_cache_dir=/path/to/qwen3/cache \
-  data.val.text_embedding_cache_dir=/path/to/qwen3/cache
+  task=libero_easywam_mot_flux2_klein_4b
 
-# RoboTwin
 NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
-  task=robotwin_easywam_mot_flux2_klein_4b \
-  data.train.text_embedding_cache_dir=/path/to/qwen3/cache \
-  data.val.text_embedding_cache_dir=/path/to/qwen3/cache
+  task=robodojo_easywam_mot_flux2_klein_4b
 ```
 
 FLUX.2 currently trains one endpoint image. Its MoT implementation uses Qwen3 text features, the FLUX.2 autoencoder, the official Klein image expert, and `ActionDiTFlux2`; it does not require `scripts/preprocess_action_dit_backbone.py`.

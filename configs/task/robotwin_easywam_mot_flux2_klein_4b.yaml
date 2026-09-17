@@ -5,12 +5,6 @@ defaults:
   - override /model: easywam_mot_flux2_klein_4b
   - _self_
 
-data:
-  train:
-    text_embedding_cache_dir: ???
-  val:
-    text_embedding_cache_dir: ???
-
 batch_size: 12
 num_workers: 8
 lr_scheduler_type: cosine

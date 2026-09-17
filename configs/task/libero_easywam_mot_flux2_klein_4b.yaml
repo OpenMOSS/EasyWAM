@@ -7,13 +7,10 @@ defaults:
 
 data:
   train:
-    text_embedding_cache_dir: ???
     # Match the released ImageWAM LIBERO policy contract.
     num_frames: 17
     action_video_freq_ratio: 1
     context_len: 128
-  val:
-    text_embedding_cache_dir: ???
 
 model:
   backbone:

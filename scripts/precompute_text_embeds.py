@@ -171,6 +171,35 @@ def _atomic_torch_save(payload: dict[str, Any], output_path: Path):
     os.replace(tmp_path, output_path)
 
 
+def _cache_filename(prompt_digest: str, context_len: int, encoder_id: str) -> str:
+    if encoder_id == "qwen3_flux2":
+        return f"{prompt_digest}.qwen3_flux2_len{context_len}.pt"
+    return text_embedding_cache_filename(
+        prompt_digest, context_len, encoder_id, is_hash=True
+    )
+
+
+def _cache_payload(
+    context: torch.Tensor,
+    mask: torch.Tensor,
+    context_len: int,
+    encoder_id: str,
+    prompt_digest: str,
+) -> dict[str, Any]:
+    if encoder_id == "qwen3_flux2":
+        return {
+            "text_hidden_states": context,
+            "text_attention_mask": mask,
+        }
+    return build_text_embedding_payload(
+        context=context,
+        mask=mask,
+        context_len=context_len,
+        encoder_id=encoder_id,
+        prompt_digest=prompt_digest,
+    )
+
+
 @hydra.main(config_path="../configs", config_name="train", version_base="1.3")
 def main(cfg: DictConfig):
     setup_logging(log_level=logging.INFO)
@@ -232,6 +261,11 @@ def main(cfg: DictConfig):
         # Cosmos-Reason bundles the matching tokenizer with the text encoder.
         text_encoder_model_id = str(reason_model_id)
         tokenizer_model_id = str(reason_model_id)
+    elif backbone_name == "flux2":
+        text_encoder_model_id = str(backbone_cfg.qwen3_model_spec)
+        tokenizer_model_id = text_encoder_model_id
+        if enc_id != "qwen3_flux2":
+            raise ValueError("FLUX.2 text cache requires text_encoder_id=qwen3_flux2.")
     else:
         raise ValueError(f"Unsupported backbone for text caching: {backbone_name!r}")
 
@@ -282,6 +316,23 @@ def main(cfg: DictConfig):
             torch_dtype=torch_dtype,
         )
         text_encoder.set_projector(projection)
+    elif backbone_name == "flux2":
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        from model.backbone.flux2.text_encoder import Flux2Qwen3TextEncoder
+
+        qwen_tokenizer = AutoTokenizer.from_pretrained(tokenizer_model_id)
+        qwen = AutoModelForCausalLM.from_pretrained(
+            text_encoder_model_id,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+        ).eval().requires_grad_(False).to(device)
+        text_encoder = Flux2Qwen3TextEncoder(
+            qwen,
+            qwen_tokenizer,
+            output_layers=backbone_cfg.qwen3_output_layers,
+            max_length=context_len,
+        ).eval()
 
     stats = {
         str(cache_dir): {"new": 0, "overwrite": 0, "skip": 0}
@@ -293,12 +344,7 @@ def main(cfg: DictConfig):
         prompts_to_encode: list[str] = []
         for prompt in local_prompts:
             hashed = prompt_hash(prompt)
-            filename = text_embedding_cache_filename(
-                hashed,
-                context_len,
-                enc_id,
-                is_hash=True,
-            )
+            filename = _cache_filename(hashed, context_len, enc_id)
             if all((cache_dir / filename).is_file() for cache_dir in cache_dirs):
                 fully_cached_local += 1
                 for cache_dir in cache_dirs:
@@ -338,7 +384,7 @@ def main(cfg: DictConfig):
         disable=is_distributed and rank != 0,
     ) as pbar:
         with torch.no_grad():
-            encode_batch_size = 1 if backbone_name == "cosmos25" else DEFAULT_BATCH_SIZE
+            encode_batch_size = 1 if backbone_name in {"cosmos25", "flux2"} else DEFAULT_BATCH_SIZE
             for start in range(0, len(local_prompts), encode_batch_size):
                 batch_prompts = local_prompts[start : start + encode_batch_size]
                 if tokenizer is None:
@@ -363,19 +409,10 @@ def main(cfg: DictConfig):
                     context_i = context[i].detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
                     mask_i = mask[i].detach().to(device="cpu", dtype=torch.bool).contiguous()
                     context_i[~mask_i] = 0
-                    payload = build_text_embedding_payload(
-                        context=context_i,
-                        mask=mask_i,
-                        context_len=context_len,
-                        encoder_id=enc_id,
-                        prompt_digest=hashed,
+                    payload = _cache_payload(
+                        context_i, mask_i, context_len, enc_id, hashed
                     )
-                    filename = text_embedding_cache_filename(
-                        hashed,
-                        context_len,
-                        enc_id,
-                        is_hash=True,
-                    )
+                    filename = _cache_filename(hashed, context_len, enc_id)
                     for cache_dir in cache_dirs:
                         cache_path = cache_dir / filename
                         key = str(cache_dir)
