@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - /train
+  - override /task: robodojo_easywam_mot_wan22
+  - _self_
+
+ckpt: null
+gpu_id: 0
+
+model:
+  backbone:
+    load_text_encoder: true
+  skip_dit_load_from_pretrain: true
+  action_dit_pretrained_path: null
+
+EVALUATION:
+  robodojo_root: third_party/RoboDojo
+  env_cfg_type: arx_x5
+  action_type: joint
+  task_name: null
+  seeds: [0, 1, 2]
+  eval_num_episodes: null # null uses the official 25/50-episode protocol
+  sim_env: RoboDojo # null uses the current Python environment
+  sim_num_envs: null # null uses RoboDojo's sim config (normally 10; random is capped)
+  output_dir: ./evaluate_results/robodojo/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
+
+  action_horizon: null
+  replan_steps: 24
+  num_inference_steps: ${eval_num_inference_steps}
+  sigma_shift: null
+  text_cfg_scale: 1.0
+  negative_prompt: ""
+  rand_device: cpu
+  timing_enabled: false
+  torch_compile: false
+  torch_compile_mode: reduce-overhead
+  torch_compile_backend: inductor
+  torch_compile_fullgraph: false
+  torch_compile_dynamic: false
+  torch_compile_options: {}
+  dataset_stats_path: null
+  device: cuda
+
+MULTIRUN:
+  create_only: false
+  task_file: null
+  num_gpus: 8
+  gpu_ids: null
+  policy_num_gpus: ${MULTIRUN.num_gpus}
+  env_num_gpus: ${MULTIRUN.num_gpus}
+  policy_gpu_ids: null
+  env_gpu_ids: null
+  workers_per_gpu: 1
+  sim_workers_per_gpu: 1
+  inference_batch_size: 16
+  inference_batch_wait_ms: 5
+  prompt_cache_size: 40
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: .
+  output_subdir: null
+  job_logging:
+    handlers:
+      file:
+        filename: /dev/null
