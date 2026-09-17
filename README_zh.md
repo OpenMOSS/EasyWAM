@@ -70,6 +70,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | LIBERO | ✅ | 全参数训练和 LoRA | 标准四 suite 评测 |
 | LIBERO-Plus | ✅ | 使用 LIBERO checkpoint | 鲁棒性评测 |
 | RoboTwin | ✅ | 全参数训练和 LoRA | Clean 和 randomized 评测 |
+| RoboDojo | ✅ | 全参数训练和 LoRA | 官方 42-task 仿真评测 |
 | RoboCasa365 | ✅ | 全参数训练和 LoRA | 官方 50-task 评测 |
 
 ## 🏆 Benchmark 结果
@@ -177,6 +178,7 @@ pip install flash-attn-4
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 # 或：python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
 # 或：python scripts/precompute_text_embeds.py task=robocasa_easywam_mot_wan22
+# 或：python scripts/precompute_text_embeds.py task=robodojo_easywam_mot_wan22
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
@@ -193,6 +195,9 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_cosmos25
 
 # 4 张本机 GPU，DeepSpeed ZeRO-2 LoRA 训练
 NPROC_PER_NODE=4 bash scripts/train_zero2.sh task=robotwin_easywam_unified_wan22_lora
+
+# RoboDojo joint-only LeRobot v3 训练
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=robodojo_easywam_mot_wan22
 ```
 
 `scripts/train_zero2_offload.sh` 启用 ZeRO-2 CPU Offload。多机训练还需设置 `NNODES`、`NODE_RANK`、`MASTER_ADDR` 和 `MASTER_PORT`。
@@ -213,6 +218,11 @@ python experiments/libero_plus/run_libero_plus_manager.py \
 # RoboTwin
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt>
+
+# RoboDojo
+python experiments/robodojo/run_robodojo_manager.py \
+  task=robodojo_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 
 # RoboCasa365
