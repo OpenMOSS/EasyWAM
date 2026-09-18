@@ -23,10 +23,23 @@
   .reveal{opacity:1;transform:none;transition:none}
   .resource-card{transition:none}
 }
+body{font-size:17px;line-height:1.75}
+:is(.side-link,.mobile-nav,.button){font-size:13px}
+.lede{font-size:1.12rem;line-height:1.75}
+:is(.section-intro,.feature p,.model-card p,.resource-card p,.community-join p){font-size:1rem;line-height:1.75}
+.hero .eyebrow{font-size:15px;line-height:1.5}
+.hero-meta{font-size:14px;line-height:1.5}
+.architecture-figure figcaption{font-size:14px;line-height:1.6}
+.hero-resource span:not(:last-child){font-size:13px}
+.section-head .eyebrow{font-size:16px;line-height:1.5}
+:is(.workflow-index,.backbone-strip .workflow-index,.resource-card>span,.resource-card>b,.community-join a,.result-source,.efficiency-links a){font-size:14px;line-height:1.5}
+:is(.efficiency-features article>span,.efficiency-metrics article>span){font-size:14px;line-height:1.5}
+:is(.efficiency-features p,.efficiency-metrics p){font-size:15px}
+.efficiency-table th{font-size:13px}
 html:lang(zh-CN) body{font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;font-size:17px;line-height:1.75}
 html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.language-switch button,.side-kicker,.eyebrow,.label,.workflow-index,.feature-num,.resource-card>span,.resource-card>b,.footer){font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
 html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.resource-card>span,.resource-card>b){font-size:13px}
-html:lang(zh-CN) :is(.lede,.section-intro,.feature p,.model-card p,.resource-card p,.community-join p){font-size:1rem;line-height:1.75}
+html:lang(zh-CN) :is(.section-intro,.feature p,.model-card p,.resource-card p,.community-join p){font-size:1rem;line-height:1.75}
 html:lang(zh-CN) :is(.section-head h2,.feature h3,.model-card h3,.resource-card h3){letter-spacing:-.035em}
 html:lang(zh-CN) .hero .eyebrow{font-size:15px;line-height:1.5;letter-spacing:.05em}
 html:lang(zh-CN) .hero-meta{font:500 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:0;text-transform:none}
