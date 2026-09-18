@@ -14,7 +14,6 @@ import csv
 import json
 import os
 import re
-import shutil
 import signal
 import statistics
 import subprocess
@@ -100,8 +99,6 @@ def _parse_gpu_ids(raw: str | None) -> set[int] | None:
 
 
 def _query_gpu_memory(selected: set[int] | None) -> dict[str, int]:
-    if shutil.which("nvidia-smi") is None:
-        return {}
     try:
         completed = subprocess.run(
             [

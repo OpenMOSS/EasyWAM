@@ -130,39 +130,6 @@ def _resolve_dataset_stats_path(cfg: DictConfig) -> Path:
 def _load_model_checkpoint(model: torch.nn.Module, ckpt: str) -> None:
     model.load_checkpoint(ckpt, merge_lora=True)
     logging.info("Loaded checkpoint via model.load_checkpoint: %s", ckpt)
-    return
-
-    # Support checkpoints saved before the current payload format.
-    payload = torch.load(ckpt, map_location="cpu")
-    if not isinstance(payload, dict):
-        raise ValueError(f"Old checkpoint payload must be dict, got: {type(payload)}")
-
-    if "mot" in payload and hasattr(model, "mot"):
-        missing, unexpected = model.mot.load_state_dict(payload["mot"], strict=False)
-        logging.warning(
-            "Loaded fallback `mot` state_dict with strict=False. Missing=%d Unexpected=%d",
-            len(missing),
-            len(unexpected),
-        )
-        return
-
-    state_dict = None
-    for key in ("model_state_dict", "state_dict", "model"):
-        value = payload.get(key)
-        if isinstance(value, dict):
-            state_dict = value
-            break
-    if state_dict is None and all(torch.is_tensor(v) for v in payload.values()):
-        state_dict = payload
-    if state_dict is None:
-        raise ValueError(f"Cannot parse old checkpoint keys from: {ckpt}")
-
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    logging.warning(
-        "Loaded fallback model state_dict with strict=False. Missing=%d Unexpected=%d",
-        len(missing),
-        len(unexpected),
-    )
 
 
 def _center_crop_resize(image: np.ndarray, width: int, height: int) -> np.ndarray:

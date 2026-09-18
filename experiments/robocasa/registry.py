@@ -83,8 +83,7 @@ def load_official_jobs(
                 "required for the official 1.5x task horizons."
             )
     except importlib.metadata.PackageNotFoundError:
-        # A source checkout can still be imported through robocasa_root. In that
-        # case the registry sizes and every task horizon are validated below.
+        # A source checkout is validated through its registry and task horizons.
         pass
     except InvalidVersion as error:
         raise RuntimeError("Could not parse the installed RoboCasa version.") from error

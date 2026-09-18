@@ -61,9 +61,7 @@ def main(cfg: DictConfig) -> None:
         raise ValueError("WORKER.task_cursor is required.")
     dispatcher = FileTaskDispatcher(task_file, Path(str(cursor_value)).expanduser().resolve())
     runtime = build_eval_runtime(cfg)
-    # LIBERO-Plus init-state files are trusted local NumPy pickles. Set this
-    # only after the model checkpoint has loaded; upstream calls torch.load
-    # without an explicit weights_only argument when tasks are evaluated.
+    # Allow trusted LIBERO-Plus state pickles after loading the model checkpoint.
     os.environ.pop("TORCH_FORCE_WEIGHTS_ONLY_LOAD", None)
     os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
     actor_count = int(cfg.MULTIRUN.env_num_per_worker)

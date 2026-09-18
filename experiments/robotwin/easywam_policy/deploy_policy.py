@@ -529,9 +529,6 @@ def get_model(usr_args: Dict[str, Any]):
         raise ValueError("`ckpt_setting` is required and must be a valid checkpoint path.")
 
     device = str(usr_args.get("device") or cfg.EVALUATION.get("device") or "cuda")
-    if device.startswith("cuda") and not torch.cuda.is_available():
-        logger.warning("CUDA is unavailable; fallback device to cpu.")
-        device = "cpu"
 
     mixed_precision = str(
         usr_args.get("mixed_precision") or cfg.get("mixed_precision", "bf16")

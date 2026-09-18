@@ -88,14 +88,8 @@ def _load_libero_modules() -> tuple[Any, Any]:
             f"LIBERO config is missing: {config_file}. Install LIBERO-Plus and "
             "initialize its path configuration before running evaluation."
         )
-    try:
-        libero_module = importlib.import_module("libero.libero")
-        benchmark_module = importlib.import_module("libero.libero.benchmark")
-    except Exception as exc:
-        raise RuntimeError(
-            "Failed to import LIBERO-Plus from the `libero` package. The vanilla "
-            "LIBERO and LIBERO-Plus packages cannot be installed together."
-        ) from exc
+    libero_module = importlib.import_module("libero.libero")
+    benchmark_module = importlib.import_module("libero.libero.benchmark")
     return benchmark_module, libero_module.get_libero_path
 
 
