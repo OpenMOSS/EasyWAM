@@ -29,3 +29,7 @@ html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.language-switch button,.sid
 html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.resource-card>span,.resource-card>b){font-size:13px}
 html:lang(zh-CN) :is(.lede,.section-intro,.feature p,.model-card p,.resource-card p,.community-join p){font-size:1rem;line-height:1.75}
 html:lang(zh-CN) :is(.section-head h2,.feature h3,.model-card h3,.resource-card h3){letter-spacing:-.035em}
+html:lang(zh-CN) .hero .eyebrow{font-size:15px;line-height:1.5;letter-spacing:.05em}
+html:lang(zh-CN) .hero-meta{font:500 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:0;text-transform:none}
+html:lang(zh-CN) .architecture-figure figcaption{font:500 14px/1.6 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;text-transform:none}
+html:lang(zh-CN) .hero-resource span:not(:last-child){font-size:13px}

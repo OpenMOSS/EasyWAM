@@ -1,5 +1,6 @@
 /* Preserve the existing EasyWAM visual language across the new sections. */
 .side-link span:first-child{color:#a5afa9;font-size:10px}
+.side-nav{margin-top:2.5rem}
 .side-link span:last-child{color:inherit;font:inherit}
 .side-link.active span:first-child{color:var(--orange)}
 .language-switch{display:inline-flex;gap:2px;margin-bottom:1.1rem;padding:3px;border:1px solid var(--line);background:rgba(255,255,255,.55)}
