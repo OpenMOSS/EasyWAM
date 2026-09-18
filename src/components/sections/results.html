@@ -1,0 +1,55 @@
+<section id="results" class="benchmark-section reveal" aria-labelledby="benchmark-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="03 / 基准结果">03 / results</p><h2 id="benchmark-title"><span data-zh="跨架构、跨 backbone 的">Measured results,</span><br /><span data-zh="实测表现。">across backbones.</span></h2></div><p class="section-intro" data-zh="以下均为任务成功率（%），数值越高越好。结果可能随 checkpoint、随机种子和评测设置变化。">Task success rates (%), higher is better. Results may vary with checkpoints, seeds and evaluation settings.</p></div>
+        <div class="result-highlights">
+          <article><span data-zh="LIBERO / Wan2.2 / 全参数">LIBERO / Wan2.2 / full</span><strong>98.8%</strong><p data-zh="EasyWAM-Hidden 平均成功率">EasyWAM-Hidden average success</p></article>
+          <article><span>LIBERO / Wan2.2 / LoRA</span><strong>95.9%</strong><p data-zh="EasyWAM-MoT 平均成功率">EasyWAM-MoT average success</p></article>
+          <article><span>LIBERO-Plus / Wan2.2</span><strong>79.0%</strong><p data-zh="EasyWAM-Unified 平均成功率">EasyWAM-Unified average success</p></article>
+          <article><span data-zh="训练吞吐 / MoT">Training throughput / MoT</span><strong>2.68×</strong><p data-zh="相较架构相同的 FastWAM">versus architecture-matched FastWAM</p></article>
+        </div>
+        <details class="result-details"><summary data-zh="展开五张完整结果表">Explore all five result tables</summary>
+        <div class="perf-tables">
+          <figure class="perf-table-wrap perf-table-scroll">
+            <figcaption><span>TABLE 01</span><span data-zh="LIBERO · Wan2.2-TI2V-5B · 全参数">LIBERO · Wan2.2-TI2V-5B · full-parameter</span></figcaption>
+            <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
+              <tr><td>EasyWAM-Unified</td><td>98.4</td><td>98.8</td><td>99.2</td><td>98.0</td><td>98.6</td></tr>
+              <tr><td>EasyWAM-MoT</td><td>97.0</td><td>99.2</td><td>96.6</td><td>94.0</td><td>96.7</td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>99.2</td><td>100.0</td><td>97.8</td><td>98.2</td><td><b>98.8</b></td></tr>
+            </tbody></table>
+          </figure>
+          <figure class="perf-table-wrap perf-table-scroll">
+            <figcaption><span>TABLE 02</span><span data-zh="LIBERO · Wan2.2-TI2V-5B · LoRA 秩 128">LIBERO · Wan2.2-TI2V-5B · LoRA rank 128</span></figcaption>
+            <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
+              <tr><td>EasyWAM-Unified</td><td>91.2</td><td>98.8</td><td>91.8</td><td>66.2</td><td>87.0</td></tr>
+              <tr><td>EasyWAM-MoT</td><td>96.8</td><td>99.6</td><td>97.4</td><td>90.0</td><td><b>95.9</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>98.0</td><td>99.8</td><td>89.4</td><td>86.6</td><td>93.5</td></tr>
+            </tbody></table>
+          </figure>
+          <figure class="perf-table-wrap perf-table-scroll">
+            <figcaption><span>TABLE 03</span><span data-zh="LIBERO · Cosmos-Predict2.5-2B · 全参数">LIBERO · Cosmos-Predict2.5-2B · full-parameter</span></figcaption>
+            <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
+              <tr><td>EasyWAM-Unified</td><td>97.8</td><td>99.4</td><td>97.0</td><td>93.0</td><td>96.8</td></tr>
+              <tr><td>EasyWAM-MoT</td><td>98.0</td><td>98.4</td><td>98.4</td><td>95.6</td><td><b>97.6</b></td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>97.2</td><td>98.8</td><td>96.0</td><td>95.0</td><td>96.8</td></tr>
+            </tbody></table>
+          </figure>
+          <figure class="perf-table-wrap perf-table-scroll">
+            <figcaption><span>TABLE 04</span><span data-zh="LIBERO-Plus · Wan2.2-TI2V-5B · 鲁棒性">LIBERO-Plus · Wan2.2-TI2V-5B · robustness</span></figcaption>
+            <table class="benchmark-table"><thead><tr><th>Model</th><th>Orig</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr></thead><tbody>
+              <tr><td>EasyWAM-Unified</td><td>98.6</td><td>72.3</td><td>54.8</td><td>93.7</td><td>83.4</td><td>97.0</td><td>72.0</td><td>83.4</td><td><b>79.0</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>96.7</td><td>64.5</td><td>45.5</td><td>71.4</td><td>80.1</td><td>94.7</td><td>78.5</td><td>71.5</td><td>71.7</td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>98.8</td><td>59.3</td><td>57.0</td><td>93.2</td><td>84.3</td><td>95.0</td><td>70.8</td><td>83.7</td><td>77.6</td></tr>
+            </tbody></table>
+          </figure>
+          <figure class="perf-table-wrap perf-table-scroll">
+            <figcaption><span>TABLE 05</span><span data-zh="LIBERO-Plus · Cosmos-Predict2.5-2B · 鲁棒性">LIBERO-Plus · Cosmos-Predict2.5-2B · robustness</span></figcaption>
+            <table class="benchmark-table"><thead><tr><th>Model</th><th>Orig</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr></thead><tbody>
+              <tr><td>EasyWAM-Unified</td><td>96.8</td><td>72.7</td><td>63.7</td><td>90.1</td><td>82.6</td><td>89.2</td><td>72.1</td><td>79.2</td><td><b>78.2</b></td></tr>
+              <tr><td>EasyWAM-MoT</td><td>97.6</td><td>60.7</td><td>75.1</td><td>92.3</td><td>82.6</td><td>92.6</td><td>81.3</td><td>58.5</td><td>77.7</td></tr>
+              <tr><td>EasyWAM-Hidden</td><td>96.8</td><td>59.5</td><td>65.9</td><td>92.6</td><td>85.0</td><td>89.1</td><td>68.3</td><td>82.5</td><td>77.8</td></tr>
+            </tbody></table>
+            <p class="table-note" data-zh="LIBERO-Plus 使用 LIBERO checkpoint，测试背景、相机、语言、布局、光照、噪声和机器人外观变化。">LIBERO-Plus uses LIBERO checkpoints and tests changes to background, camera, language, layout, lighting, noise and robot appearance.</p>
+          </figure>
+        </div>
+        </details>
+        <div class="results-more"><p data-zh="在 8 张 NVIDIA H100 GPU、每卡 batch size 16 的报告设置下，EasyWAM-MoT 达到 138.2 samples/s，FastWAM 为 51.5 samples/s，吞吐提升 2.68 倍。LIBERO 的 20,000 步训练约需 5 小时，而 FastWAM 约需 14 小时。">On 8 × NVIDIA H100 GPUs with per-device batch size 16, EasyWAM-MoT reaches 138.2 samples/s versus FastWAM's 51.5 samples/s: 2.68× throughput. A 20,000-step LIBERO run takes about 5 hours instead of 14 under the reported setup.</p><img src="./assets/efficiency_comparison.svg" alt="EasyWAM versus FastWAM training throughput and step timing" data-alt-zh="EasyWAM 与 FastWAM 的训练吞吐和步骤耗时对比" loading="lazy" /><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/results/result.md" target="_blank" rel="noreferrer" data-zh="查看完整结果 ↗">Read the complete results ↗</a></div>
+      </section>

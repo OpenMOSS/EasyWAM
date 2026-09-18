@@ -1,0 +1,25 @@
+@media(max-width:1059px){
+  .mobile-header nav{min-width:0}
+  .mobile-language{display:inline-flex;margin:0;flex:0 0 auto}
+  .mobile-language button{padding:.25rem .35rem}
+  .quick-start-section,.model-zoo-section,.community-section{padding:4.7rem 0}
+  .result-highlights{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:680px){
+  .hero h1{font-size:2.8rem;line-height:1.1}
+  .feature-grid,.resource-grid,.model-grid,.result-highlights{grid-template-columns:1fr}
+  .feature{min-height:0}
+  .feature h3{font-size:1.45rem}
+  .workflow-panel{padding:1rem}
+  .workflow-heading{display:block}
+  .workflow-heading a{display:inline-block;margin-top:1rem}
+  .code-shell pre{font-size:11px}
+  .perf-tables{padding:0 .7rem .7rem}
+  .perf-table-wrap{padding:1.1rem}
+  .backbone-strip,.community-join{align-items:start;flex-direction:column}
+  .backbone-strip .button{white-space:normal}
+}
+@media(prefers-reduced-motion:reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+  .resource-card{transition:none}
+}

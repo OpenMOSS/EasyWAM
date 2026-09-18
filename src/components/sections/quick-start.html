@@ -1,0 +1,38 @@
+<section id="quick-start" class="quick-start-section reveal" aria-labelledby="quick-start-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="02 / 快速开始">02 / quick start</p><h2 id="quick-start-title"><span data-zh="从安装">From setup</span><br /><span data-zh="到评测。">to evaluation.</span></h2></div><p class="section-intro" data-zh="选择一个任务，复制来自项目 README 的命令。数据集、模型权重和仿真环境的准备步骤请参考对应指南。">Choose a task and copy commands from the project README. Follow the linked guides to prepare datasets, model weights and simulators.</p></div>
+        <div class="workflow-tabs" role="tablist" aria-label="Quick Start steps" data-aria-zh="快速开始步骤">
+          <button class="workflow-tab" id="tab-install" type="button" role="tab" aria-selected="true" aria-controls="panel-install" tabindex="0" data-zh="安装">Install</button>
+          <button class="workflow-tab" id="tab-train" type="button" role="tab" aria-selected="false" aria-controls="panel-train" tabindex="-1" data-zh="训练">Train</button>
+          <button class="workflow-tab" id="tab-evaluate" type="button" role="tab" aria-selected="false" aria-controls="panel-evaluate" tabindex="-1" data-zh="评测">Evaluate</button>
+        </div>
+        <div class="workflow-panel" id="panel-install" role="tabpanel" aria-labelledby="tab-install">
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="01 / 环境">01 / ENVIRONMENT</span><h3 data-zh="安装 EasyWAM">Install EasyWAM</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/README.md#-quick-start" target="_blank" rel="noreferrer" data-zh="完整安装说明 ↗">Full setup guide ↗</a></div>
+          <p data-zh="在克隆仓库后，于项目根目录运行。FlashAttention 可按 GPU 型号选装。">Run from the repository root after cloning. FlashAttention is optional and depends on your GPU.</p>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="install" data-zh="复制命令">Copy command</button></div><pre><code id="code-install">conda create -n easywam python=3.10 -y
+conda activate easywam
+pip install -U pip
+pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.pytorch.org/whl/cu128
+pip install -e .</code></pre></div>
+        </div>
+        <div class="workflow-panel" id="panel-train" role="tabpanel" aria-labelledby="tab-train" hidden>
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="02 / 训练">02 / TRAINING</span><h3 data-zh="预计算并训练">Precompute and train</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/config/training.md" target="_blank" rel="noreferrer" data-zh="训练配置指南 ↗">Training configuration ↗</a></div>
+          <p data-zh="准备 LIBERO 数据集和 backbone 后，先预计算文本特征，再启动示例 MoT 训练；按机器情况调整 GPU 进程数。">After preparing LIBERO data and the backbone, precompute text embeddings and launch the example MoT run. Adjust the GPU process count for your machine.</p>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="train" data-zh="复制命令">Copy command</button></div><pre><code id="code-train">python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22</code></pre></div>
+        </div>
+        <div class="workflow-panel" id="panel-evaluate" role="tabpanel" aria-labelledby="tab-evaluate" hidden>
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="03 / 评测">03 / EVALUATION</span><h3 data-zh="选择评测基准">Choose a benchmark</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/benchmark/README.md" target="_blank" rel="noreferrer" data-zh="基准配置指南 ↗">Benchmark setup ↗</a></div>
+          <p data-zh="先按对应指南安装仿真环境并准备数据。将命令中的 checkpoint 路径替换为实际文件。">Set up the simulator and data with its guide, then replace the checkpoint placeholder with your own file.</p>
+          <div class="benchmark-options" role="group" aria-label="Evaluation benchmark" data-aria-zh="评测基准">
+            <button type="button" data-benchmark="libero" aria-pressed="true">LIBERO</button>
+            <button type="button" data-benchmark="libero-plus" aria-pressed="false">LIBERO-Plus</button>
+            <button type="button" data-benchmark="robotwin" aria-pressed="false">RoboTwin</button>
+            <button type="button" data-benchmark="robodojo" aria-pressed="false">RoboDojo</button>
+            <button type="button" data-benchmark="robocasa" aria-pressed="false">RoboCasa365</button>
+          </div>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="evaluate" data-zh="复制命令">Copy command</button></div><pre><code id="code-evaluate">python experiments/libero/run_libero_manager.py \
+  task=libero_easywam_mot_wan22 \
+  ckpt=&lt;path/to/checkpoint.pt&gt;</code></pre></div>
+        </div>
+        <p class="copy-feedback" id="copy-feedback" role="status" aria-live="polite"></p>
+      </section>

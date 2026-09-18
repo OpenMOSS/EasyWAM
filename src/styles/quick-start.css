@@ -1,0 +1,21 @@
+.quick-start-section,.benchmark-section,.model-zoo-section,.community-section{padding:5.7rem 0;border-bottom:1px solid var(--line)}
+.workflow-tabs{display:flex;gap:.45rem;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.workflow-tab{padding:.75rem 1rem;border:1px solid transparent;border-bottom:0;background:transparent;color:var(--muted);font:700 11px var(--mono);text-transform:uppercase;cursor:pointer}
+.workflow-tab[aria-selected="true"]{border-color:var(--line);background:rgba(255,255,255,.6);color:var(--ink);box-shadow:inset 0 3px 0 var(--orange)}
+.workflow-panel{padding:1.7rem;border:1px solid var(--line);border-top:0;background:rgba(255,255,255,.5)}
+.workflow-panel[hidden]{display:none}
+.workflow-heading{display:flex;justify-content:space-between;align-items:start;gap:1rem}
+.workflow-heading h3{margin:.5rem 0 0;font-size:1.7rem;letter-spacing:-.04em}
+.workflow-heading a,.community-join a{color:var(--cyan);font:700 11px var(--mono);text-transform:uppercase}
+.workflow-heading a:hover,.community-join a:hover{color:var(--orange)}
+.workflow-index,.code-head,.model-card>span,.backbone-strip .workflow-index{color:var(--orange);font:700 10px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.workflow-panel>p{margin:1rem 0 1.4rem;color:var(--muted);font-size:14px}
+.benchmark-options{display:flex;flex-wrap:wrap;gap:.45rem;margin:0 0 1.2rem}
+.benchmark-options button{padding:.52rem .7rem;border:1px solid var(--line);background:transparent;color:var(--muted);font:700 10px var(--mono);cursor:pointer}
+.benchmark-options button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.code-shell{min-width:0;background:var(--dark);color:#d9e8dc}
+.code-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.7rem 1rem;border-bottom:1px solid rgba(255,255,255,.13);color:#aabdb1}
+.copy-code{padding:.4rem .55rem;border:1px solid #607668;background:transparent;color:#e8f6ec;font:700 10px var(--mono);text-transform:uppercase;cursor:pointer}
+.copy-code:hover{background:var(--cyan);border-color:var(--cyan)}
+.code-shell pre{margin:0;padding:1.2rem;overflow-x:auto;font:12px/1.85 var(--mono);white-space:pre}
+.copy-feedback{min-height:1.3rem;margin:.6rem 0 0;color:var(--cyan);font:700 11px var(--mono)}
