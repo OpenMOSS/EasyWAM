@@ -3,12 +3,14 @@ outputs/
 tmp/
 /checkpoints/
 /data/
+/data
 /runs/
 /log/
 /evaluate_results/
 /results/
 /tests/
 /third_party/
+/third_party
 apex/
 .deepspeed*
 
