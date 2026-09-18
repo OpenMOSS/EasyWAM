@@ -3,11 +3,7 @@ from typing import Optional
 import os
 
 import torch.distributed as dist
-
-try:
-    from rich.logging import RichHandler
-except ImportError:  # Rich is optional on minimal training/runtime images.
-    RichHandler = None
+from rich.logging import RichHandler
 
 
 def setup_logging(
@@ -43,11 +39,7 @@ def setup_logging(
         if rich_handler_kwargs:
             default_rich_kwargs.update(rich_handler_kwargs)
         
-        # Prefer Rich when installed, while keeping minimal cluster runtimes usable.
-        if RichHandler is None:
-            rich_handler = logging.StreamHandler()
-        else:
-            rich_handler = RichHandler(**default_rich_kwargs)
+        rich_handler = RichHandler(**default_rich_kwargs)
         
         default_formatter_kwargs = {
             "fmt": "| >> %(message)s",

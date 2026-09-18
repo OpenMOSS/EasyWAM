@@ -51,10 +51,7 @@ class CosmosVideoVAE(nn.Module):
         torch_dtype: torch.dtype = torch.bfloat16,
     ) -> "CosmosVideoVAE":
         path = Path(checkpoint_path)
-        try:
-            state = torch.load(path, map_location="cpu", mmap=True, weights_only=True)
-        except TypeError:
-            state = torch.load(path, map_location="cpu", weights_only=True)
+        state = torch.load(path, map_location="cpu", mmap=True, weights_only=True)
         with torch.device("meta"):
             network = CosmosTokenizerNetwork(z_dim=cls.latent_channels)
         result = network.load_state_dict(state, strict=True, assign=True)

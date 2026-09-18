@@ -46,10 +46,7 @@ def resolve_cosmos25_dit_path(model_id: str | Path) -> Path:
 
 
 def _read_torch_checkpoint(path: Path, map_location="cpu"):
-    try:
-        return torch.load(path, map_location=map_location, mmap=True, weights_only=True)
-    except TypeError:
-        return torch.load(path, map_location=map_location, weights_only=True)
+    return torch.load(path, map_location=map_location, mmap=True, weights_only=True)
 
 
 def _clean_dit_state_dict(raw: dict) -> dict[str, torch.Tensor]:

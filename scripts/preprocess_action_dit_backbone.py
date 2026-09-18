@@ -76,23 +76,17 @@ def _resize_tensor_to_shape(src: torch.Tensor, target_shape: tuple[int, ...]) ->
         current_size = out.shape[dim]
         if current_size == new_size:
             continue
-        # Permute the target dimension to the end for interpolation
+        # Interpolate one dimension at a time and restore the original axis order.
         perm = [i for i in range(out.ndim) if i != dim] + [dim]
-        # Construct inverse permutation to restore original order
         inv_perm = [0] * out.ndim
         for i, p in enumerate(perm):
             inv_perm[p] = i
-        # Permute, interpolate, and restore original order
         out_perm = out.permute(*perm).contiguous()
         prefix_shape = out_perm.shape[:-1]
         out_perm = _interpolate_last_dim(out_perm, new_size)
         out_perm = out_perm.reshape(*prefix_shape, new_size)
         out = out_perm.permute(*inv_perm).contiguous()
 
-    if tuple(out.shape) != tuple(target_shape):
-        raise ValueError(
-            f"Resize produced wrong shape for tensor. src={tuple(src.shape)}, target={target_shape}, got={tuple(out.shape)}"
-        )
     return out.to(dtype=src.dtype)
 
 

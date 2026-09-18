@@ -1206,7 +1206,7 @@ class EasyWAMHidden(nn.Module):
                 "dit": self.dit.state_dict(),
                 "step": step,
                 "torch_dtype": str(self.torch_dtype),
-                "backbone_name": getattr(self, "backbone_name", "wan22"),
+                "backbone_name": self.backbone_name,
             }
         payload["state_position"] = self.state_position
         if optimizer is not None:
@@ -1223,10 +1223,10 @@ class EasyWAMHidden(nn.Module):
         payload = torch.load(path, map_location="cpu")
         validate_checkpoint_state_position(payload, self.state_position)
         checkpoint_backbone = payload.get("backbone_name")
-        if checkpoint_backbone is not None and checkpoint_backbone != getattr(self, "backbone_name", "wan22"):
+        if checkpoint_backbone is not None and checkpoint_backbone != self.backbone_name:
             raise ValueError(
                 f"Checkpoint backbone {checkpoint_backbone!r} does not match model backbone "
-                f"{getattr(self, 'backbone_name', 'wan22')!r}."
+                f"{self.backbone_name!r}."
             )
         if is_lora_checkpoint(payload):
             load_lora_model_checkpoint_state(

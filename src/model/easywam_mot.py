@@ -348,8 +348,7 @@ class EasyWAMMoT(torch.nn.Module):
 
     def train(self, mode: bool = True):
         super().train(mode)
-        # Frozen encoders are feature extractors and must not inherit train mode
-        # when the DiT/action experts enter training.
+        # Keep frozen encoders in evaluation mode during DiT training.
         self.vae.eval()
         if self.text_encoder is not None:
             self.text_encoder.eval()
@@ -401,7 +400,7 @@ class EasyWAMMoT(torch.nn.Module):
             )
         state_token = self.state_encoder(
             state.to(device=self.device, dtype=context.dtype).unsqueeze(1)
-        ).to(dtype=context.dtype) # [B, 1, D]
+        ).to(dtype=context.dtype)
         if context_mask is None:
             return torch.cat([context, state_token], dim=1), None
         state_mask = torch.ones((context_mask.shape[0], 1), dtype=torch.bool, device=context_mask.device)
@@ -677,7 +676,7 @@ class EasyWAMMoT(torch.nn.Module):
                 raise ValueError(
                     f"`sample['proprio']` last dim must be {self.state_dim}, got {proprio.shape[2]}"
                 )
-            state = proprio[:, 0, :] # [B, D]
+            state = proprio[:, 0, :]
             context, context_mask = self._append_state_to_context(
                 context=context,
                 context_mask=context_mask,
@@ -897,7 +896,7 @@ class EasyWAMMoT(torch.nn.Module):
         )
         loss_video = (loss_video_per_sample * video_weight).mean()
 
-        action_loss_token = F.mse_loss(pred_action.float(), target_action.float(), reduction="none").mean(dim=2) # [B, T]
+        action_loss_token = F.mse_loss(pred_action.float(), target_action.float(), reduction="none").mean(dim=2)
         if action_is_pad is not None:
             valid = (~action_is_pad).to(device=action_loss_token.device, dtype=action_loss_token.dtype)
             valid_sum = valid.sum(dim=1).clamp(min=1.0)
@@ -1277,7 +1276,7 @@ class EasyWAMMoT(torch.nn.Module):
         input_image: torch.Tensor,
         num_video_frames: int,
         action_horizon: int,
-        action: Optional[torch.Tensor] = None, # NOTE: this is gt action for conditioning videos, not for action expert
+        action: Optional[torch.Tensor] = None,
         proprio: Optional[torch.Tensor] = None,
         context: Optional[torch.Tensor] = None,
         context_mask: Optional[torch.Tensor] = None,
@@ -1845,7 +1844,7 @@ class EasyWAMMoT(torch.nn.Module):
                 "mot": self.mot.state_dict(),
                 "step": step,
                 "torch_dtype": str(self.torch_dtype),
-                "backbone_name": getattr(self, "backbone_name", "wan22"),
+                "backbone_name": self.backbone_name,
                 "model_variant": self.model_variant,
             }
         if self.state_encoder is not None and not is_lora_model:
@@ -1873,10 +1872,10 @@ class EasyWAMMoT(torch.nn.Module):
             imagewam_load_report = audit_mot_state_dict(self.mot, payload["mot"])
             require_exact_imagewam_coverage(imagewam_load_report)
         checkpoint_backbone = payload.get("backbone_name")
-        if checkpoint_backbone is not None and checkpoint_backbone != getattr(self, "backbone_name", "wan22"):
+        if checkpoint_backbone is not None and checkpoint_backbone != self.backbone_name:
             raise ValueError(
                 f"Checkpoint backbone {checkpoint_backbone!r} does not match model backbone "
-                f"{getattr(self, 'backbone_name', 'wan22')!r}."
+                f"{self.backbone_name!r}."
             )
         checkpoint_variant = payload.get("model_variant")
         if checkpoint_variant is not None and checkpoint_variant != self.model_variant:

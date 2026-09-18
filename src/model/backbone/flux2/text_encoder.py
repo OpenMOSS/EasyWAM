@@ -25,19 +25,12 @@ class Flux2Qwen3TextEncoder(nn.Module):
         rendered = []
         for prompt in prompts:
             messages = [{"role": "user", "content": str(prompt)}]
-            try:
-                text = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=False,
-                )
-            except TypeError:
-                text = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
+            text = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
             rendered.append(text)
         batch = self.tokenizer(
             rendered,

@@ -18,7 +18,7 @@ def normalize_backbone_config(config: Mapping[str, Any] | DictConfig) -> dict[st
     if not isinstance(config, Mapping):
         raise TypeError(f"backbone config must be dict-like, got {type(config)}")
     result = dict(config)
-    name = str(result.get("name", "")).strip().lower()
+    name = str(result["name"]).strip().lower()
     if name not in {"wan22", "cosmos25", "flux2"}:
         raise ValueError(f"Unsupported backbone name: {name!r}")
     result["name"] = name

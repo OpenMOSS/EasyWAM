@@ -22,18 +22,13 @@ def configure_model_execution(
         if isinstance(vae_micro_batch_size, bool) or int(vae_micro_batch_size) <= 0:
             raise ValueError("vae_micro_batch_size must be a positive integer or null.")
         vae_micro_batch_size = int(vae_micro_batch_size)
-    vae = getattr(model, "vae", None)
-    if vae is not None:
-        setter = getattr(vae, "set_micro_batch_size", None)
-        if callable(setter):
-            setter(vae_micro_batch_size)
-        else:
-            vae.micro_batch_size = vae_micro_batch_size
-    try:
-        model.inference_cross_kv_reuse = bool(inference_cross_kv_reuse)
-    except AttributeError:
-        # Some lightweight test/proxy objects intentionally do not allow attributes.
-        pass
+    vae = model.vae
+    setter = getattr(vae, "set_micro_batch_size", None)
+    if callable(setter):
+        setter(vae_micro_batch_size)
+    else:
+        vae.micro_batch_size = vae_micro_batch_size
+    model.inference_cross_kv_reuse = bool(inference_cross_kv_reuse)
     logger.info(
         "Model execution settings: vae_micro_batch_size=%s inference_cross_kv_reuse=%s",
         "full" if vae_micro_batch_size is None else vae_micro_batch_size,
@@ -78,7 +73,7 @@ def configure_inference_compile(
             )
         return model
 
-    target_names: Iterable[str] = getattr(model, "inference_compile_targets", ())
+    target_names: Iterable[str] = model.inference_compile_targets
     target_names = tuple(target_names)
     if not target_names:
         raise ValueError(
@@ -98,7 +93,7 @@ def configure_inference_compile(
         compile_kwargs["options"] = compile_options
 
     for name in target_names:
-        target = getattr(model, name, None)
+        target = getattr(model, name)
         if not callable(target):
             raise AttributeError(
                 f"Inference compile target `{name}` is not callable on "

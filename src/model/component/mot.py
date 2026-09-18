@@ -111,7 +111,7 @@ class MoT(nn.Module):
         base_mod = block.modulation.to(dtype=t_mod.dtype, device=t_mod.device)
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (base_mod + t_mod).chunk(6, dim=chunk_dim)
         if has_seq:
-            # means t_mod has separate modulation for each token, otherwise same modulation for all tokens in the block
+            # Tokenwise modulation uses a separate value for each token.
             shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
                 shift_msa.squeeze(2),
                 scale_msa.squeeze(2),
@@ -367,7 +367,6 @@ class MoT(nn.Module):
         kv_cache: list[dict[str, torch.Tensor]] = []
         for layer_idx in range(self.num_layers):
             block = expert.blocks[layer_idx]
-            # Build video Q/K/V from current layer input tokens.
             (
                 q,
                 k,
@@ -390,7 +389,7 @@ class MoT(nn.Module):
                 v_cat=v,
                 attention_mask=video_attention_mask,
             )
-            # Update video tokens for the next layer and persist current layer K/V.
+            # Cache video keys and values for later action decoding.
             x = self._apply_post_block(
                 block=block,
                 residual_x=residual_x,

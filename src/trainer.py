@@ -161,8 +161,7 @@ class EasyWAMTrainer:
         if self.val_dataset is not None:
             self._assert_dataset_length_consistent(self.val_dataset, "val_dataset")
 
-        # Freeze non-trainable modules before optimizer/deepspeed initialization.
-        # This keeps DiT (+ optional state encoder) as trainable when ZeRO builds optimizer state.
+        # Freeze modules before ZeRO builds optimizer state.
         self._apply_dit_only_train_mode(self.model)
         total_params = _count_parameters(self.model)
         trainable_params_count = _count_parameters(self.model, trainable_only=True)
@@ -576,19 +575,17 @@ class EasyWAMTrainer:
         eval_index = torch.randint(0, len(self.val_dataset), (1,), generator=rng).item()
         sample = self._to_batched_eval_sample(self.val_dataset[eval_index])
 
-        # 1. training loss
         with self.accelerator.autocast():
             val_loss, _ = model.training_loss(sample)
             val_loss = val_loss.float().item()
         
         prompt = sample["prompt"][0]
-        video0 = sample["video"][0] # Tensor [3, T, H, W] in (-1, 1)
+        video0 = sample["video"][0]
         action = sample["action"][0] if "action" in sample and sample["action"] is not None else None
-        proprio = sample["proprio"][0, 0] if "proprio" in sample and sample["proprio"] is not None else None # from [1, T, d] to [d]
+        proprio = sample["proprio"][0, 0] if "proprio" in sample and sample["proprio"] is not None else None
         input_image = video0[:, 0].unsqueeze(0)
         _, num_frames, _, _ = video0.shape
 
-        # 2. inference and video saving
         infer_kwargs = {
             "input_image": input_image,
             "num_frames": num_frames,
@@ -614,7 +611,6 @@ class EasyWAMTrainer:
         pred_video = pred["video"]
         pred_action = pred.get("action", None)
 
-        # 3. inference metrics against GT video
         pred_video_tensor = pil_frames_to_video_tensor(pred_video)
         gt_video_tensor = ((video0.detach().float().cpu().clamp(-1.0, 1.0) + 1.0) * 0.5).contiguous()
 
@@ -681,7 +677,6 @@ class EasyWAMTrainer:
             action_l1 = action_diff.abs().mean().item()
             action_l2 = action_diff.pow(2).mean().item()
 
-        # 4. VAE reconstruction metrics against GT video
         gt_video_batch = video0.unsqueeze(0).to(device=model.device, dtype=model.torch_dtype)
         vae_latents = model._encode_video_latents(gt_video_batch)
         vae_recon_batch = model._decode_latents(vae_latents)
