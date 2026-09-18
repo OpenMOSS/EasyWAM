@@ -1,5 +1,4 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, Literal
+from typing import Dict, Any, Optional, List
 
 import torch
 import numpy as np
@@ -14,7 +13,6 @@ logger = get_logger(__name__)
 class WAMProcessor(BaseProcessor):
     def __init__(
         self,
-        # keys
         shape_meta: Dict[str, Any],
         num_obs_steps: int,
         num_output_cameras: int, 
@@ -23,18 +21,15 @@ class WAMProcessor(BaseProcessor):
 
         action_state_transforms: Optional[List[Any]], 
 
-        # action & state normalization
         use_stepwise_action_norm: bool,
         norm_default_mode: NormMode,
         norm_exception_mode: Dict[str, Dict[str, NormMode]], 
 
         action_state_merger, 
 
-        # image transform
         train_transforms: Dict[str, List[Any]] | None,
         val_transforms: Dict[str, List[Any]] | None, 
 
-        # instruction transform
         drop_high_level_prob: float = 1.0,
         use_zh_instruction: bool = False,
 
@@ -50,7 +45,6 @@ class WAMProcessor(BaseProcessor):
         self.drop_high_level_prob = drop_high_level_prob
         self.use_zh_instruction = use_zh_instruction
 
-        # image
         self.train_transforms = train_transforms
         self.val_transforms = val_transforms
 
@@ -118,13 +112,7 @@ class WAMProcessor(BaseProcessor):
         )
 
     def augment_instruction(self, data: Dict[str, str] | List[str]) -> List[str]:
-        """
-        Args:
-            data: Dict[str, str] | List[str], lerobot sample in raw mcap
-
-        Returns:
-            List[str], processed instructions
-        """
+        """Choose the instruction language and optional high-level task."""
         if "coarse_task" in data:
             high_level_instruction = data["coarse_task"]
         else:
@@ -139,7 +127,7 @@ class WAMProcessor(BaseProcessor):
             low_level_instruction = zh if self.use_zh_instruction else eng
 
         if np.random.rand() < self.drop_high_level_prob:
-            instruction = f"{low_level_instruction}"
+            instruction = low_level_instruction
         else: 
             instruction = f"[High]: {high_level_instruction}, [Low]: {low_level_instruction}"
         
@@ -181,7 +169,6 @@ class WAMProcessor(BaseProcessor):
     def preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform a dataset sample into the tensors consumed by WAM."""
         sample = {}
-        # 1. instruction
         sample["instruction"] = self.augment_instruction(data)
         sample["image_is_pad"] = data["image_is_pad"]
         if sample["image_is_pad"].ndim != 1:
@@ -191,14 +178,12 @@ class WAMProcessor(BaseProcessor):
             )
         num_image_steps = int(sample["image_is_pad"].shape[0])
 
-        # 2. image
         processed_images = []
         for meta in self.shape_meta["images"]:
             key, shape = meta["key"], meta["shape"]
-            image = data["images"][key]  # [num_image_steps, C, H, W]
+            image = data["images"][key]
             assert image.ndim == 4, f"Expected 4 dimensions (num_image_steps, C, H, W), got shape {image.shape}"
             
-            # Apply transforms efficiently on the merged batch
             transforms = self.train_transforms if self.is_train else self.val_transforms
             current_transforms = transforms[key] if isinstance(transforms, dict) else transforms
             for trans in current_transforms:
@@ -209,7 +194,7 @@ class WAMProcessor(BaseProcessor):
                 f"Expected shape {meta_shape}, got {image.shape} after transforms for key {key}"
 
             processed_images.append(image)
-        pixel_values = torch.stack(processed_images, dim=0) # [num_input_cameras, T, C, H, W]
+        pixel_values = torch.stack(processed_images, dim=0)
         
         if self.num_output_cameras > pixel_values.shape[0]:
             out = torch.zeros((self.num_output_cameras,) + pixel_values.shape[1:], device=pixel_values.device, dtype=pixel_values.dtype)
@@ -222,33 +207,30 @@ class WAMProcessor(BaseProcessor):
         else:
             sample["pixel_values"] = pixel_values
 
-        # Copy action before transform for open-loop evaluation, 
-        # disabled for training dataset as it may cause collating key problem.
+        # Keep ground-truth actions for open-loop evaluation.
         if not self.is_train and "action" in data:
             sample["gt_action"] = deepcopy(data["action"])
 
-        # 3. action & state
         if "action" in data and self.delta_action_dim_mask is not None:
             action_is_pad = torch.as_tensor(data["action_is_pad"], dtype=torch.bool)
-            if bool(action_is_pad.any().item()):
-                for key, dim_mask in self.delta_action_dim_mask.items():
-                    cur_action = data["action"][key]
-                    cur_action_is_pad = action_is_pad.to(device=cur_action.device)
-                    cur_dim_mask = dim_mask.to(device=cur_action.device)
-                    pad_delta_mask = cur_action_is_pad.unsqueeze(1) & cur_dim_mask.unsqueeze(0)
-                    cur_action[pad_delta_mask] = 0.0
+            for key, dim_mask in self.delta_action_dim_mask.items():
+                cur_action = data["action"][key]
+                cur_action_is_pad = action_is_pad.to(device=cur_action.device)
+                cur_dim_mask = dim_mask.to(device=cur_action.device)
+                pad_delta_mask = cur_action_is_pad.unsqueeze(1) & cur_dim_mask.unsqueeze(0)
+                cur_action[pad_delta_mask] = 0.0
         data = self.action_state_transform(data)
         data = self.normalizer.forward(data)
         data = self.action_state_merger.forward(data)
 
         if "action" in data:
-            sample["action"] = data["action"] # [action_horizon, action_dim]
-            sample["action_is_pad"] = data["action_is_pad"] # [action_horizon,]
-            sample["action_dim_is_pad"] = data["action_dim_is_pad"] # [action_dim,]
+            sample["action"] = data["action"]
+            sample["action_is_pad"] = data["action_is_pad"]
+            sample["action_dim_is_pad"] = data["action_dim_is_pad"]
             assert sample["action"].shape[-1] == self.action_output_dim
-        sample["proprio"] = data["state"] # [num_obs_steps, proprio_dim]
-        sample["proprio_is_pad"] = data["state_is_pad"] # [num_obs_steps,]
-        sample["proprio_dim_is_pad"] = data["state_dim_is_pad"] # [proprio_dim,]
+        sample["proprio"] = data["state"]
+        sample["proprio_is_pad"] = data["state_is_pad"]
+        sample["proprio_dim_is_pad"] = data["state_dim_is_pad"]
         assert sample["proprio"].shape[-1] == self.proprio_output_dim
 
         sample["idx"] = data["idx"]
@@ -256,15 +238,7 @@ class WAMProcessor(BaseProcessor):
         return sample
 
     def postprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Postprocess the data for the policy model.
-        
-        Args:
-            data: Dict[str, Any], lerobot sample in raw mcap
-
-        Returns:
-            data: Dict[str, Any], processed data including unnormalized action
-        """
+        """Undo action transforms and normalization for policy output."""
         assert "action" in data, "Action is required in postprocess"
         data["state"] = data.pop("proprio")
         data = self.action_state_merger.backward(data)

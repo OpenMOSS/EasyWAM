@@ -77,9 +77,7 @@ def _collect_dataset_settings(data_cfg: DictConfig):
     context_lens = set()
 
     for node_path, node in _iter_dataset_nodes(data_cfg, path="data"):
-        raw_dirs = node.get("dataset_dirs")
-        if raw_dirs is None:
-            continue
+        raw_dirs = node["dataset_dirs"]
 
         cache_dir = node.get("text_embedding_cache_dir")
         if cache_dir is None or not str(cache_dir).strip():

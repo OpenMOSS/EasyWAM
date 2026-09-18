@@ -136,7 +136,6 @@ def decode_video_frames_torchvision(
     query_ts = torch.tensor(timestamps, dtype=torch.float32)
     loaded_ts = torch.tensor(loaded_ts, dtype=torch.float32)
 
-    # compute distances between each query timestamp and timestamps of all loaded frames
     dist = torch.cdist(query_ts[:, None], loaded_ts[:, None], p=1)
     min_, argmin_ = dist.min(1)
 
@@ -152,14 +151,12 @@ def decode_video_frames_torchvision(
         f"\nbackend: {backend}"
     )
 
-    # get closest frames to the query timestamps
     closest_frames = torch.stack([loaded_frames[idx] for idx in argmin_])
     closest_ts = loaded_ts[argmin_]
 
     if log_loaded_timestamps:
         logging.info(f"{closest_ts=}")
 
-    # convert to the pytorch format which is float32 in [0,1] range (and channel first)
     closest_frames = closest_frames.type(torch.float32) / 255
 
     assert len(timestamps) == len(closest_frames)
@@ -189,18 +186,14 @@ def decode_video_frames_torchcodec(
     else:
         raise ImportError("torchcodec is required but not available.")
 
-    # initialize video decoder
     decoder = VideoDecoder(video_path, device=device, seek_mode="approximate")
     loaded_frames = []
     loaded_ts = []
-    # get metadata for frame information
     metadata = decoder.metadata
     average_fps = metadata.average_fps
 
-    # convert timestamps to frame indices
     frame_indices = [round(ts * average_fps) for ts in timestamps]
 
-    # retrieve frames based on indices
     frames_batch = decoder.get_frames_at(indices=frame_indices)
 
     for frame, pts in zip(frames_batch.data, frames_batch.pts_seconds, strict=False):
@@ -213,7 +206,6 @@ def decode_video_frames_torchcodec(
     query_ts = torch.tensor(timestamps, dtype=torch.float32)
     loaded_ts = torch.tensor(loaded_ts, dtype=torch.float32)
 
-    # compute distances between each query timestamp and loaded timestamps
     dist = torch.cdist(query_ts[:, None], loaded_ts[:, None], p=1)
     min_, argmin_ = dist.min(1)
 
@@ -228,14 +220,12 @@ def decode_video_frames_torchcodec(
         f"\nvideo: {video_path}"
     )
 
-    # get closest frames to the query timestamps
     closest_frames = torch.stack([loaded_frames[idx] for idx in argmin_])
     closest_ts = loaded_ts[argmin_]
 
     if log_loaded_timestamps:
         logging.info(f"{closest_ts=}")
 
-    # convert to float32 in [0,1] range (channel first)
     closest_frames = closest_frames.type(torch.float32) / 255
 
     assert len(timestamps) == len(closest_frames)
@@ -254,7 +244,6 @@ def encode_video_frames(
     overwrite: bool = False,
 ) -> None:
     """More info on ffmpeg arguments tuning on `benchmark/video/README.md`"""
-    # Check encoder availability
     if vcodec == "h264_nvenc" :
         return encode_video_frames_ffmpeg(
             imgs_dir, video_path, fps, pix_fmt = pix_fmt, overwrite=overwrite
@@ -268,26 +257,22 @@ def encode_video_frames(
 
     video_path.parent.mkdir(parents=True, exist_ok=overwrite)
 
-    # Encoders/pixel formats incompatibility check
     if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
         logging.warning(
             f"Incompatible pixel format 'yuv444p' for codec {vcodec}, auto-selecting format 'yuv420p'"
         )
         pix_fmt = "yuv420p"
 
-    # Get input frames
     template = "frame_" + ("[0-9]" * 6) + ".jpeg"
     input_list = sorted(
         glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
     )
 
-    # Define video output frame size (assuming all input frames are the same size)
     if len(input_list) == 0:
         raise FileNotFoundError(f"No images found in {imgs_dir}.")
     dummy_image = Image.open(input_list[0])
     width, height = dummy_image.size
 
-    # Define video codec options
     video_options = {}
 
     if g is not None:
@@ -301,19 +286,15 @@ def encode_video_frames(
         value = f"fast-decode={fast_decode}" if vcodec == "libsvtav1" else "fastdecode"
         video_options[key] = value
 
-    # Set logging level
     if log_level is not None:
-        # "While less efficient, it is generally preferable to modify logging with Python’s logging"
         logging.getLogger("libav").setLevel(log_level)
 
-    # Create and open output file (overwrite by default)
     with av.open(str(video_path), "w") as output:
         output_stream = output.add_stream(vcodec, fps, options=video_options)
         output_stream.pix_fmt = pix_fmt
         output_stream.width = width
         output_stream.height = height
 
-        # Loop through input frames and encode them
         for input_data in input_list:
             input_image = Image.open(input_data).convert("RGB")
             input_frame = av.VideoFrame.from_image(input_image)
@@ -321,19 +302,16 @@ def encode_video_frames(
             if packet:
                 output.mux(packet)
 
-        # Flush the encoder
         packet = output_stream.encode()
         if packet:
             output.mux(packet)
 
-    # Reset logging level
     if log_level is not None:
         av.logging.restore_default_callback()
 
     if not video_path.exists():
         raise OSError(f"Video encoding did not work. File not found: {video_path}.")
 
-# GPU speed up video encoding
 def encode_video_frames_ffmpeg(
     imgs_dir: Path | str,
     video_path: Path | str,
@@ -352,12 +330,10 @@ def encode_video_frames_ffmpeg(
     
     video_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Check if ffmpeg is available
     ffmpeg_path = shutil.which("ffmpeg")
     if ffmpeg_path is None:
         raise RuntimeError("ffmpeg is not installed or not in system PATH")
     
-    # Build ffmpeg command
     cmd = [
         ffmpeg_path,
         "-y" if overwrite else "-n",
@@ -377,7 +353,7 @@ def encode_video_frames_ffmpeg(
     cmd.append(str(video_path))
     
     try:
-        result = subprocess.run(
+        subprocess.run(
             cmd, 
             capture_output=True, 
             text=True, 
@@ -389,10 +365,6 @@ def encode_video_frames_ffmpeg(
         logging.error(video_path)
         logging.error(vcodec)
         print(f"ffmpeg {' '.join(cmd)}")
-        raise RuntimeError(error_msg)
-    except Exception as e:
-        error_msg = f"Failed to run FFmpeg command: {' '.join(cmd)}\nError: {str(e)}"
-        logging.error(error_msg)
         raise RuntimeError(error_msg)
 
 
@@ -418,48 +390,37 @@ with warnings.catch_warnings():
 
 
 def get_audio_info(video_path: Path | str) -> dict:
-    # Set logging level
     logging.getLogger("libav").setLevel(av.logging.ERROR)
 
-    # Getting audio stream information
     audio_info = {}
     with av.open(str(video_path), "r") as audio_file:
         try:
             audio_stream = audio_file.streams.audio[0]
         except IndexError:
-            # Reset logging level
             av.logging.restore_default_callback()
             return {"has_audio": False}
 
         audio_info["audio.channels"] = audio_stream.channels
         audio_info["audio.codec"] = audio_stream.codec.canonical_name
-        # In an ideal loseless case : bit depth x sample rate x channels = bit rate.
-        # In an actual compressed case, the bit rate is set according to the compression level : the lower the bit rate, the more compression is applied.
         audio_info["audio.bit_rate"] = audio_stream.bit_rate
         audio_info["audio.sample_rate"] = audio_stream.sample_rate  # Number of samples per second
-        # In an ideal loseless case : fixed number of bits per sample.
-        # In an actual compressed case : variable number of bits per sample (often reduced to match a given depth rate).
         audio_info["audio.bit_depth"] = audio_stream.format.bits
         audio_info["audio.channel_layout"] = audio_stream.layout.name
         audio_info["has_audio"] = True
 
-    # Reset logging level
     av.logging.restore_default_callback()
 
     return audio_info
 
 
 def get_video_info(video_path: Path | str) -> dict:
-    # Set logging level
     logging.getLogger("libav").setLevel(av.logging.ERROR)
 
-    # Getting video stream information
     video_info = {}
     with av.open(str(video_path), "r") as video_file:
         try:
             video_stream = video_file.streams.video[0]
         except IndexError:
-            # Reset logging level
             av.logging.restore_default_callback()
             return {}
 
@@ -469,16 +430,13 @@ def get_video_info(video_path: Path | str) -> dict:
         video_info["video.pix_fmt"] = video_stream.pix_fmt
         video_info["video.is_depth_map"] = False
 
-        # Calculate fps from r_frame_rate
         video_info["video.fps"] = int(video_stream.base_rate)
 
         pixel_channels = get_video_pixel_channels(video_stream.pix_fmt)
         video_info["video.channels"] = pixel_channels
 
-    # Reset logging level
     av.logging.restore_default_callback()
 
-    # Adding audio stream information
     video_info.update(**get_audio_info(video_path))
 
     return video_info

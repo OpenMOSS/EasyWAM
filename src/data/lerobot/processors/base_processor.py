@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, Literal
+from abc import ABC
+from typing import Dict, Any, Optional, List
 
 import torch
 import numpy as np
@@ -11,7 +11,6 @@ from utils.pytorch_utils import dict_apply
 class BaseProcessor(ABC):
     def __init__(
         self,
-        # keys
         shape_meta: Dict[str, Any],
         num_obs_steps: int,
         num_output_cameras: int, 
@@ -20,18 +19,15 @@ class BaseProcessor(ABC):
 
         action_state_transforms: Optional[List[Any]], 
 
-        # action & state normalization
         use_stepwise_action_norm: bool,
         norm_default_mode: NormMode,
         norm_exception_mode: Dict[str, Dict[str, NormMode]], 
 
         action_state_merger, 
 
-        # image transform
         train_transforms: Dict[str, List[Any]] | None,
         val_transforms: Dict[str, List[Any]] | None, 
 
-        # instruction transform
         drop_high_level_prob: float,
         use_zh_instruction: bool,
 
@@ -46,7 +42,6 @@ class BaseProcessor(ABC):
         self.drop_high_level_prob = drop_high_level_prob
         self.use_zh_instruction = use_zh_instruction
 
-        # image
         self.train_transforms = train_transforms
         self.val_transforms = val_transforms
 
@@ -93,13 +88,7 @@ class BaseProcessor(ABC):
         )
 
     def augment_instruction(self, data: Dict[str, str] | List[str]) -> List[str]:
-        """
-        Args:
-            data: Dict[str, str] | List[str], lerobot sample in raw mcap
-
-        Returns:
-            List[str], processed instructions
-        """
+        """Choose the instruction language and optional high-level task."""
         if "coarse_task" in data:
             high_level_instruction = data["coarse_task"]
         else:
@@ -156,18 +145,15 @@ class BaseProcessor(ABC):
     def preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform a dataset sample into the tensors consumed by the policy."""
         sample = {}
-        # 1. instruction
         sample["instruction"] = self.augment_instruction(data)
         sample["image_is_pad"] = data["image_is_pad"]
 
-        # 2. image
         processed_images = []
         for meta in self.shape_meta["images"]:
             key, shape = meta["key"], meta["shape"]
-            image = data["images"][key]  # [num_obs_steps, C, H, W]
+            image = data["images"][key]
             assert image.ndim == 4, f"Expected 4 dimensions (num_obs_steps, C, H, W), got shape {image.shape}"
             
-            # Apply transforms efficiently on the merged batch
             transforms = self.train_transforms if self.is_train else self.val_transforms
             for trans in transforms[key]:
                 image = trans(image)
@@ -178,7 +164,7 @@ class BaseProcessor(ABC):
 
             processed_images.append(image)
         
-        pixel_values = torch.cat(processed_images, dim=0) # [num_input_cameras, C, H, W]
+        pixel_values = torch.cat(processed_images, dim=0)
         if self.num_output_cameras > pixel_values.shape[0]:
             out = torch.zeros((self.num_output_cameras,) + pixel_values.shape[1:], device=pixel_values.device, dtype=pixel_values.dtype)
             out[0: pixel_values.shape[0]] = pixel_values
@@ -186,25 +172,23 @@ class BaseProcessor(ABC):
         else:
             sample["pixel_values"] = pixel_values
 
-        # Copy action before transform for open-loop evaluation, 
-        # disabled for training dataset as it may cause collating key problem.
+        # Keep ground-truth actions for open-loop evaluation.
         if not self.is_train and "action" in data:
             sample["gt_action"] = deepcopy(data["action"])
 
-        # 3. action & state
         data = self.action_state_transform(data)
         data = self.normalizer.forward(data)
         data = self.action_state_merger.forward(data)
 
         if "action" in data:
-            sample["action"] = data["action"] # [action_horizon, action_dim]
-            sample["action_is_pad"] = data["action_is_pad"] # [action_horizon,]
-            sample["action_dim_is_pad"] = data["action_dim_is_pad"] # [action_dim,]
+            sample["action"] = data["action"]
+            sample["action_is_pad"] = data["action_is_pad"]
+            sample["action_dim_is_pad"] = data["action_dim_is_pad"]
             assert sample["action"].shape[-1] == self.action_output_dim
         
-        sample["proprio"] = data["state"] # [num_obs_steps, proprio_dim]
-        sample["proprio_is_pad"] = data["state_is_pad"] # [num_obs_steps,]
-        sample["proprio_dim_is_pad"] = data["state_dim_is_pad"] # [proprio_dim,]
+        sample["proprio"] = data["state"]
+        sample["proprio_is_pad"] = data["state_is_pad"]
+        sample["proprio_dim_is_pad"] = data["state_dim_is_pad"]
         assert sample["proprio"].shape[-1] == self.proprio_output_dim
 
         sample["idx"] = data["idx"]
@@ -214,15 +198,7 @@ class BaseProcessor(ABC):
         return sample
 
     def postprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Postprocess the data for the policy model.
-        
-        Args:
-            data: Dict[str, Any], lerobot sample in raw mcap
-
-        Returns:
-            data: Dict[str, Any], processed data including unnormalized action
-        """
+        """Undo action transforms and normalization for policy output."""
         assert "action" in data, "Action is required in postprocess"
         data["state"] = data.pop("proprio")
         data = self.action_state_merger.backward(data)

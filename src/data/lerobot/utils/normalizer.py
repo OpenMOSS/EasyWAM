@@ -172,11 +172,8 @@ def load_dataset_stats_from_json(file_path: str,
             return {k: convert_back_to_tensor(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             if is_numeric_list(obj):
-                try:
-                    arr = np.array(obj)
-                    return torch.from_numpy(arr)
-                except Exception:
-                    return [convert_back_to_tensor(item) for item in obj]
+                arr = np.array(obj)
+                return torch.from_numpy(arr)
             else:
                 return [convert_back_to_tensor(item) for item in obj]
         else:

@@ -7,14 +7,7 @@ from PIL import Image
 
 
 def obtain_image_size(data: torch.Tensor | Image.Image) -> tuple[int, int]:
-    r"""Return spatial size from a PIL image or image/video tensor.
-
-    Args:
-        data (torch.Tensor | Image.Image): Input image or video tensor.
-    Returns:
-        width (int): Input width.
-        height (int): Input height.
-    """
+    """Return the width and height of an image or video tensor."""
 
     if isinstance(data, Image.Image):
         width, height = data.size
@@ -30,16 +23,7 @@ class ResizeSmallestSideAspectPreserving:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor | Image.Image:
-        r"""Resize while preserving aspect ratio.
-
-        The output is scaled so both spatial dimensions are at least the
-        requested target size.
-
-        Args:
-            video (torch.Tensor | Image.Image): Input image or video tensor.
-        Returns:
-            torch.Tensor | Image.Image: Resized image or video tensor.
-        """
+        """Resize until both dimensions meet the target size."""
 
         assert self.args is not None, "Please specify args in augmentations"
 
@@ -66,13 +50,7 @@ class CenterCrop:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor | Image.Image:
-        r"""Center crop to the requested spatial size.
-
-        Args:
-            video (torch.Tensor | Image.Image): Input image or video tensor.
-        Returns:
-            torch.Tensor | Image.Image: Center cropped image or video tensor.
-        """
+        """Center crop to the requested size."""
         assert (
             (self.args is not None) and ("img_w" in self.args) and ("img_h" in self.args)
         ), "Please specify size in args"
@@ -86,13 +64,7 @@ class Normalize:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor:
-        r"""Convert to tensor if needed and normalize by mean/std.
-
-        Args:
-            video (torch.Tensor | Image.Image): Input image or video tensor.
-        Returns:
-            torch.Tensor: Normalized image or video tensor.
-        """
+        """Convert to a tensor and normalize by mean and standard deviation."""
         assert self.args is not None, "Please specify args"
 
         mean = self.args["mean"]
@@ -104,6 +76,6 @@ class Normalize:
                 data = data / 255.0
             data = data.to(dtype=torch.get_default_dtype())
         else:
-            data = transforms_F.to_tensor(video)  # division by 255 is applied in to_tensor()
+            data = transforms_F.to_tensor(video)
 
         return transforms_F.normalize(tensor=data, mean=mean, std=std)

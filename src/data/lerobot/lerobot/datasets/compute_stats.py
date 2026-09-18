@@ -47,7 +47,6 @@ def auto_downsample_height_width(img: np.ndarray, target_size: int = 150, max_si
     _, height, width = img.shape
 
     if max(width, height) < max_size_threshold:
-        # no downsampling needed
         return img
 
     downsample_factor = int(width / target_size) if width > height else int(height / target_size)
@@ -60,7 +59,6 @@ def sample_images(image_paths: list[str]) -> np.ndarray:
     images = None
     for i, idx in enumerate(sampled_indices):
         path = image_paths[idx]
-        # we load as uint8 to reduce memory usage
         img = load_image_as_numpy(path, dtype=np.uint8, channel_first=True)
         img = auto_downsample_height_width(img)
 
@@ -101,7 +99,6 @@ def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], featu
 
         ep_stats[key] = get_feature_stats(ep_ft_array, axis=axes_to_reduce, keepdims=keepdims)
 
-        # finally, we normalize and remove batch dim for images
         if features[key]["dtype"] in ["image", "video"]:
             ep_stats[key] = {
                 k: v if k == "count" else np.squeeze(v / 255.0, axis=0) for k, v in ep_stats[key].items()
@@ -133,15 +130,13 @@ def aggregate_feature_stats(stats_ft_list: list[dict[str, dict]]) -> dict[str, d
     counts = np.stack([s["count"] for s in stats_ft_list])
     total_count = counts.sum(axis=0)
 
-    # Prepare weighted mean by matching number of dimensions
     while counts.ndim < means.ndim:
         counts = np.expand_dims(counts, axis=-1)
 
-    # Compute the weighted mean
     weighted_means = means * counts
     total_mean = weighted_means.sum(axis=0) / total_count
 
-    # Compute the variance using the parallel algorithm
+    # Combine dataset variances with the parallel variance formula.
     delta_means = means - total_mean
     weighted_variances = (variances + delta_means**2) * counts
     total_variance = weighted_variances.sum(axis=0) / total_count
