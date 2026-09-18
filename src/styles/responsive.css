@@ -7,6 +7,7 @@
 }
 @media(max-width:680px){
   .hero h1{font-size:2.8rem;line-height:1.1}
+  html:lang(zh-CN) .hero h1{font-size:2.1rem}
   .feature-grid,.resource-grid,.model-grid,.result-highlights{grid-template-columns:1fr}
   .feature{min-height:0}
   .feature h3{font-size:1.45rem}
@@ -23,3 +24,8 @@
   .reveal{opacity:1;transform:none;transition:none}
   .resource-card{transition:none}
 }
+html:lang(zh-CN) body{font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;font-size:17px;line-height:1.75}
+html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.language-switch button,.side-kicker,.eyebrow,.label,.workflow-index,.feature-num,.resource-card>span,.resource-card>b,.footer){font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+html:lang(zh-CN) :is(.side-link,.mobile-nav,.button,.resource-card>span,.resource-card>b){font-size:13px}
+html:lang(zh-CN) :is(.lede,.section-intro,.feature p,.model-card p,.resource-card p,.community-join p){font-size:1rem;line-height:1.75}
+html:lang(zh-CN) :is(.section-head h2,.feature h3,.model-card h3,.resource-card h3){letter-spacing:-.035em}

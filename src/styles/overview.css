@@ -3,6 +3,11 @@
 .hero .hero-copy{max-width:960px}
 .hero h1{font-size:clamp(4rem,4vw,4.8rem)}
 .hero h1 em{font-style:normal;color:var(--cyan)}
+.hero-resource{min-width:112px;justify-content:center}
+.hero-resource .brand-icon{width:18px;height:18px;flex:none;object-fit:contain}
+.hero-resource span{font-size:11px}
+.hero-resource span:last-child{margin-left:auto;font-size:14px}
+html:lang(zh-CN) .hero h1{font-size:clamp(2.4rem,3.5vw,3.8rem);line-height:1.22;letter-spacing:-.045em}
 .section-head h2 span:first-child{color:var(--ink)}
 .section-head h2 span:last-child{color:var(--cyan)}
 .feature-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;margin-top:1.1rem;background:var(--line);border:1px solid var(--line)}
