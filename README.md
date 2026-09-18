@@ -33,6 +33,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 ## 📰 News
 
+- **[2026-09-18]** EasyWAM adds RoboCasa365 and RoboDojo training and evaluation, updates RoboTwin for the current upstream with independent dynamic batch serving, and scales evaluation with multiple model workers per GPU and a GPU tuning tool. Training gains configurable checkpoint retention, state tokens after actions, and generic FLUX text embedding precomputation. This update also refreshes LIBERO and LIBERO-Plus results for Unified, MoT, and Hidden on Wan2.2 and Cosmos2.5, including Wan2.2 LoRA on LIBERO, with revised architecture analysis and evaluation defaults.
 - **[2026-09-12]** EasyWAM introduces dynamic batched evaluation, requiring only a small number of workers while significantly reducing evaluation GPU memory usage and improving GPU utilization. This update also adds task/trial progress reporting, LeRobot v3 support, FlashAttention 2/3/4 with optimized text-padding mask semantics, configurable state-token placement and causal attention, execution and caching optimizations, automatic run logging, expanded documentation, and new benchmark results.
 - **[2026-09-03]** EasyWAM adds FLUX.2/ImageWAM backbone integration.
 - **[2026-09-02]** EasyWAM is released with unified training and evaluation workflows for World Action Models.
@@ -82,17 +83,20 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 | Backbone | Model | Spatial | Object | Goal | Long | Avg. |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| Wan2.2-TI2V-5B | EasyWAM-Unified | 99.0 | 99.4 | 99.2 | 98.2 | 99.0 |
-| Wan2.2-TI2V-5B | EasyWAM-MoT | 97.8 | 98.4 | 97.6 | 95.6 | 97.4 |
-| Wan2.2-TI2V-5B | EasyWAM-Hidden | 99.4 | 100.0 | 97.0 | 97.8 | 98.6 |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 98.4 | 98.8 | 99.2 | 98.0 | 98.6 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 97.0 | 99.2 | 96.6 | 94.0 | 96.7 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 99.2 | 100.0 | 97.8 | 98.2 | 98.8 |
+| Cosmos-Predict2.5-2B | EasyWAM-Unified | 97.8 | 99.4 | 97.0 | 93.0 | 96.8 |
+| Cosmos-Predict2.5-2B | EasyWAM-MoT | 98.0 | 98.4 | 98.4 | 95.6 | 97.6 |
+| Cosmos-Predict2.5-2B | EasyWAM-Hidden | 97.2 | 98.8 | 96.0 | 95.0 | 96.8 |
 
 **LoRA (Rank 128)**
 
 | Backbone | Model | Spatial | Object | Goal | Long | Avg. |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| Wan2.2-TI2V-5B | EasyWAM-Unified | 84.0 | 97.8 | 92.0 | 81.2 | 88.8 |
-| Wan2.2-TI2V-5B | EasyWAM-MoT | 96.8 | 98.8 | 94.4 | 90.4 | 95.1 |
-| Wan2.2-TI2V-5B | EasyWAM-Hidden | 96.8 | 99.4 | 92.6 | 86.8 | 93.9 |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 91.2 | 98.8 | 91.8 | 66.2 | 87.0 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 96.8 | 99.6 | 97.4 | 90.0 | 95.9 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 98.0 | 99.8 | 89.4 | 86.6 | 93.5 |
 
 </details>
 
@@ -101,9 +105,12 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 | Backbone | Model | Orig (LIBERO) | Background | Camera | Language | Layout | Light | Noise | Robot | Avg. |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Wan2.2-TI2V-5B | EasyWAM-Unified | 99.0 | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | 67.5 |
-| Wan2.2-TI2V-5B | EasyWAM-MoT | 97.4 | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | 56.8 |
-| Wan2.2-TI2V-5B | EasyWAM-Hidden | 98.6 | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | 72.4 |
+| Wan2.2-TI2V-5B | EasyWAM-Unified | 98.6 | 72.3 | 54.8 | 93.7 | 83.4 | 97.0 | 72.0 | 83.4 | 79.0 |
+| Wan2.2-TI2V-5B | EasyWAM-MoT | 96.7 | 64.5 | 45.5 | 71.4 | 80.1 | 94.7 | 78.5 | 71.5 | 71.7 |
+| Wan2.2-TI2V-5B | EasyWAM-Hidden | 98.8 | 59.3 | 57.0 | 93.2 | 84.3 | 95.0 | 70.8 | 83.7 | 77.6 |
+| Cosmos-Predict2.5-2B | EasyWAM-Unified | 96.8 | 72.7 | 63.7 | 90.1 | 82.6 | 89.2 | 72.1 | 79.2 | 78.2 |
+| Cosmos-Predict2.5-2B | EasyWAM-MoT | 97.6 | 60.7 | 75.1 | 92.3 | 82.6 | 92.6 | 81.3 | 58.5 | 77.7 |
+| Cosmos-Predict2.5-2B | EasyWAM-Hidden | 96.8 | 59.5 | 65.9 | 92.6 | 85.0 | 89.1 | 68.3 | 82.5 | 77.8 |
 
 </details>
 

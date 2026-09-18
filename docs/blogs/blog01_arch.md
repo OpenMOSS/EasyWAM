@@ -1,6 +1,6 @@
 # 🧭 What WAM Architecture Do We Need?
 
-When designing a World Action Model, there's a question we can never quite avoid: **should video and action share a single backbone, or be modeled separately? And does inference really need to generate a future prediction at all?** This post draws on EasyWAM's full set of results on LIBERO / LIBERO-Plus for three representative architectures, laying the training regime (full-parameter / LoRA) and generalization ability (LIBERO-Plus) side by side, and walking through what the numbers say and the architectural reasons behind them. All figures below are from experiments on the Wan2.2-TI2V-5B backbone.
+When designing a World Action Model, there's a question we can never quite avoid: **should video and action share a single backbone, or be modeled separately? And does inference really need to generate a future prediction at all?** This post draws on EasyWAM's full set of results on LIBERO / LIBERO-Plus for three representative architectures, laying the training regime (full-parameter / LoRA) and generalization ability (LIBERO-Plus) side by side, and walking through what the numbers say and the architectural reasons behind them. The results below cover Wan2.2-TI2V-5B and Cosmos-Predict2.5-2B; LoRA results are available for Wan2.2 on LIBERO.
 
 ## 🧱 Experimental Setup
 
@@ -16,21 +16,22 @@ When designing a World Action Model, there's a question we can never quite avoid
 
 **Results (LIBERO, Avg.)**
 
-| Model | Structure | Training | Spatial | Object | Goal | Long | **Avg.** |
-| --- | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | Single-DiT | Full-parameter | 99.0 | 99.4 | 99.2 | 98.2 | **99.0** |
-| EasyWAM-Hidden | Dual-DiT | Full-parameter | 99.4 | 100.0 | 97.0 | 97.8 | **98.6** |
-| EasyWAM-MoT | Dual-DiT | Full-parameter | 97.8 | 98.4 | 97.6 | 95.6 | **97.4** |
-| EasyWAM-Unified | Single-DiT | LoRA | 84.0 | 97.8 | 92.0 | 81.2 | **88.8** |
-| EasyWAM-Hidden | Dual-DiT | LoRA | 96.8 | 99.4 | 92.6 | 86.8 | **93.9** |
-| EasyWAM-MoT | Dual-DiT | LoRA | 96.8 | 98.8 | 94.4 | 90.4 | **95.1** |
-
-
+| Backbone | Model | Structure | Training | Spatial | Object | Goal | Long | **Avg.** |
+| --- | --- | --- | --- | :---: | :---: | :---: | :---: | :---: |
+| Wan2.2 | EasyWAM-Unified | Single-DiT | Full-parameter | 98.4 | 98.8 | 99.2 | 98.0 | **98.6** |
+| Wan2.2 | EasyWAM-Hidden | Dual-DiT | Full-parameter | 99.2 | 100.0 | 97.8 | 98.2 | **98.8** |
+| Wan2.2 | EasyWAM-MoT | Dual-DiT | Full-parameter | 97.0 | 99.2 | 96.6 | 94.0 | **96.7** |
+| Wan2.2 | EasyWAM-Unified | Single-DiT | LoRA | 91.2 | 98.8 | 91.8 | 66.2 | **87.0** |
+| Wan2.2 | EasyWAM-Hidden | Dual-DiT | LoRA | 98.0 | 99.8 | 89.4 | 86.6 | **93.5** |
+| Wan2.2 | EasyWAM-MoT | Dual-DiT | LoRA | 96.8 | 99.6 | 97.4 | 90.0 | **95.9** |
+| Cosmos2.5 | EasyWAM-Unified | Single-DiT | Full-parameter | 97.8 | 99.4 | 97.0 | 93.0 | **96.8** |
+| Cosmos2.5 | EasyWAM-Hidden | Dual-DiT | Full-parameter | 97.2 | 98.8 | 96.0 | 95.0 | **96.8** |
+| Cosmos2.5 | EasyWAM-MoT | Dual-DiT | Full-parameter | 98.0 | 98.4 | 98.4 | 95.6 | **97.6** |
 
 **Findings**
 
-- **Under full-parameter training: Unified (99.0) > Hidden (98.6) > MoT (97.4).** The single-DiT design places video and action tokens in the same self-attention, bidirectionally coupled — action prediction can draw directly on the full visual representation, and video generation is in turn constrained by the action signal. Learning this tight coupling well requires tuning the whole network jointly, which is exactly what full-parameter training provides, so Unified comes out on top in this setting.
-- **Under LoRA fine-tuning: MoT (95.1) > Hidden (93.9) > Unified (88.8).** Both MoT and Hidden are dual-DiT architectures, which largely preserve the pretrained Video DiT prior; LoRA only needs to fine-tune a relatively independent Action DiT (plus a small amount of interaction layers) to adapt the action side, at a low cost. Unified's advantage under full-parameter training, by contrast, depends on jointly adjusting the *entire* backbone — once only a low-rank update is available, the "coupling capacity" that joint video-action modeling requires can no longer be captured by LoRA, and this shows up most starkly in performance dropping from 99.0 to 88.8.
+- **Full-parameter rankings vary with the backbone.** On Wan2.2, Hidden (98.8) narrowly leads Unified (98.6), followed by MoT (96.7). On Cosmos2.5, MoT (97.6) leads Unified and Hidden (both 96.8). The close scores at the top and the change in ranking mean that these experiments do not identify one architecture as best across backbones.
+- **Under Wan2.2 LoRA fine-tuning: MoT (95.9) > Hidden (93.5) > Unified (87.0).** Compared with full-parameter training, Unified drops 11.6 points, especially on LIBERO-10 (98.0 to 66.2); Hidden drops 5.3 points and MoT 0.8 points. This suggests different sensitivity to LoRA in the evaluated models, but the success rates alone do not show which part of each architecture causes the gap.
 
 ---
 
@@ -40,16 +41,19 @@ When designing a World Action Model, there's a question we can never quite avoid
 
 **Results (LIBERO-Plus, Avg.)**
 
-| Model | Predicts video at inference? | Background | Camera | Language | Layout | Light | Noise | Robot | **Avg.** |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| EasyWAM-Unified | ✅ | 55.8 | 33.7 | 93.7 | 80.6 | 92.2 | 50.2 | 71.4 | **67.5** |
-| EasyWAM-Hidden | ✅ | 56.8 | 49.2 | 95.3 | 81.0 | 90.4 | 58.2 | 77.4 | **72.4** |
-| EasyWAM-MoT | ❌ | 52.8 | 20.6 | 80.4 | 65.2 | 85.1 | 51.5 | 49.7 | **56.8** |
+| Backbone | Model | Predicts video at inference? | Background | Camera | Language | Layout | Light | Noise | Robot | **Avg.** |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Wan2.2 | EasyWAM-Unified | ✅ | 72.3 | 54.8 | 93.7 | 83.4 | 97.0 | 72.0 | 83.4 | **79.0** |
+| Wan2.2 | EasyWAM-Hidden | ✅ | 59.3 | 57.0 | 93.2 | 84.3 | 95.0 | 70.8 | 83.7 | **77.6** |
+| Wan2.2 | EasyWAM-MoT | ❌ | 64.5 | 45.5 | 71.4 | 80.1 | 94.7 | 78.5 | 71.5 | **71.7** |
+| Cosmos2.5 | EasyWAM-Unified | ✅ | 72.7 | 63.7 | 90.1 | 82.6 | 89.2 | 72.1 | 79.2 | **78.2** |
+| Cosmos2.5 | EasyWAM-Hidden | ✅ | 59.5 | 65.9 | 92.6 | 85.0 | 89.1 | 68.3 | 82.5 | **77.8** |
+| Cosmos2.5 | EasyWAM-MoT | ❌ | 60.7 | 75.1 | 92.3 | 82.6 | 92.6 | 81.3 | 58.5 | **77.7** |
 
 **Findings**
 
-- **Predicting future video at inference time significantly improves generalization.** Hidden (72.4) and Unified (67.5) both predict future video at inference, and their average scores far exceed MoT (56.8), which doesn't. They lead on nearly every perturbation dimension, with the gap especially large on Camera (49.2/33.7 vs. 20.6) and Robot (77.4/71.4 vs. 49.7). This suggests that "predicting the future" itself provides a stronger supervisory signal than pure action imitation — the model has to model how objects and viewpoints evolve over time in order to generate a plausible future frame, and this process pushes it toward visual representations that are closer to the underlying physics, and more robust to perturbation, rather than simply memorizing the action-observation mapping from the training distribution.
-- **Hidden generalizes better than Unified, at the cost of a "video-action alignment tax."** Both predict video at inference, but Hidden (72.4) clearly outperforms Unified (67.5). The reason is that Hidden's dual-DiT structure largely preserves the pretrained Video DiT's prior — the video branch runs essentially as it was pretrained, and only feeds its intermediate features to a separate Action DiT. Unified, on the other hand, has to pull action tokens into the same backbone for joint training, so the video branch's representation is continuously perturbed by action gradients — in effect, it pays a portion of its original pure-vision generalization ability as a tax for aligning the two modalities. This tax is most visible under out-of-distribution perturbation, especially Camera (33.7 vs. 49.2).
+- **The generalization ranking changes with the backbone.** On Wan2.2, Unified (79.0) and Hidden (77.6) lead MoT (71.7). On Cosmos2.5, Unified (78.2), Hidden (77.8), and MoT (77.7) are close. Thus the Wan2.2 gap does not establish that predicting future video consistently improves LIBERO-Plus performance; these architectures differ in other ways as well.
+- **Different perturbations favor different models.** On Cosmos2.5, MoT leads on Camera (75.1) and Noise (81.3), but scores 58.5 on Robot, behind Unified (79.2) and Hidden (82.5). Wan2.2 MoT also leads on Noise (78.5). Unified leads the overall score on both backbones, while Hidden no longer leads Unified overall. These results do not support attributing their differences to a video-action alignment tax without a controlled ablation.
 
 ---
 
