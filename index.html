@@ -15,67 +15,117 @@
     <script defer src="./site.js"></script>
   </head>
   <body>
-    <a class="skip-link" href="#overview">Skip to content</a>
+    <a class="skip-link" href="#overview" data-zh="跳转到正文">Skip to content</a>
     <aside class="sidebar">
-      <a class="brand" href="#overview" aria-label="EasyWAM home">
+      <a class="brand" href="#overview" aria-label="EasyWAM home" data-aria-zh="EasyWAM 首页">
         <span class="brand-mark">EW</span>
-        <span><strong>EasyWAM</strong><small>research framework</small></span>
+        <span><strong>EasyWAM</strong><small data-zh="研究框架">research framework</small></span>
       </a>
       <div class="side-rule"></div>
-      <p class="side-kicker">Project map</p>
-      <nav class="side-nav" aria-label="Main navigation">
-        <a class="side-link active" href="#overview"><span>01</span>Overview</a>
-        <a class="side-link" href="#results"><span>02</span>Results</a>
-        <a class="side-link" href="#resources"><span>03</span>Get started</a>
-        <a class="side-link" href="#contributing"><span>04</span>Contributing</a>
+      <p class="side-kicker" data-zh="项目导航">Project map</p>
+      <nav class="side-nav" aria-label="Main navigation" data-aria-zh="主导航">
+        <a class="side-link active" href="#overview"><span>01</span><span data-zh="概览">Overview</span></a>
+        <a class="side-link" href="#quick-start"><span>02</span><span data-zh="快速开始">Quick Start</span></a>
+        <a class="side-link" href="#results"><span>03</span><span data-zh="基准结果">Results</span></a>
+        <a class="side-link" href="#model-zoo"><span>04</span><span data-zh="模型库">Model Zoo</span></a>
+        <a class="side-link" href="#community"><span>05</span><span data-zh="社区资源">Community</span></a>
       </nav>
       <div class="side-bottom">
-        <p>Open source codebase for<br />World Action Models.</p>
-        <a class="github-link" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer">View on GitHub <span>↗</span></a>
+        <div class="language-switch" role="group" aria-label="Language" data-aria-zh="语言"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="zh" aria-pressed="false">中文</button></div>
+        <p data-zh="开源 World Action Model 研究代码库。">Open source codebase for World Action Models.</p>
+        <a class="github-link" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer"><span data-zh="查看 GitHub">View on GitHub</span> <span>↗</span></a>
       </div>
     </aside>
 
     <header class="mobile-header">
       <a class="mobile-brand" href="#overview"><span class="brand-mark">EW</span> EasyWAM</a>
-      <nav aria-label="Mobile navigation">
-        <a class="mobile-nav active" href="#overview">Overview</a>
-        <a class="mobile-nav" href="#results">Results</a>
-        <a class="mobile-nav" href="#resources">Get started</a>
-        <a class="mobile-nav" href="#contributing">Contributing</a>
+      <nav aria-label="Mobile navigation" data-aria-zh="移动导航">
+        <a class="mobile-nav active" href="#overview" data-zh="概览">Overview</a>
+        <a class="mobile-nav" href="#quick-start" data-zh="快速开始">Quick Start</a>
+        <a class="mobile-nav" href="#results" data-zh="结果">Results</a>
+        <a class="mobile-nav" href="#model-zoo" data-zh="模型库">Model Zoo</a>
+        <a class="mobile-nav" href="#community" data-zh="社区">Community</a>
       </nav>
+      <div class="language-switch mobile-language" role="group" aria-label="Language" data-aria-zh="语言"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="zh" aria-pressed="false">中</button></div>
     </header>
 
     <main class="page">
       <section id="overview" class="hero reveal">
         <div class="hero-copy">
-          <div class="label-row"><span class="label accent">WORLD ACTION MODELS</span><span class="label">OPEN RESEARCH</span></div>
-          <p class="eyebrow">A unified research codebase</p>
-          <h1><em>EasyWAM</em>: A Unified and Efficient Framework for Training and Evaluating World Action Models</h1>
-          <p class="lede">EasyWAM connects modular World Action Models, data processing, distributed training, parameter-efficient fine-tuning and scalable evaluation in one reproducible workflow.</p>
+          <div class="label-row"><span class="label accent" data-zh="世界动作模型">WORLD ACTION MODELS</span><span class="label" data-zh="开放研究">OPEN RESEARCH</span></div>
+          <p class="eyebrow" data-zh="统一的研究代码库">A unified research codebase</p>
+          <h1><em>EasyWAM</em><span data-zh="：高效统一的世界动作模型训练与评测框架">: A Unified and Efficient Framework for Training and Evaluating World Action Models</span></h1>
+          <p class="lede" data-zh="EasyWAM 将模块化世界动作模型、数据处理、分布式训练、参数高效微调与可扩展评测连接为可复现的工作流程。">EasyWAM connects modular World Action Models, data processing, distributed training, parameter-efficient fine-tuning and scalable evaluation in one reproducible workflow.</p>
           <div class="hero-actions">
-            <a class="button button-dark" href="#resources">Get started <span>↗</span></a>
-            <a class="button button-quiet" href="https://huggingface.co/collections/OpenMOSS-Team/easywam" target="_blank" rel="noreferrer">Get checkpoints <span>↗</span></a>
+            <a class="button button-dark" href="#quick-start"><span data-zh="快速开始">Get started</span> <span>↗</span></a>
+            <a class="button button-quiet" href="https://huggingface.co/collections/OpenMOSS-Team/easywam" target="_blank" rel="noreferrer"><span data-zh="查看模型">Get checkpoints</span> <span>↗</span></a>
           </div>
-          <div class="hero-meta"><span><i class="dot cyan"></i>MIT licensed</span><span><i class="dot orange"></i>Python 3.10+</span><span><i class="dot blue"></i>Active / 2026</span></div>
+          <div class="hero-meta"><span><i class="dot cyan"></i><span data-zh="MIT 许可">MIT licensed</span></span><span><i class="dot orange"></i>Python 3.10+</span><span><i class="dot blue"></i><span data-zh="持续更新 / 2026">Active / 2026</span></span></div>
         </div>
       </section>
 
       <section class="overview-section reveal" aria-labelledby="framework-title">
-        <div class="section-head"><div><p class="eyebrow">01 / overview</p><h2 id="framework-title">One framework.<br /><span>Every layer in sync.</span></h2></div><p class="section-intro">From sparse video decoding to resumable evaluation, EasyWAM makes the entire WAM loop inspectable and repeatable.</p></div>
-        <figure class="architecture-figure"><img src="./assets/overview.png" alt="EasyWAM framework overview from unified data to benchmark evaluation" loading="lazy" /><figcaption><span>FIG. 01</span> The EasyWAM pipeline. Shared interfaces keep data, model, training and evaluation aligned.</figcaption></figure>
+        <div class="section-head"><div><p class="eyebrow" data-zh="01 / 概览">01 / overview</p><h2 id="framework-title"><span data-zh="一个框架。">One framework.</span><br /><span data-zh="贯通完整流程。">Every layer in sync.</span></h2></div><p class="section-intro" data-zh="从稀疏视频解码到断点续评，EasyWAM 让世界动作模型的完整流程可检查、可复现。">From sparse video decoding to resumable evaluation, EasyWAM makes the entire WAM loop inspectable and repeatable.</p></div>
+        <figure class="architecture-figure"><img src="./assets/overview.png" alt="EasyWAM framework overview from unified data to benchmark evaluation" data-alt-zh="EasyWAM 从统一数据到基准评测的框架概览" loading="lazy" /><figcaption><span data-zh="图 01">FIG. 01</span><span data-zh="EasyWAM 流程：统一接口连接数据、模型、训练与评测。">The EasyWAM pipeline. Shared interfaces keep data, model, training and evaluation aligned.</span></figcaption></figure>
         <div class="feature-grid">
-          <article class="feature"><span class="feature-num">01</span><h3>Five architectures.<br /><em>One workflow.</em></h3><p>Unified, MoT, MoT-Joint, MoT-IDM and Hidden share data, training, checkpoint and evaluation interfaces.</p></article>
-          <article class="feature"><span class="feature-num">02</span><h3>Three video<br /><em>backbones.</em></h3><p>Wan2.2-TI2V-5B, Cosmos-Predict2.5-2B and FLUX.2 Klein-4B, with full-parameter training and LoRA fine-tuning.</p></article>
-          <article class="feature"><span class="feature-num">03</span><h3>Efficient from data<br /><em>to inference.</em></h3><p>FlashAttention 2/3/4, sparse video decoding, text and prompt caches, DeepSpeed ZeRO, dynamic inference batches and resumable evaluation.</p></article>
-          <article class="feature"><span class="feature-num">04</span><h3>Five benchmark<br /><em>workflows.</em></h3><p>LIBERO, LIBERO-Plus, RoboTwin, RoboDojo and RoboCasa365, with distributed evaluation and result summaries.</p></article>
+          <article class="feature"><span class="feature-num">01</span><h3 data-zh="五种架构，一套流程。">Five architectures. One workflow.</h3><p data-zh="Unified、MoT、MoT-Joint、MoT-IDM 和 Hidden 共享数据、训练、checkpoint 与评测接口。">Unified, MoT, MoT-Joint, MoT-IDM and Hidden share data, training, checkpoint and evaluation interfaces.</p></article>
+          <article class="feature"><span class="feature-num">02</span><h3 data-zh="三种视频 backbone。">Three video backbones.</h3><p data-zh="支持 Wan2.2-TI2V-5B、Cosmos-Predict2.5-2B 和 FLUX.2 Klein-4B，涵盖全参数训练与 LoRA 微调。">Wan2.2-TI2V-5B, Cosmos-Predict2.5-2B and FLUX.2 Klein-4B, with full-parameter training and LoRA fine-tuning.</p></article>
+          <article class="feature"><span class="feature-num">03</span><h3 data-zh="从数据到推理都重视效率。">Efficient from data to inference.</h3><p data-zh="FlashAttention 2/3/4、稀疏视频解码、文本与 prompt 缓存、DeepSpeed ZeRO、动态推理批处理及断点续评。">FlashAttention 2/3/4, sparse video decoding, text and prompt caches, DeepSpeed ZeRO, dynamic inference batches and resumable evaluation.</p></article>
+          <article class="feature"><span class="feature-num">04</span><h3 data-zh="五套基准工作流程。">Five benchmark workflows.</h3><p data-zh="覆盖 LIBERO、LIBERO-Plus、RoboTwin、RoboDojo 和 RoboCasa365，支持分布式评测与结果汇总。">LIBERO, LIBERO-Plus, RoboTwin, RoboDojo and RoboCasa365, with distributed evaluation and result summaries.</p></article>
         </div>
       </section>
 
+      <section id="quick-start" class="quick-start-section reveal" aria-labelledby="quick-start-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="02 / 快速开始">02 / quick start</p><h2 id="quick-start-title"><span data-zh="从安装">From setup</span><br /><span data-zh="到评测。">to evaluation.</span></h2></div><p class="section-intro" data-zh="选择一个任务，复制来自项目 README 的命令。数据集、模型权重和仿真环境的准备步骤请参考对应指南。">Choose a task and copy commands from the project README. Follow the linked guides to prepare datasets, model weights and simulators.</p></div>
+        <div class="workflow-tabs" role="tablist" aria-label="Quick Start steps" data-aria-zh="快速开始步骤">
+          <button class="workflow-tab" id="tab-install" type="button" role="tab" aria-selected="true" aria-controls="panel-install" tabindex="0" data-zh="安装">Install</button>
+          <button class="workflow-tab" id="tab-train" type="button" role="tab" aria-selected="false" aria-controls="panel-train" tabindex="-1" data-zh="训练">Train</button>
+          <button class="workflow-tab" id="tab-evaluate" type="button" role="tab" aria-selected="false" aria-controls="panel-evaluate" tabindex="-1" data-zh="评测">Evaluate</button>
+        </div>
+        <div class="workflow-panel" id="panel-install" role="tabpanel" aria-labelledby="tab-install">
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="01 / 环境">01 / ENVIRONMENT</span><h3 data-zh="安装 EasyWAM">Install EasyWAM</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/README.md#-quick-start" target="_blank" rel="noreferrer" data-zh="完整安装说明 ↗">Full setup guide ↗</a></div>
+          <p data-zh="在克隆仓库后，于项目根目录运行。FlashAttention 可按 GPU 型号选装。">Run from the repository root after cloning. FlashAttention is optional and depends on your GPU.</p>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="install" data-zh="复制命令">Copy command</button></div><pre><code id="code-install">conda create -n easywam python=3.10 -y
+conda activate easywam
+pip install -U pip
+pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.pytorch.org/whl/cu128
+pip install -e .</code></pre></div>
+        </div>
+        <div class="workflow-panel" id="panel-train" role="tabpanel" aria-labelledby="tab-train" hidden>
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="02 / 训练">02 / TRAINING</span><h3 data-zh="预计算并训练">Precompute and train</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/config/training.md" target="_blank" rel="noreferrer" data-zh="训练配置指南 ↗">Training configuration ↗</a></div>
+          <p data-zh="准备 LIBERO 数据集和 backbone 后，先预计算文本特征，再启动示例 MoT 训练；按机器情况调整 GPU 进程数。">After preparing LIBERO data and the backbone, precompute text embeddings and launch the example MoT run. Adjust the GPU process count for your machine.</p>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="train" data-zh="复制命令">Copy command</button></div><pre><code id="code-train">python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
+NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22</code></pre></div>
+        </div>
+        <div class="workflow-panel" id="panel-evaluate" role="tabpanel" aria-labelledby="tab-evaluate" hidden>
+          <div class="workflow-heading"><div><span class="workflow-index" data-zh="03 / 评测">03 / EVALUATION</span><h3 data-zh="选择评测基准">Choose a benchmark</h3></div><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/benchmark/README.md" target="_blank" rel="noreferrer" data-zh="基准配置指南 ↗">Benchmark setup ↗</a></div>
+          <p data-zh="先按对应指南安装仿真环境并准备数据。将命令中的 checkpoint 路径替换为实际文件。">Set up the simulator and data with its guide, then replace the checkpoint placeholder with your own file.</p>
+          <div class="benchmark-options" role="group" aria-label="Evaluation benchmark" data-aria-zh="评测基准">
+            <button type="button" data-benchmark="libero" aria-pressed="true">LIBERO</button>
+            <button type="button" data-benchmark="libero-plus" aria-pressed="false">LIBERO-Plus</button>
+            <button type="button" data-benchmark="robotwin" aria-pressed="false">RoboTwin</button>
+            <button type="button" data-benchmark="robodojo" aria-pressed="false">RoboDojo</button>
+            <button type="button" data-benchmark="robocasa" aria-pressed="false">RoboCasa365</button>
+          </div>
+          <div class="code-shell"><div class="code-head"><span data-zh="终端 / Bash">TERMINAL / BASH</span><button class="copy-code" type="button" data-copy="evaluate" data-zh="复制命令">Copy command</button></div><pre><code id="code-evaluate">python experiments/libero/run_libero_manager.py \
+  task=libero_easywam_mot_wan22 \
+  ckpt=&lt;path/to/checkpoint.pt&gt;</code></pre></div>
+        </div>
+        <p class="copy-feedback" id="copy-feedback" role="status" aria-live="polite"></p>
+      </section>
+
       <section id="results" class="benchmark-section reveal" aria-labelledby="benchmark-title">
-        <div class="section-head compact"><div><p class="eyebrow">02 / results</p><h2 id="benchmark-title">Measured results,<br /><span>across backbones.</span></h2></div><p class="section-intro">Task success rates (%), higher is better. Results may vary with checkpoints, seeds and evaluation settings.</p></div>
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="03 / 基准结果">03 / results</p><h2 id="benchmark-title"><span data-zh="跨架构、跨 backbone 的">Measured results,</span><br /><span data-zh="实测表现。">across backbones.</span></h2></div><p class="section-intro" data-zh="以下均为任务成功率（%），数值越高越好。结果可能随 checkpoint、随机种子和评测设置变化。">Task success rates (%), higher is better. Results may vary with checkpoints, seeds and evaluation settings.</p></div>
+        <div class="result-highlights">
+          <article><span data-zh="LIBERO / Wan2.2 / 全参数">LIBERO / Wan2.2 / full</span><strong>98.8%</strong><p data-zh="EasyWAM-Hidden 平均成功率">EasyWAM-Hidden average success</p></article>
+          <article><span>LIBERO / Wan2.2 / LoRA</span><strong>95.9%</strong><p data-zh="EasyWAM-MoT 平均成功率">EasyWAM-MoT average success</p></article>
+          <article><span>LIBERO-Plus / Wan2.2</span><strong>79.0%</strong><p data-zh="EasyWAM-Unified 平均成功率">EasyWAM-Unified average success</p></article>
+          <article><span data-zh="训练吞吐 / MoT">Training throughput / MoT</span><strong>2.68×</strong><p data-zh="相较架构相同的 FastWAM">versus architecture-matched FastWAM</p></article>
+        </div>
+        <details class="result-details"><summary data-zh="展开五张完整结果表">Explore all five result tables</summary>
         <div class="perf-tables">
           <figure class="perf-table-wrap perf-table-scroll">
-            <figcaption><span>TABLE 01</span> LIBERO · Wan2.2-TI2V-5B · full-parameter</figcaption>
+            <figcaption><span>TABLE 01</span><span data-zh="LIBERO · Wan2.2-TI2V-5B · 全参数">LIBERO · Wan2.2-TI2V-5B · full-parameter</span></figcaption>
             <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
               <tr><td>EasyWAM-Unified</td><td>98.4</td><td>98.8</td><td>99.2</td><td>98.0</td><td>98.6</td></tr>
               <tr><td>EasyWAM-MoT</td><td>97.0</td><td>99.2</td><td>96.6</td><td>94.0</td><td>96.7</td></tr>
@@ -83,7 +133,7 @@
             </tbody></table>
           </figure>
           <figure class="perf-table-wrap perf-table-scroll">
-            <figcaption><span>TABLE 02</span> LIBERO · Wan2.2-TI2V-5B · LoRA rank 128</figcaption>
+            <figcaption><span>TABLE 02</span><span data-zh="LIBERO · Wan2.2-TI2V-5B · LoRA 秩 128">LIBERO · Wan2.2-TI2V-5B · LoRA rank 128</span></figcaption>
             <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
               <tr><td>EasyWAM-Unified</td><td>91.2</td><td>98.8</td><td>91.8</td><td>66.2</td><td>87.0</td></tr>
               <tr><td>EasyWAM-MoT</td><td>96.8</td><td>99.6</td><td>97.4</td><td>90.0</td><td><b>95.9</b></td></tr>
@@ -91,7 +141,7 @@
             </tbody></table>
           </figure>
           <figure class="perf-table-wrap perf-table-scroll">
-            <figcaption><span>TABLE 03</span> LIBERO · Cosmos-Predict2.5-2B · full-parameter</figcaption>
+            <figcaption><span>TABLE 03</span><span data-zh="LIBERO · Cosmos-Predict2.5-2B · 全参数">LIBERO · Cosmos-Predict2.5-2B · full-parameter</span></figcaption>
             <table class="benchmark-table"><thead><tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>LIBERO-10</th><th>Avg.</th></tr></thead><tbody>
               <tr><td>EasyWAM-Unified</td><td>97.8</td><td>99.4</td><td>97.0</td><td>93.0</td><td>96.8</td></tr>
               <tr><td>EasyWAM-MoT</td><td>98.0</td><td>98.4</td><td>98.4</td><td>95.6</td><td><b>97.6</b></td></tr>
@@ -99,7 +149,7 @@
             </tbody></table>
           </figure>
           <figure class="perf-table-wrap perf-table-scroll">
-            <figcaption><span>TABLE 04</span> LIBERO-Plus · Wan2.2-TI2V-5B · robustness</figcaption>
+            <figcaption><span>TABLE 04</span><span data-zh="LIBERO-Plus · Wan2.2-TI2V-5B · 鲁棒性">LIBERO-Plus · Wan2.2-TI2V-5B · robustness</span></figcaption>
             <table class="benchmark-table"><thead><tr><th>Model</th><th>Orig</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr></thead><tbody>
               <tr><td>EasyWAM-Unified</td><td>98.6</td><td>72.3</td><td>54.8</td><td>93.7</td><td>83.4</td><td>97.0</td><td>72.0</td><td>83.4</td><td><b>79.0</b></td></tr>
               <tr><td>EasyWAM-MoT</td><td>96.7</td><td>64.5</td><td>45.5</td><td>71.4</td><td>80.1</td><td>94.7</td><td>78.5</td><td>71.5</td><td>71.7</td></tr>
@@ -107,38 +157,43 @@
             </tbody></table>
           </figure>
           <figure class="perf-table-wrap perf-table-scroll">
-            <figcaption><span>TABLE 05</span> LIBERO-Plus · Cosmos-Predict2.5-2B · robustness</figcaption>
+            <figcaption><span>TABLE 05</span><span data-zh="LIBERO-Plus · Cosmos-Predict2.5-2B · 鲁棒性">LIBERO-Plus · Cosmos-Predict2.5-2B · robustness</span></figcaption>
             <table class="benchmark-table"><thead><tr><th>Model</th><th>Orig</th><th>Background</th><th>Camera</th><th>Language</th><th>Layout</th><th>Light</th><th>Noise</th><th>Robot</th><th>Avg.</th></tr></thead><tbody>
               <tr><td>EasyWAM-Unified</td><td>96.8</td><td>72.7</td><td>63.7</td><td>90.1</td><td>82.6</td><td>89.2</td><td>72.1</td><td>79.2</td><td><b>78.2</b></td></tr>
               <tr><td>EasyWAM-MoT</td><td>97.6</td><td>60.7</td><td>75.1</td><td>92.3</td><td>82.6</td><td>92.6</td><td>81.3</td><td>58.5</td><td>77.7</td></tr>
               <tr><td>EasyWAM-Hidden</td><td>96.8</td><td>59.5</td><td>65.9</td><td>92.6</td><td>85.0</td><td>89.1</td><td>68.3</td><td>82.5</td><td>77.8</td></tr>
             </tbody></table>
-            <p class="table-note">LIBERO-Plus uses LIBERO checkpoints and tests changes to background, camera, language, layout, lighting, noise and robot appearance.</p>
+            <p class="table-note" data-zh="LIBERO-Plus 使用 LIBERO checkpoint，测试背景、相机、语言、布局、光照、噪声和机器人外观变化。">LIBERO-Plus uses LIBERO checkpoints and tests changes to background, camera, language, layout, lighting, noise and robot appearance.</p>
           </figure>
         </div>
-        <div class="results-more"><p>On 8 × NVIDIA H100 GPUs, EasyWAM-MoT reaches <strong>138.2 samples/s</strong> versus FastWAM's 51.5 samples/s: <strong>2.68× throughput</strong>. A 20,000-step LIBERO run takes about <strong>5 hours instead of 14</strong> under the reported setup.</p><img src="./assets/efficiency_comparison.svg" alt="EasyWAM versus FastWAM training throughput and step timing" loading="lazy" /><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/results/result.md" target="_blank" rel="noreferrer">Read the complete results ↗</a></div>
+        </details>
+        <div class="results-more"><p data-zh="在 8 张 NVIDIA H100 GPU、每卡 batch size 16 的报告设置下，EasyWAM-MoT 达到 138.2 samples/s，FastWAM 为 51.5 samples/s，吞吐提升 2.68 倍。LIBERO 的 20,000 步训练约需 5 小时，而 FastWAM 约需 14 小时。">On 8 × NVIDIA H100 GPUs with per-device batch size 16, EasyWAM-MoT reaches 138.2 samples/s versus FastWAM's 51.5 samples/s: 2.68× throughput. A 20,000-step LIBERO run takes about 5 hours instead of 14 under the reported setup.</p><img src="./assets/efficiency_comparison.svg" alt="EasyWAM versus FastWAM training throughput and step timing" data-alt-zh="EasyWAM 与 FastWAM 的训练吞吐和步骤耗时对比" loading="lazy" /><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/results/result.md" target="_blank" rel="noreferrer" data-zh="查看完整结果 ↗">Read the complete results ↗</a></div>
       </section>
 
-      <section id="resources" class="resources-section reveal" aria-labelledby="resources-title">
-        <div class="section-head compact"><div><p class="eyebrow">03 / get started</p><h2 id="resources-title">From setup<br /><span>to evaluation.</span></h2></div><p class="section-intro">Follow the maintained guides on the main branch for commands, configuration and simulator setup.</p></div>
-        <div class="resource-grid">
-          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/blob/main/README.md#-quick-start" target="_blank" rel="noreferrer"><span>01 / INSTALL</span><h3>Quick start</h3><p>Install the environment and prepare a backbone.</p><b>Open guide ↗</b></a>
-          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/config/training.md" target="_blank" rel="noreferrer"><span>02 / TRAIN</span><h3>Training guide</h3><p>Choose a model, task configuration and distributed launcher.</p><b>Open guide ↗</b></a>
-          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/benchmark/README.md" target="_blank" rel="noreferrer"><span>03 / EVALUATE</span><h3>Benchmark guides</h3><p>Set up LIBERO, RoboTwin, RoboDojo or RoboCasa365 evaluation.</p><b>Open guide ↗</b></a>
-          <a class="resource-card" href="https://huggingface.co/collections/OpenMOSS-Team/easywam" target="_blank" rel="noreferrer"><span>04 / MODELS</span><h3>Checkpoints</h3><p>Browse released EasyWAM model checkpoints.</p><b>View models ↗</b></a>
+      <section id="model-zoo" class="model-zoo-section reveal" aria-labelledby="model-zoo-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="04 / 模型库">04 / model zoo</p><h2 id="model-zoo-title"><span data-zh="多种模型，">Multiple models,</span><br /><span data-zh="统一接口。">shared interfaces.</span></h2></div><p class="section-intro" data-zh="以下为框架支持的架构和 backbone；已发布的 checkpoint 请以 Hugging Face 集合为准。">These architectures and backbones are supported by the framework. Check the Hugging Face collection for released checkpoints.</p></div>
+        <div class="model-grid">
+          <article class="model-card"><span data-zh="01 / 单 BACKBONE">01 / SINGLE BACKBONE</span><h3>EasyWAM-Unified</h3><p data-zh="在单个 Video DiT 中联合预测未来视频与动作。">Jointly predicts future video and actions in a single Video DiT.</p></article>
+          <article class="model-card"><span data-zh="02 / 双 BACKBONE">02 / DUAL BACKBONE</span><h3>EasyWAM-MoT</h3><p data-zh="Video DiT 与 Action DiT 通过混合自注意力交互，仅预测动作。">Video DiT and Action DiT interact through mixed self-attention for action-only prediction.</p></article>
+          <article class="model-card"><span data-zh="03 / 联合去噪">03 / JOINT DENOISING</span><h3>EasyWAM-MoT-Joint</h3><p data-zh="通过混合自注意力联合去噪视频和动作 token。">Jointly denoises video and action tokens through mixed self-attention.</p></article>
+          <article class="model-card"><span data-zh="04 / 条件视频">04 / CONDITIONAL VIDEO</span><h3>EasyWAM-MoT-IDM</h3><p data-zh="使用 teacher-forced 条件视频进行动作预测。">Uses teacher-forced conditional video for action prediction.</p></article>
+          <article class="model-card"><span data-zh="05 / 隐层特征">05 / HIDDEN FEATURES</span><h3>EasyWAM-Hidden</h3><p data-zh="使用 Video DiT 的中间特征作为独立 Action DiT 的条件输入。">Conditions a separate Action DiT on intermediate Video DiT features.</p></article>
         </div>
+        <div class="backbone-strip"><div><span class="workflow-index" data-zh="支持的 BACKBONE">SUPPORTED BACKBONES</span><p>Wan2.2-TI2V-5B <span>·</span> Cosmos-Predict2.5-2B <span>·</span> FLUX.2 Klein-4B</p></div><a class="button button-dark" href="https://huggingface.co/collections/OpenMOSS-Team/easywam" target="_blank" rel="noreferrer"><span data-zh="查看已发布模型">Browse released models</span> <span>↗</span></a></div>
       </section>
 
-      <section id="contributing" class="contribute-section reveal" aria-labelledby="contribute-title">
-        <div class="contribute-copy"><p class="eyebrow">04 / contributing</p><h2 id="contribute-title">Let's build<br /><em>something big.</em></h2><p>EasyWAM grows through shared recipes, careful benchmarks and practical fixes. Whether you are adding a model, improving a dataloader or writing your first issue, there is a place for your work here.</p><a class="button button-light" href="https://github.com/OpenMOSS/EasyWAM/issues" target="_blank" rel="noreferrer">Open an issue <span>↗</span></a></div>
-        <div class="contribute-steps"><div class="step"><span>01</span><div><h3>Pick a path</h3><p>Models · Data · Training · Evaluation</p></div></div><div class="step"><span>02</span><div><h3>Build in public</h3><p>Fork, branch, test and document the change.</p></div></div><div class="step"><span>03</span><div><h3>Share the result</h3><p>Open a pull request. We review with care.</p></div></div><div class="terminal"><div><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span></div><code><span>$</span> git clone https://github.com/OpenMOSS/EasyWAM</code><button id="copy-command" aria-label="Copy setup command">Copy command</button><span id="copy-status" role="status"></span></div></div>
+      <section id="community" class="community-section reveal" aria-labelledby="community-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="05 / 社区资源">05 / community</p><h2 id="community-title"><span data-zh="继续探索，">Explore further,</span><br /><span data-zh="一起建设。">build together.</span></h2></div><p class="section-intro" data-zh="获取指南、模型和项目更新；遇到问题或有新想法，欢迎在 GitHub 交流。">Find guides, models and updates. Bring questions and ideas to the GitHub community.</p></div>
+        <div class="resource-grid">
+          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/README.md" target="_blank" rel="noreferrer"><span data-zh="01 / 文档">01 / DOCS</span><h3 data-zh="项目文档">Documentation</h3><p data-zh="Backbone、数据、训练配置与各评测基准的使用指南。">Guides for backbones, data, training configuration and benchmarks.</p><b data-zh="阅读文档 ↗">Read the docs ↗</b></a>
+          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer"><span data-zh="02 / 代码">02 / CODE</span><h3>GitHub</h3><p data-zh="浏览源码、配置、最新更新与贡献指南。">Browse code, configurations, updates and contribution guidance.</p><b data-zh="查看仓库 ↗">View repository ↗</b></a>
+          <a class="resource-card" href="https://huggingface.co/collections/OpenMOSS-Team/easywam" target="_blank" rel="noreferrer"><span data-zh="03 / 模型">03 / MODELS</span><h3>Hugging Face</h3><p data-zh="查看已发布的 EasyWAM checkpoint 和数据集。">Find published EasyWAM checkpoints and datasets.</p><b data-zh="浏览集合 ↗">Browse collection ↗</b></a>
+          <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/issues" target="_blank" rel="noreferrer"><span data-zh="04 / 反馈">04 / FEEDBACK</span><h3 data-zh="反馈与讨论">Feedback and discussion</h3><p data-zh="提交问题、提出功能建议，或参与项目讨论。">Report issues, propose features or join the project discussion.</p><b data-zh="打开 Issues ↗">Open issues ↗</b></a>
+        </div>
+        <div class="community-join"><div><span class="workflow-index" data-zh="微信交流群">WECHAT COMMUNITY</span><h3 data-zh="与 EasyWAM 社区保持联系">Stay in touch with EasyWAM</h3><p data-zh="扫描二维码加入微信交流群，或通过邮件联系项目团队。">Scan to join the WeChat discussion group, or email the project team.</p><a href="mailto:siyinwang20@fudan.edu.cn" data-zh="发送邮件 ↗">Email the team ↗</a></div><img src="./assets/EasyWAM-community.png" alt="EasyWAM WeChat discussion group QR code" data-alt-zh="EasyWAM 微信交流群二维码" loading="lazy" /></div>
       </section>
 
-      <section id="contact" class="contact-section reveal">
-        <p class="contact-line">Contact us and build EasyWAM together — <a href="https://github.com/OpenMOSS/EasyWAM/discussions" target="_blank" rel="noreferrer">start a discussion ↗</a></p>
-      </section>
-
-      <footer class="footer"><span>EasyWAM / OpenMOSS</span><span>Built for the WAM community <i class="dot orange"></i></span><a href="#overview">Back to top ↑</a></footer>
+      <footer class="footer"><span>EasyWAM / OpenMOSS</span><span><span data-zh="为 WAM 社区而建">Built for the WAM community</span> <i class="dot orange"></i></span><a href="#overview" data-zh="返回顶部 ↑">Back to top ↑</a></footer>
     </main>
   </body>
 </html>
