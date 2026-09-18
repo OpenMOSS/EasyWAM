@@ -1,7 +1,0 @@
-_target_: peft.LoraConfig
-r: 128
-lora_alpha: 128
-lora_dropout: 0.0
-bias: none
-init_lora_weights: true
-target_modules: ${model.backbone.lora_target_modules}

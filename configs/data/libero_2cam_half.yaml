@@ -1,8 +1,0 @@
-defaults:
-  - libero_2cam
-  - _self_
-
-# Keep a deterministic 50% episode subset from each LIBERO suite.
-train:
-  val_set_proportion: 0.5
-  is_training_set: true
