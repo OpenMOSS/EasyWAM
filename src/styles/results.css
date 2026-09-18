@@ -1,8 +1,7 @@
-.result-highlights{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.2rem}
+.result-highlights{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.2rem}
 .result-highlights article{padding:1.2rem;border:1px solid var(--line);border-top:3px solid var(--cyan);background:rgba(255,255,255,.55)}
 .result-highlights article:nth-child(2){border-top-color:var(--orange)}
 .result-highlights article:nth-child(3){border-top-color:var(--blue)}
-.result-highlights article:nth-child(4){border-top-color:var(--ink)}
 .result-highlights article>span{display:block;min-height:2.7em;color:var(--muted);font:700 10px/1.4 var(--mono);text-transform:uppercase}
 .result-highlights strong{display:block;margin:.7rem 0;font-size:2.4rem;line-height:1;letter-spacing:-.06em}
 .result-highlights p{margin:0;color:var(--muted);font-size:12px}
@@ -27,8 +26,6 @@
 .benchmark-table tr:last-child td{border-bottom:0}
 .benchmark-table b{color:var(--orange)}
 .table-note{margin:1.1rem .2rem 0;color:var(--muted);font-size:11px;line-height:1.6}
-.results-more{display:grid;gap:1rem;margin-top:1.4rem;padding:1.5rem;border:1px solid var(--line);background:rgba(255,255,255,.5)}
-.results-more p{margin:0;color:var(--muted)}
-.results-more img{width:100%;max-height:430px;object-fit:contain}
-.results-more a{justify-self:start;color:var(--cyan);font:700 11px var(--mono);text-transform:uppercase}
-.results-more a:hover{color:var(--orange)}
+.result-source{display:inline-block;margin-top:1.2rem;color:var(--cyan);font:700 11px var(--mono);text-transform:uppercase}
+.result-source:hover{color:var(--orange)}
+html:lang(zh-CN) .result-source{font:600 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}

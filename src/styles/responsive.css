@@ -2,8 +2,7 @@
   .mobile-header nav{min-width:0}
   .mobile-language{display:inline-flex;margin:0;flex:0 0 auto}
   .mobile-language button{padding:.25rem .35rem}
-  .quick-start-section,.model-zoo-section,.community-section{padding:4.7rem 0}
-  .result-highlights{grid-template-columns:repeat(2,1fr)}
+  .quick-start-section,.efficiency-section,.model-zoo-section,.community-section{padding:4.7rem 0}
 }
 @media(max-width:680px){
   .hero h1{font-size:2.8rem;line-height:1.1}
@@ -33,3 +32,4 @@ html:lang(zh-CN) .hero .eyebrow{font-size:15px;line-height:1.5;letter-spacing:.0
 html:lang(zh-CN) .hero-meta{font:500 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:0;text-transform:none}
 html:lang(zh-CN) .architecture-figure figcaption{font:500 14px/1.6 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;text-transform:none}
 html:lang(zh-CN) .hero-resource span:not(:last-child){font-size:13px}
+html:lang(zh-CN) .section-head .eyebrow{font-size:16px;line-height:1.5;letter-spacing:.04em}

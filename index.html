@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="./src/styles/overview.css" />
     <link rel="stylesheet" href="./src/styles/quick-start.css" />
     <link rel="stylesheet" href="./src/styles/results.css" />
+    <link rel="stylesheet" href="./src/styles/efficiency.css" />
     <link rel="stylesheet" href="./src/styles/model-community.css" />
     <link rel="stylesheet" href="./src/styles/responsive.css" />
     <script defer src="./src/scripts/navigation.js"></script>
@@ -34,8 +35,9 @@
         <a class="side-link active" href="#overview"><span>01</span><span data-zh="概览">Overview</span></a>
         <a class="side-link" href="#quick-start"><span>02</span><span data-zh="快速开始">Quick Start</span></a>
         <a class="side-link" href="#results"><span>03</span><span data-zh="基准结果">Results</span></a>
-        <a class="side-link" href="#model-zoo"><span>04</span><span data-zh="模型库">Model Zoo</span></a>
-        <a class="side-link" href="#community"><span>05</span><span data-zh="社区资源">Community</span></a>
+        <a class="side-link" href="#efficiency"><span>04</span><span data-zh="效率">Efficiency</span></a>
+        <a class="side-link" href="#model-zoo"><span>05</span><span data-zh="模型库">Model Zoo</span></a>
+        <a class="side-link" href="#community"><span>06</span><span data-zh="社区资源">Community</span></a>
       </nav>
       <div class="side-bottom">
         <div class="language-switch" role="group" aria-label="Language" data-aria-zh="语言"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="zh" aria-pressed="false">中文</button></div>
@@ -50,6 +52,7 @@
         <a class="mobile-nav active" href="#overview" data-zh="概览">Overview</a>
         <a class="mobile-nav" href="#quick-start" data-zh="快速开始">Quick Start</a>
         <a class="mobile-nav" href="#results" data-zh="结果">Results</a>
+        <a class="mobile-nav" href="#efficiency" data-zh="效率">Efficiency</a>
         <a class="mobile-nav" href="#model-zoo" data-zh="模型库">Model Zoo</a>
         <a class="mobile-nav" href="#community" data-zh="社区">Community</a>
       </nav>
@@ -128,7 +131,6 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22</code
           <article><span data-zh="LIBERO / Wan2.2 / 全参数">LIBERO / Wan2.2 / full</span><strong>98.8%</strong><p data-zh="EasyWAM-Hidden 平均成功率">EasyWAM-Hidden average success</p></article>
           <article><span>LIBERO / Wan2.2 / LoRA</span><strong>95.9%</strong><p data-zh="EasyWAM-MoT 平均成功率">EasyWAM-MoT average success</p></article>
           <article><span>LIBERO-Plus / Wan2.2</span><strong>79.0%</strong><p data-zh="EasyWAM-Unified 平均成功率">EasyWAM-Unified average success</p></article>
-          <article><span data-zh="训练吞吐 / MoT">Training throughput / MoT</span><strong>2.68×</strong><p data-zh="相较架构相同的 FastWAM">versus architecture-matched FastWAM</p></article>
         </div>
         <details class="result-details"><summary data-zh="展开五张完整结果表">Explore all five result tables</summary>
         <div class="perf-tables">
@@ -175,11 +177,32 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22</code
           </figure>
         </div>
         </details>
-        <div class="results-more"><p data-zh="在 8 张 NVIDIA H100 GPU、每卡 batch size 16 的报告设置下，EasyWAM-MoT 达到 138.2 samples/s，FastWAM 为 51.5 samples/s，吞吐提升 2.68 倍。LIBERO 的 20,000 步训练约需 5 小时，而 FastWAM 约需 14 小时。">On 8 × NVIDIA H100 GPUs with per-device batch size 16, EasyWAM-MoT reaches 138.2 samples/s versus FastWAM's 51.5 samples/s: 2.68× throughput. A 20,000-step LIBERO run takes about 5 hours instead of 14 under the reported setup.</p><img src="./assets/efficiency_comparison.svg" alt="EasyWAM versus FastWAM training throughput and step timing" data-alt-zh="EasyWAM 与 FastWAM 的训练吞吐和步骤耗时对比" loading="lazy" /><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/results/result.md" target="_blank" rel="noreferrer" data-zh="查看完整结果 ↗">Read the complete results ↗</a></div>
+        <a class="result-source" href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/results/result.md" target="_blank" rel="noreferrer" data-zh="查看完整基准结果 ↗">Read the complete benchmark results ↗</a>
+      </section>
+
+      <section id="efficiency" class="efficiency-section reveal" aria-labelledby="efficiency-title">
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="04 / 效率">04 / efficiency</p><h2 id="efficiency-title"><span data-zh="更少重复计算，">Less repeated work,</span><br /><span data-zh="更快完成迭代。">faster iteration.</span></h2></div><p class="section-intro" data-zh="从注意力计算、显存管理到数据加载和批量评测，EasyWAM 提供贯穿训练与推理流程的效率选项。">EasyWAM provides efficiency controls across attention, memory, data loading and batched evaluation.</p></div>
+        <div class="efficiency-features">
+          <article><span data-zh="01 / 计算">01 / COMPUTE</span><h3 data-zh="高效注意力计算">Efficient attention</h3><p data-zh="按硬件与环境自动选择 FlashAttention 4、3、2 或 PyTorch SDPA；BF16 训练可减少张量带宽与显存占用。">Choose the fastest compatible FlashAttention 4, 3 or 2 backend, with PyTorch SDPA as a fallback. BF16 training reduces tensor bandwidth and memory use.</p></article>
+          <article><span data-zh="02 / 显存">02 / MEMORY</span><h3 data-zh="灵活控制显存">Memory controls</h3><p data-zh="LoRA、DeepSpeed ZeRO、梯度检查点与 VAE 分批处理可按需降低显存需求；部分设置会以计算速度换取容量。">LoRA, DeepSpeed ZeRO, gradient checkpointing and VAE micro-batching help fit larger workloads, with configurable speed and memory tradeoffs.</p></article>
+          <article><span data-zh="03 / 数据">03 / DATA</span><h3 data-zh="减少数据准备开销">Lean data pipeline</h3><p data-zh="稀疏视频解码、索引化文本缓存、预计算文本嵌入及常驻 DataLoader worker 减少重复读取与计算。">Sparse video decoding, indexed text caches, precomputed text embeddings and persistent DataLoader workers reduce repeated loading and processing.</p></article>
+          <article><span data-zh="04 / 评测">04 / EVALUATION</span><h3 data-zh="批量并行评测">Batched evaluation</h3><p data-zh="动态推理批量、每卡多个模型 worker、提示词缓存与断点续评帮助提高 GPU 利用率并减少重复工作。">Dynamic inference batching, multiple model workers per GPU, prompt caching and resumable evaluation improve GPU use and avoid repeated work.</p></article>
+        </div>
+        <div class="efficiency-metrics">
+          <article><span data-zh="训练吞吐 / EasyWAM-MoT">TRAINING THROUGHPUT / EasyWAM-MoT</span><strong>138.2 <small>samples/s</small></strong><p data-zh="FastWAM：51.5 samples/s">FastWAM: 51.5 samples/s</p></article>
+          <article><span data-zh="相同架构的吞吐对比">ARCHITECTURE-MATCHED THROUGHPUT</span><strong>2.68×</strong><p data-zh="相较原版 FastWAM 代码库">Versus the original FastWAM codebase</p></article>
+          <article><span data-zh="LIBERO / 20,000 步">LIBERO / 20,000 STEPS</span><strong>~5 <small>hours</small></strong><p data-zh="原版 FastWAM 约 14 小时">About 14 hours with original FastWAM</p></article>
+        </div>
+        <div class="efficiency-comparison">
+          <p data-zh="以上结果使用 Wan2.2-TI2V-5B backbone，在 8 张 NVIDIA H100 GPU、每卡 batch size 16 的设置下测得。EasyWAM-MoT 与 FastWAM 采用相同模型架构；实际训练时间会随 CPU、GPU 和数据配置变化。">These results use the Wan2.2-TI2V-5B backbone on 8 × NVIDIA H100 GPUs with per-device batch size 16. EasyWAM-MoT and FastWAM share the same model architecture. Actual training time varies with CPU, GPU and data configuration.</p>
+          <div class="efficiency-table-scroll"><table class="efficiency-table"><thead><tr><th data-zh="框架">Framework</th><th data-zh="吞吐（samples/s）↑">Throughput (samples/s) ↑</th><th data-zh="数据（秒）↓">Data (s) ↓</th><th data-zh="前向（秒）↓">Forward (s) ↓</th><th data-zh="反向（秒）↓">Backward (s) ↓</th></tr></thead><tbody><tr><td>EasyWAM-MoT</td><td><b>138.2</b></td><td><b>0.0108</b></td><td><b>0.3663</b></td><td><b>0.5392</b></td></tr><tr><td>FastWAM</td><td>51.5</td><td>0.0759</td><td>1.2412</td><td>1.0680</td></tr></tbody></table></div>
+          <img src="./assets/efficiency_comparison.svg" alt="EasyWAM versus FastWAM training throughput and step timing" data-alt-zh="EasyWAM 与 FastWAM 的训练吞吐和每步耗时对比" loading="lazy" />
+          <div class="efficiency-links"><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/README.md#-efficiency-results" target="_blank" rel="noreferrer" data-zh="查看 README 效率结果 ↗">Efficiency results in README ↗</a><a href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/instructions/config/efficiency.md" target="_blank" rel="noreferrer" data-zh="效率配置指南 ↗">Efficiency configuration guide ↗</a></div>
+        </div>
       </section>
 
       <section id="model-zoo" class="model-zoo-section reveal" aria-labelledby="model-zoo-title">
-        <div class="section-head compact"><div><p class="eyebrow" data-zh="04 / 模型库">04 / model zoo</p><h2 id="model-zoo-title"><span data-zh="多种模型，">Multiple models,</span><br /><span data-zh="统一接口。">shared interfaces.</span></h2></div><p class="section-intro" data-zh="以下为框架支持的架构和 backbone；已发布的 checkpoint 请以 Hugging Face 集合为准。">These architectures and backbones are supported by the framework. Check the Hugging Face collection for released checkpoints.</p></div>
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="05 / 模型库">05 / model zoo</p><h2 id="model-zoo-title"><span data-zh="多种模型，">Multiple models,</span><br /><span data-zh="统一接口。">shared interfaces.</span></h2></div><p class="section-intro" data-zh="以下为框架支持的架构和 backbone；已发布的 checkpoint 请以 Hugging Face 集合为准。">These architectures and backbones are supported by the framework. Check the Hugging Face collection for released checkpoints.</p></div>
         <div class="model-grid">
           <article class="model-card"><span data-zh="01 / 单 BACKBONE">01 / SINGLE BACKBONE</span><h3>EasyWAM-Unified</h3><p data-zh="在单个 Video DiT 中联合预测未来视频与动作。">Jointly predicts future video and actions in a single Video DiT.</p></article>
           <article class="model-card"><span data-zh="02 / 双 BACKBONE">02 / DUAL BACKBONE</span><h3>EasyWAM-MoT</h3><p data-zh="Video DiT 与 Action DiT 通过混合自注意力交互，仅预测动作。">Video DiT and Action DiT interact through mixed self-attention for action-only prediction.</p></article>
@@ -191,7 +214,7 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh task=libero_easywam_mot_wan22</code
       </section>
 
       <section id="community" class="community-section reveal" aria-labelledby="community-title">
-        <div class="section-head compact"><div><p class="eyebrow" data-zh="05 / 社区资源">05 / community</p><h2 id="community-title"><span data-zh="继续探索，">Explore further,</span><br /><span data-zh="一起建设。">build together.</span></h2></div><p class="section-intro" data-zh="获取指南、模型和项目更新；遇到问题或有新想法，欢迎在 GitHub 交流。">Find guides, models and updates. Bring questions and ideas to the GitHub community.</p></div>
+        <div class="section-head compact"><div><p class="eyebrow" data-zh="06 / 社区资源">06 / community</p><h2 id="community-title"><span data-zh="继续探索，">Explore further,</span><br /><span data-zh="一起建设。">build together.</span></h2></div><p class="section-intro" data-zh="获取指南、模型和项目更新；遇到问题或有新想法，欢迎在 GitHub 交流。">Find guides, models and updates. Bring questions and ideas to the GitHub community.</p></div>
         <div class="resource-grid">
           <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM/blob/main/docs/README.md" target="_blank" rel="noreferrer"><span data-zh="01 / 文档">01 / DOCS</span><h3 data-zh="项目文档">Documentation</h3><p data-zh="Backbone、数据、训练配置与各评测基准的使用指南。">Guides for backbones, data, training configuration and benchmarks.</p><b data-zh="阅读文档 ↗">Read the docs ↗</b></a>
           <a class="resource-card" href="https://github.com/OpenMOSS/EasyWAM" target="_blank" rel="noreferrer"><span data-zh="02 / 代码">02 / CODE</span><h3>GitHub</h3><p data-zh="浏览源码、配置、最新更新与贡献指南。">Browse code, configurations, updates and contribution guidance.</p><b data-zh="查看仓库 ↗">View repository ↗</b></a>

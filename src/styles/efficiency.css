@@ -1,0 +1,33 @@
+.efficiency-section{padding:5.7rem 0;border-bottom:1px solid var(--line)}
+.efficiency-features{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.efficiency-features article{padding:1.5rem;border:1px solid var(--line);border-top:3px solid var(--cyan);background:rgba(255,255,255,.55)}
+.efficiency-features article:nth-child(2){border-top-color:var(--orange)}
+.efficiency-features article:nth-child(3){border-top-color:var(--blue)}
+.efficiency-features article:nth-child(4){border-top-color:var(--ink)}
+.efficiency-features article>span,.efficiency-metrics article>span{color:var(--orange);font:700 10px/1.4 var(--mono);letter-spacing:.08em}
+.efficiency-features h3{margin:1rem 0 .55rem;font-size:1.5rem;letter-spacing:-.04em}
+.efficiency-features p,.efficiency-metrics p{margin:0;color:var(--muted);font-size:13px;line-height:1.65}
+.efficiency-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:1.2rem 0}
+.efficiency-metrics article{padding:1.3rem;border:1px solid var(--line);background:var(--dark);color:var(--paper)}
+.efficiency-metrics article>span{display:block;min-height:2.8em;color:#9dc8bd}
+.efficiency-metrics strong{display:block;margin:.8rem 0 .6rem;font-size:clamp(2rem,3vw,2.7rem);line-height:1;letter-spacing:-.06em}
+.efficiency-metrics strong small{font-size:.35em;letter-spacing:0}
+.efficiency-metrics p{color:#b8c8bd}
+.efficiency-comparison{display:grid;gap:1.2rem;padding:1.5rem;border:1px solid var(--line);background:rgba(255,255,255,.5)}
+.efficiency-comparison>p{margin:0;color:var(--muted)}
+.efficiency-table-scroll{overflow-x:auto}
+.efficiency-table{width:100%;min-width:620px;border-collapse:collapse;font-size:13px}
+.efficiency-table th,.efficiency-table td{padding:.7rem .55rem;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.efficiency-table th{color:var(--muted);font:700 10px var(--mono)}
+.efficiency-table th:first-child,.efficiency-table td:first-child{text-align:left}
+.efficiency-table td:not(:first-child){font-family:var(--mono)}
+.efficiency-table b{color:var(--orange)}
+.efficiency-comparison img{width:100%;max-height:430px;object-fit:contain}
+.efficiency-links{display:flex;gap:1rem 1.5rem;flex-wrap:wrap}
+.efficiency-links a{color:var(--cyan);font:700 11px var(--mono);text-transform:uppercase}
+.efficiency-links a:hover{color:var(--orange)}
+html:lang(zh-CN) .efficiency-features :is(h3,p),html:lang(zh-CN) .efficiency-metrics p{font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+html:lang(zh-CN) .efficiency-features p,html:lang(zh-CN) .efficiency-metrics p{font-size:15px}
+html:lang(zh-CN) .efficiency-features article>span,html:lang(zh-CN) .efficiency-metrics article>span,html:lang(zh-CN) .efficiency-links a{font:600 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+html:lang(zh-CN) .efficiency-table th{font:600 13px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif}
+@media(max-width:680px){.efficiency-features,.efficiency-metrics{grid-template-columns:1fr}.efficiency-comparison{padding:1rem}}
