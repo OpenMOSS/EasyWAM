@@ -33,3 +33,4 @@ html:lang(zh-CN) .hero-meta{font:500 14px/1.5 "Noto Sans SC","PingFang SC","Micr
 html:lang(zh-CN) .architecture-figure figcaption{font:500 14px/1.6 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;text-transform:none}
 html:lang(zh-CN) .hero-resource span:not(:last-child){font-size:13px}
 html:lang(zh-CN) .section-head .eyebrow{font-size:16px;line-height:1.5;letter-spacing:.04em}
+html:lang(zh-CN) :is(.workflow-index,.resource-card>span,.resource-card>b,.community-join a){font:600 14px/1.5 "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:.04em;text-transform:none}
