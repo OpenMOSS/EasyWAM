@@ -2,7 +2,7 @@
 
 [English](result.md)
 
-本页面展示 EasyWAM 的 Benchmark 结果。报告指标为任务成功率（%），数值越高越好。
+本页面展示 EasyWAM 的 Benchmark 结果。报告指标为任务成功率（%），数值越高越好。所有结果均在 `state_position: sequence` 设置下报告，即将 state/proprio token 放在 action token 之后并加入模型序列。
 
 ## LIBERO
 

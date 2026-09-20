@@ -2,6 +2,7 @@
 outputs/
 tmp/
 /checkpoints/
+/checkpoints
 /data/
 /data
 /runs/

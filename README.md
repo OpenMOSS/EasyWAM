@@ -76,6 +76,8 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 
 ## 🏆 Benchmark Results
 
+> All results below are reported with `state_position: sequence`, where state/proprio tokens are placed after the action tokens in the model sequence.
+
 <details open>
 <summary><b>LIBERO</b></summary>
 

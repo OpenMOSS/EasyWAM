@@ -76,6 +76,8 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 
 ## 🏆 Benchmark 结果
 
+> 以下结果均在 `state_position: sequence` 设置下报告，即将 state/proprio token 放在 action token 之后并加入模型序列。
+
 <details open>
 <summary><b>LIBERO</b></summary>
 

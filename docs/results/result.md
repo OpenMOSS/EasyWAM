@@ -2,7 +2,7 @@
 
 [中文](result_zh.md)
 
-This page presents EasyWAM's benchmark results. The reported metric is task success rate in percent, and higher values are better.
+This page presents EasyWAM's benchmark results. The reported metric is task success rate in percent, and higher values are better. All results are reported with `state_position: sequence`, where state/proprio tokens are placed after the action tokens in the model sequence.
 
 ## LIBERO
 
