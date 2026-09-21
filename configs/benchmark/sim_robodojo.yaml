@@ -54,7 +54,7 @@ MULTIRUN:
   workers_per_gpu: 1
   sim_workers_per_gpu: 1
   inference_batch_size: 4
-  inference_batch_wait_ms: 5
+  inference_batch_wait_ms: 3
   prompt_cache_size: 40
 
 hydra:

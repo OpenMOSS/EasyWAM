@@ -65,7 +65,7 @@ MULTIRUN:
   workers_per_gpu: 5
   env_num_per_worker: 16
   inference_batch_size: 4
-  inference_batch_wait_ms: 5
+  inference_batch_wait_ms: 3
   prompt_cache_size: 40
 
 # Internal worker arguments populated by run_libero_plus_manager.py.
