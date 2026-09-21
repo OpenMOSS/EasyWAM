@@ -11,13 +11,13 @@ Download the ready-to-use LeRobot v3.0 dataset from [OpenMOSS-Team/robodojo-lero
 ```bash
 huggingface-cli download OpenMOSS-Team/robodojo-lerobot-v3.0 \
   --repo-type dataset \
-  --local-dir data/robodojo_lerobot_v3.0
+  --local-dir data/robodojo-lerobot-v3.0
 ```
 
 The default `configs/data/robodojo.yaml` expects:
 
 ```text
-data/robodojo_lerobot_v3.0/
+data/robodojo-lerobot-v3.0/
 ├── data/
 ├── dataset_stats.json
 ├── meta/
@@ -41,4 +41,4 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=robodojo_easywam_mot_wan22
 ```
 
-Use another `robodojo_*.yaml` recipe in `configs/task/` for a different architecture. The default data config loads normalization statistics from `data/robodojo_lerobot_v3.0/dataset_stats.json`. Training outputs, including the matching statistics, are saved under `runs/<task>/<run-id>/`.
+Use another `robodojo_*.yaml` recipe in `configs/task/` for a different architecture. The default data config loads normalization statistics from `data/robodojo-lerobot-v3.0/dataset_stats.json`. Training outputs, including the matching statistics, are saved under `runs/<task>/<run-id>/`.

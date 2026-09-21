@@ -1,7 +1,7 @@
 train:
   _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/robodojo_lerobot_v3.0
+    - ./data/robodojo-lerobot-v3.0
   shape_meta:
     images:
       - key: cam_high
@@ -28,7 +28,7 @@ train:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: true
-  pretrained_norm_stats: ./data/robodojo_lerobot_v3.0/dataset_stats.json
+  pretrained_norm_stats: ./data/robodojo-lerobot-v3.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:
@@ -62,7 +62,7 @@ train:
 val:
   _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/robodojo_lerobot_v3.0/
+    - ./data/robodojo-lerobot-v3.0/
   shape_meta:
     images:
       - key: cam_high
@@ -89,7 +89,7 @@ val:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: false
-  pretrained_norm_stats: ./data/robodojo_lerobot_v3.0/dataset_stats.json
+  pretrained_norm_stats: ./data/robodojo-lerobot-v3.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:

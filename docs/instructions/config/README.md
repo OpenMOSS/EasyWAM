@@ -23,7 +23,7 @@ configs/
 ```text
 train.yaml
 └── task=libero_easywam_mot_wan22_lora
-    ├── data=libero_2cam
+    ├── data=libero
     └── model=easywam_mot_wan22_lora
         ├── backbone=wan22
         └── lora=video_dit

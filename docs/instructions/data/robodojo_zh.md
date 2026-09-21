@@ -11,13 +11,13 @@
 ```bash
 huggingface-cli download OpenMOSS-Team/robodojo-lerobot-v3.0 \
   --repo-type dataset \
-  --local-dir data/robodojo_lerobot_v3.0
+  --local-dir data/robodojo-lerobot-v3.0
 ```
 
 默认的 `configs/data/robodojo.yaml` 使用以下目录：
 
 ```text
-data/robodojo_lerobot_v3.0/
+data/robodojo-lerobot-v3.0/
 ├── data/
 ├── dataset_stats.json
 ├── meta/
@@ -41,4 +41,4 @@ NPROC_PER_NODE=8 bash scripts/train_zero1.sh \
   task=robodojo_easywam_mot_wan22
 ```
 
-需要训练其他架构时，换用 `configs/task/` 下对应的 `robodojo_*.yaml` 配方。默认数据配置从 `data/robodojo_lerobot_v3.0/dataset_stats.json` 加载归一化统计。训练结果及其配套统计保存在 `runs/<task>/<run-id>/`。
+需要训练其他架构时，换用 `configs/task/` 下对应的 `robodojo_*.yaml` 配方。默认数据配置从 `data/robodojo-lerobot-v3.0/dataset_stats.json` 加载归一化统计。训练结果及其配套统计保存在 `runs/<task>/<run-id>/`。

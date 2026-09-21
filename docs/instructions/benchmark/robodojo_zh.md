@@ -25,7 +25,7 @@ git clone --recurse-submodules https://github.com/RoboDojo-Benchmark/RoboDojo.gi
 python experiments/robodojo/run_robodojo_manager.py \
   task=robodojo_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
-  EVALUATION.dataset_stats_path=./data/robodojo_lerobot_v3.0/dataset_stats.json
+  EVALUATION.dataset_stats_path=./data/robodojo-lerobot-v3.0/dataset_stats.json
 ```
 
 只生成所选任务与种子清单、不加载 checkpoint 或启动 Isaac Sim，可设置 `MULTIRUN.create_only=true`。manager 默认将全部所选任务写入输出目录的 `tasks.jsonl`，也可用 `MULTIRUN.task_file=<path>` 指定路径；正式运行时会根据已有结果另生成仅包含待评任务的 worker 清单。

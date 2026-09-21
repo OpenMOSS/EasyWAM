@@ -6,7 +6,7 @@
 
 ## 训练数据
 
-从 [OpenMOSS-Team/libero-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/libero-lerobot-v3.0) 下载可直接使用的 LeRobot v3.0 数据集。下载位置与 `configs/data/libero_2cam.yaml` 中的默认路径一致：
+从 [OpenMOSS-Team/libero-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/libero-lerobot-v3.0) 下载可直接使用的 LeRobot v3.0 数据集。下载位置与 `configs/data/libero.yaml` 中的默认路径一致：
 
 ```bash
 huggingface-cli download OpenMOSS-Team/libero-lerobot-v3.0 \
@@ -14,7 +14,7 @@ huggingface-cli download OpenMOSS-Team/libero-lerobot-v3.0 \
   --local-dir data/libero-lerobot-v3.0
 ```
 
-默认的 `configs/data/libero_2cam.yaml` 使用以下目录：
+默认的 `configs/data/libero.yaml` 使用以下目录：
 
 ```text
 data/libero-lerobot-v3.0/

@@ -25,7 +25,7 @@ Run the complete benchmark:
 python experiments/robodojo/run_robodojo_manager.py \
   task=robodojo_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt> \
-  EVALUATION.dataset_stats_path=./data/robodojo_lerobot_v3.0/dataset_stats.json
+  EVALUATION.dataset_stats_path=./data/robodojo-lerobot-v3.0/dataset_stats.json
 ```
 
 To generate the selected task/seed list without loading a checkpoint or starting Isaac Sim, use `MULTIRUN.create_only=true`. The manager writes all selected jobs to `tasks.jsonl` under the output directory; `MULTIRUN.task_file=<path>` changes that list's destination. During evaluation it separately creates a pending-only worker list after checking existing results.

@@ -6,7 +6,7 @@ This guide covers LIBERO training-data preparation and training in EasyWAM.
 
 ## Training Data
 
-Download the ready-to-use LeRobot v3.0 dataset from [OpenMOSS-Team/libero-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/libero-lerobot-v3.0). The destination matches the default path in `configs/data/libero_2cam.yaml`:
+Download the ready-to-use LeRobot v3.0 dataset from [OpenMOSS-Team/libero-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/libero-lerobot-v3.0). The destination matches the default path in `configs/data/libero.yaml`:
 
 ```bash
 huggingface-cli download OpenMOSS-Team/libero-lerobot-v3.0 \
@@ -14,7 +14,7 @@ huggingface-cli download OpenMOSS-Team/libero-lerobot-v3.0 \
   --local-dir data/libero-lerobot-v3.0
 ```
 
-The default `configs/data/libero_2cam.yaml` expects:
+The default `configs/data/libero.yaml` expects:
 
 ```text
 data/libero-lerobot-v3.0/
