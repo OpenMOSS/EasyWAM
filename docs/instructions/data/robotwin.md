@@ -6,7 +6,7 @@ This guide covers RoboTwin 2.0 training-data preparation and training in EasyWAM
 
 ## Training Data
 
-Download the ready-to-use LeRobot v3.0 dataset from [OpenMOSS-Team/robotwin2.0-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/robotwin2.0-lerobot-v3.0). The destination matches the default path in `configs/data/robotwin.yaml`:
+Obtain the LeRobot v3.0 data from [OpenMOSS-Team/robotwin2.0-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/robotwin2.0-lerobot-v3.0), and place the clean and randomized datasets in the child directories expected by `configs/data/robotwin.yaml`:
 
 ```bash
 huggingface-cli download OpenMOSS-Team/robotwin2.0-lerobot-v3.0 \
@@ -18,10 +18,9 @@ The default `configs/data/robotwin.yaml` expects:
 
 ```text
 data/robotwin2.0-lerobot-v3.0/
-├── data/
-├── dataset_stats.json
-├── meta/
-└── videos/
+├── clean/                 # 50 tasks × 50 trajectories
+├── random/                # 50 tasks × 500 trajectories
+└── dataset_stats.json     # normalization statistics for full mode
 ```
 
 EasyWAM remains compatible with LeRobot v2.1 datasets and provides `scripts/convert_lerobot_v21_to_v30.py` for users who want to convert them to v3.0.
@@ -49,7 +48,15 @@ Select one of the five Wan2.2 task recipes:
 For example:
 
 ```bash
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
+# Full training (default): clean + random at the original 1:10 ratio
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=full
+
+# Clean-only / random-only
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=clean
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=random
 ```
 
-The default data config loads normalization statistics from `data/robotwin2.0-lerobot-v3.0/dataset_stats.json`. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.
+`data.mode` selects the same directories for training, validation, and text-embedding precomputation. Clean and random use the `dataset_stats.json` in their respective child directory; full uses the aggregate file in the parent directory. Set `data.train.pretrained_norm_stats=null` and `data.val.pretrained_norm_stats=null` if the statistics must be recomputed for a different dataset.

@@ -19,6 +19,14 @@ def _oc_load(path: str, key: Optional[str] = None) -> Any:
         return cfg
     return OmegaConf.select(cfg, key)
 
+
+def validate_choice(value: Any, *choices: Any) -> Any:
+    """Return ``value`` when it belongs to ``choices``, otherwise fail clearly."""
+    if value not in choices:
+        allowed = ", ".join(repr(choice) for choice in choices)
+        raise ValueError(f"Expected one of {allowed}, got {value!r}.")
+    return value
+
 def sum_shapes(shape_meta_list):
     if not shape_meta_list:
         return 0
@@ -54,6 +62,7 @@ def register_default_resolvers() -> None:
     Safe to call multiple times.
     """
     _register("oc.load", _oc_load)
+    _register("validate_choice", validate_choice)
     _register("eval", eval) # allows arbitrary python code execution in configs using the ${eval:''} resolver
     _register("split", lambda s, idx: s.split('/')[int(idx)]) # split string
     _register("max", lambda x: max(x))

@@ -6,7 +6,7 @@
 
 ## 训练数据
 
-从 [OpenMOSS-Team/robotwin2.0-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/robotwin2.0-lerobot-v3.0) 下载可直接使用的 LeRobot v3.0 数据集。下载位置与 `configs/data/robotwin.yaml` 中的默认路径一致：
+从 [OpenMOSS-Team/robotwin2.0-lerobot-v3.0](https://huggingface.co/datasets/OpenMOSS-Team/robotwin2.0-lerobot-v3.0) 获取 LeRobot v3.0 数据，并将 clean 与 randomized 数据分别放在 `configs/data/robotwin.yaml` 默认使用的子目录中：
 
 ```bash
 huggingface-cli download OpenMOSS-Team/robotwin2.0-lerobot-v3.0 \
@@ -18,10 +18,9 @@ huggingface-cli download OpenMOSS-Team/robotwin2.0-lerobot-v3.0 \
 
 ```text
 data/robotwin2.0-lerobot-v3.0/
-├── data/
-├── dataset_stats.json
-├── meta/
-└── videos/
+├── clean/                 # 50 个任务 × 50 条轨迹
+├── random/                # 50 个任务 × 500 条轨迹
+└── dataset_stats.json     # full 模式归一化统计
 ```
 
 EasyWAM 仍兼容 LeRobot v2.1 数据，并为需要转换到 v3.0 的用户提供了 `scripts/convert_lerobot_v21_to_v30.py`。
@@ -49,7 +48,15 @@ python scripts/precompute_text_embeds.py task=robotwin_easywam_mot_wan22
 例如：
 
 ```bash
-NPROC_PER_NODE=8 bash scripts/train_zero2.sh task=robotwin_easywam_mot_wan22
+# 全量训练（默认）：同时加载 clean 和 random，保持原始 1:10 比例
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=full
+
+# 仅 clean / 仅 random
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=clean
+NPROC_PER_NODE=8 bash scripts/train_zero2.sh \
+  task=robotwin_easywam_mot_wan22 data.mode=random
 ```
 
-默认数据配置从 `data/robotwin2.0-lerobot-v3.0/dataset_stats.json` 加载归一化统计。如果使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
+`data.mode` 同时控制训练、验证和文本 embedding 预计算的数据目录。`clean`、`random` 分别使用子目录内的 `dataset_stats.json`；`full` 使用父目录中的全量统计。若使用了不同的数据集并需要重新计算统计，可将 `data.train.pretrained_norm_stats=null` 和 `data.val.pretrained_norm_stats=null` 作为 override 传入。
