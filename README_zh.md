@@ -69,6 +69,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | Benchmark | 支持情况 | 训练 | 评测 |
 | --- | :---: | --- | --- |
 | LIBERO | ✅ | 全参数训练和 LoRA | 标准四 suite 评测 |
+| LIBERO-Pro | ✅ | 使用 LIBERO checkpoint | 官方五维泛化评测 |
 | LIBERO-Plus | ✅ | 使用 LIBERO checkpoint | 鲁棒性评测 |
 | RoboTwin | ✅ | 全参数训练和 LoRA | Clean 和 randomized 评测 |
 | RoboDojo | ✅ | 全参数训练和 LoRA | 官方 42-task 仿真评测 |
@@ -229,6 +230,11 @@ python experiments/libero/run_libero_manager.py \
 
 # LIBERO-Plus（使用 LIBERO checkpoint）
 python experiments/libero_plus/run_libero_plus_manager.py \
+  task=libero_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt>
+
+# LIBERO-Pro（使用 LIBERO checkpoint）
+python experiments/libero_pro/run_libero_pro_manager.py \
   task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 

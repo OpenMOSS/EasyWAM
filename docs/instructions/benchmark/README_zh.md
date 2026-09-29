@@ -9,6 +9,7 @@
 | Benchmark | 评测范围 | 文档 |
 | --- | --- | --- |
 | LIBERO | 标准四 suite 评测 | [准备与评测](libero_zh.md) |
+| LIBERO-Pro | 官方五维泛化评测 | [准备与评测](libero_pro_zh.md) |
 | LIBERO-Plus | 使用 LIBERO checkpoint 的鲁棒性评测 | [准备与评测](libero_plus_zh.md) |
 | RoboTwin | Clean 与 randomized 评测 | [准备与评测](robotwin_zh.md) |
 | RoboDojo | 官方 42-task 仿真评测 | [准备与评测](robodojo_zh.md) |

@@ -21,21 +21,21 @@ def get_libero_env(task, resolution, seed, env_num=1, prompt_source="task_langua
     """Initializes and returns the LIBERO environment, along with the task description."""
     if env_num != 1:
         raise ValueError(f"Isolated LIBERO evaluation requires env_num=1, got {env_num}.")
+    supported_prompt_sources = {
+        "task_language",
+        "task_language_without_metadata",
+        "environment_language",
+    }
+    if prompt_source not in supported_prompt_sources:
+        raise ValueError(
+            "Unsupported LIBERO prompt source: "
+            f"{prompt_source!r}. Expected one of {sorted(supported_prompt_sources)}."
+        )
     task_bddl_path = (
         pathlib.Path(get_libero_path("bddl_files"))
         / task.problem_folder
         / task.bddl_file
     )
-    if prompt_source == "task_language":
-        task_description = str(task.language)
-    elif prompt_source == "task_language_without_metadata":
-        task_description = strip_libero_plus_metadata(str(task.language))
-    else:
-        raise ValueError(
-            "Unsupported LIBERO prompt source: "
-            f"{prompt_source!r}. Expected 'task_language' or "
-            "'task_language_without_metadata'."
-        )
     env_args = {
         "bddl_file_name": str(task_bddl_path),
         "camera_heights": resolution,
@@ -47,6 +47,12 @@ def get_libero_env(task, resolution, seed, env_num=1, prompt_source="task_langua
         seed,
         task_label=f"{task.problem_folder}:{task.bddl_file}",
     )
+    if prompt_source == "task_language":
+        task_description = str(task.language)
+    elif prompt_source == "task_language_without_metadata":
+        task_description = strip_libero_plus_metadata(str(task.language))
+    else:
+        task_description = env.language_instruction
     return env, task_description
 
 def get_libero_dummy_action():

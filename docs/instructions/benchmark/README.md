@@ -9,6 +9,7 @@ Published metrics across backbones are collected in the [benchmark results](../.
 | Benchmark | Evaluation scope | Guide |
 | --- | --- | --- |
 | LIBERO | Standard four-suite evaluation | [Setup and evaluation](libero.md) |
+| LIBERO-Pro | Official five-dimension generalization evaluation | [Setup and evaluation](libero_pro.md) |
 | LIBERO-Plus | Robustness evaluation with LIBERO checkpoints | [Setup and evaluation](libero_plus.md) |
 | RoboTwin | Clean and randomized evaluation | [Setup and evaluation](robotwin.md) |
 | RoboDojo | Official 42-task simulation evaluation | [Setup and evaluation](robodojo.md) |

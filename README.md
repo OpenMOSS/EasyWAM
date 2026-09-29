@@ -69,6 +69,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | Benchmark | Supported | Training | Evaluation |
 | --- | :---: | --- | --- |
 | LIBERO | ✅ | Full-parameter and LoRA | Standard evaluation |
+| LIBERO-Pro | ✅ | Uses LIBERO checkpoints | Official five-dimension generalization evaluation |
 | LIBERO-Plus | ✅ | Uses LIBERO checkpoints | Robustness evaluation |
 | RoboTwin | ✅ | Full-parameter and LoRA | Clean and randomized evaluation |
 | RoboDojo | ✅ | Full-parameter and LoRA | Official 42-task simulation evaluation |
@@ -229,6 +230,11 @@ python experiments/libero/run_libero_manager.py \
 
 # LIBERO-Plus (uses a LIBERO checkpoint)
 python experiments/libero_plus/run_libero_plus_manager.py \
+  task=libero_easywam_mot_wan22 \
+  ckpt=<path/to/checkpoint.pt>
+
+# LIBERO-Pro (uses a LIBERO checkpoint)
+python experiments/libero_pro/run_libero_pro_manager.py \
   task=libero_easywam_mot_wan22 \
   ckpt=<path/to/checkpoint.pt>
 

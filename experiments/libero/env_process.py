@@ -59,7 +59,12 @@ def _environment_main(
     env = None
     try:
         env = _create_env(env_args, seed)
-        connection.send(("ok", None))
+        connection.send(
+            (
+                "ok",
+                {"language_instruction": str(env.language_instruction)},
+            )
+        )
         while True:
             command, payload = connection.recv()
             try:
@@ -118,7 +123,8 @@ class LiberoEnvProcess:
         self._process.start()
         child_connection.close()
         try:
-            self._receive("initialize")
+            metadata = self._receive("initialize")
+            self.language_instruction = str(metadata["language_instruction"])
         except BaseException:
             self._closed = True
             self._connection.close()

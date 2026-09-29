@@ -429,7 +429,15 @@ def _predict_action_chunk(
     return action, imgs, predicted_future_frames
 
 
-def _get_max_steps(task_suite_name: str) -> int:
+def _get_max_steps(
+    task_suite_name: str,
+    configured_max_steps: Optional[int] = None,
+) -> int:
+    if configured_max_steps is not None:
+        max_steps = int(configured_max_steps)
+        if max_steps <= 0:
+            raise ValueError(f"EVALUATION.max_steps must be positive, got {max_steps}")
+        return max_steps
     suite_steps = {
         "libero_spatial": 400,
         "libero_object": 400,
@@ -468,7 +476,10 @@ def run_single_episode(
     prompt_cache: PromptContextCache,
     timing: dict[str, float],
 ) -> tuple[bool, list, list[dict[str, Any]], Optional[float]]:
-    max_steps = _get_max_steps(cfg.EVALUATION.task_suite_name)
+    max_steps = _get_max_steps(
+        cfg.EVALUATION.task_suite_name,
+        cfg.EVALUATION.get("max_steps"),
+    )
     replan_steps = int(cfg.EVALUATION.get("replan_steps", 5))
     num_steps_wait = int(cfg.EVALUATION.get("num_steps_wait", 5))
     use_action_ensembler = bool(cfg.EVALUATION.get("use_action_ensembler", False))
@@ -656,8 +667,17 @@ def run_single_task(
         env.close()
         raise ValueError(f"No initial states available for task {cfg.EVALUATION.task_id}.")
 
+    num_trials = int(cfg.EVALUATION.num_trials)
+    if bool(cfg.EVALUATION.get("require_unique_initial_states", False)) and len(
+        initial_states
+    ) < num_trials:
+        env.close()
+        raise ValueError(
+            f"Task {cfg.EVALUATION.task_suite_name}:{cfg.EVALUATION.task_id} has "
+            f"{len(initial_states)} initial states, but {num_trials} unique states are required."
+        )
+
     try:
-        num_trials = int(cfg.EVALUATION.num_trials)
         suite_name = str(cfg.EVALUATION.task_suite_name)
         task_id = int(cfg.EVALUATION.task_id)
         for trial_idx in range(num_trials):
