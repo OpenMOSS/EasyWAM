@@ -24,7 +24,7 @@ data/libero-lerobot-v3.0/
 └── libero_spatial/
 ```
 
-EasyWAM remains compatible with LeRobot v2.1 datasets and provides `scripts/convert_lerobot_v21_to_v30.py` for users who want to convert them to v3.0.
+EasyWAM requires LeRobot v3.0 datasets for training.
 
 The pipeline concatenates the agent and wrist cameras at 224 px resolution. It retains all 33 action/state steps while decoding only the 9 video timestamps `[0, 4, ..., 32]`.
 

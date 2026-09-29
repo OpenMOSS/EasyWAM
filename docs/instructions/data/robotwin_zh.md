@@ -23,7 +23,7 @@ data/robotwin2.0-lerobot-v3.0/
 └── dataset_stats.json     # full 模式归一化统计
 ```
 
-EasyWAM 仍兼容 LeRobot v2.1 数据，并为需要转换到 v3.0 的用户提供了 `scripts/convert_lerobot_v21_to_v30.py`。
+EasyWAM 训练仅支持 LeRobot v3.0 数据集。
 
 数据管线会把 high camera 和两个 wrist camera 组合为 384×320 视频，保留全部 33 个 action/state 时间步，并稀疏解码 9 帧视频。
 

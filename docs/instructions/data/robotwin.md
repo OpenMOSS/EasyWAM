@@ -23,7 +23,7 @@ data/robotwin2.0-lerobot-v3.0/
 └── dataset_stats.json     # normalization statistics for full mode
 ```
 
-EasyWAM remains compatible with LeRobot v2.1 datasets and provides `scripts/convert_lerobot_v21_to_v30.py` for users who want to convert them to v3.0.
+EasyWAM requires LeRobot v3.0 datasets for training.
 
 The pipeline combines the high camera and two wrist cameras into a 384×320 video. It retains all 33 action/state steps and decodes 9 sparse video timestamps.
 

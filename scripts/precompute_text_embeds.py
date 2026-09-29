@@ -12,7 +12,7 @@ from omegaconf import DictConfig, ListConfig
 from tqdm import tqdm
 
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
-from data.lerobot.lerobot.datasets.utils import load_info, load_tasks, load_tasks_v21
+from data.lerobot.lerobot.datasets.utils import load_info, load_tasks
 from data.lerobot.text_embedding_cache import (
     build_text_embedding_payload,
     prompt_hash,
@@ -121,15 +121,12 @@ def _read_unique_prompts(dataset_dirs: list[str]) -> list[str]:
     for ds_dir in dataset_dirs:
         root = Path(ds_dir)
         version = str(load_info(root).get("codebase_version"))
-        if version == "v3.0":
-            tasks, _ = load_tasks(root)
-        elif version == "v2.1":
-            tasks, _ = load_tasks_v21(root)
-        else:
+        if version != "v3.0":
             raise ValueError(
                 f"Unsupported LeRobot dataset version {version!r} at {root}; "
-                "expected v3.0 or v2.1."
+                "expected v3.0."
             )
+        tasks, _ = load_tasks(root)
 
         for task in tasks.values():
             prompt = DEFAULT_PROMPT.format(task=str(task))

@@ -24,7 +24,7 @@ data/libero-lerobot-v3.0/
 └── libero_spatial/
 ```
 
-EasyWAM 仍兼容 LeRobot v2.1 数据，并为需要转换到 v3.0 的用户提供了 `scripts/convert_lerobot_v21_to_v30.py`。
+EasyWAM 训练仅支持 LeRobot v3.0 数据集。
 
 数据管线会在 224 px 分辨率下横向拼接 agent 和 wrist 两个相机，保留全部 33 个 action/state 时间步，同时仅解码 `[0, 4, ..., 32]` 对应的 9 帧视频。
 

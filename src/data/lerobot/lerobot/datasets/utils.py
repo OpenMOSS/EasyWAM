@@ -37,15 +37,10 @@ from torchvision import transforms
 
 from functools import partial
 
-DEFAULT_CHUNK_SIZE = 1000  # Max number of episodes per chunk
-
 INFO_PATH = "meta/info.json"
 STATS_PATH = "meta/stats.json"
 TASKS_PATH = "meta/tasks.parquet"
 EPISODES_DIR = "meta/episodes"
-V21_EPISODES_PATH = "meta/episodes.jsonl"
-V21_EPISODES_STATS_PATH = "meta/episodes_stats.jsonl"
-V21_TASKS_PATH = "meta/tasks.jsonl"
 
 ANNOTATION_PATHS = {
     "subtask": "annotations/subtask_annotations.jsonl",
@@ -57,8 +52,6 @@ ANNOTATION_PATHS = {
     "eef_direction": "annotations/eef_direction_annotation.jsonl",
 }
 
-V21_DEFAULT_VIDEO_PATH = "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
-V21_DEFAULT_PARQUET_PATH = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
 DEFAULT_IMAGE_PATH = "images/{image_key}/episode_{episode_index:06d}/frame_{frame_index:06d}.jpeg"
 
 DATASET_CARD_TEMPLATE = """
@@ -196,22 +189,6 @@ def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
     return cast_stats_to_numpy(stats)
 
 
-def write_task_v21(task_index: int, task: dict, local_dir: Path):
-    task_dict = {
-        "task_index": task_index,
-        "task": task,
-    }
-    append_jsonlines(task_dict, local_dir / V21_TASKS_PATH)
-
-
-def load_tasks_v21(local_dir: Path) -> tuple[dict, dict]:
-    """Load task metadata from a LeRobot v2.1 JSONL file."""
-    tasks = load_jsonlines(local_dir / V21_TASKS_PATH)
-    tasks = {item["task_index"]: item["task"] for item in sorted(tasks, key=lambda x: x["task_index"])}
-    task_to_task_index = {task: task_index for task_index, task in tasks.items()}
-    return tasks, task_to_task_index
-
-
 def load_tasks(local_dir: Path) -> tuple[dict[int, str], dict[str, int]]:
     """Load the v3 task table without relying on its physical row order."""
     path = local_dir / TASKS_PATH
@@ -286,30 +263,6 @@ def load_annotations(local_dir: Path) -> dict[str, dict[int, str]]:
         annotations[key] = anno
     return annotations
 
-def write_episode_v21(episode: dict, local_dir: Path):
-    append_jsonlines(episode, local_dir / V21_EPISODES_PATH)
-
-
-def load_episodes_v21(local_dir: Path) -> dict:
-    """Load episode metadata from a LeRobot v2.1 JSONL file."""
-    episodes = load_jsonlines(local_dir / V21_EPISODES_PATH)
-    return {item["episode_index"]: item for item in sorted(episodes, key=lambda x: x["episode_index"])}
-
-
-def write_episode_stats_v21(episode_index: int, episode_stats: dict, local_dir: Path):
-    # We wrap episode_stats in a dictionary since `episode_stats["episode_index"]`
-    # is a dictionary of stats and not an integer.
-    episode_stats = {"episode_index": episode_index, "stats": serialize_dict(episode_stats)}
-    append_jsonlines(episode_stats, local_dir / V21_EPISODES_STATS_PATH)
-
-
-def load_episodes_stats_v21(local_dir: Path) -> dict:
-    """Load per-episode statistics from a LeRobot v2.1 JSONL file."""
-    episodes_stats = load_jsonlines(local_dir / V21_EPISODES_STATS_PATH)
-    return {
-        item["episode_index"]: cast_stats_to_numpy(item["stats"])
-        for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
-    }
 def load_image_as_numpy(
     fpath: str | Path, dtype: np.dtype = np.float32, channel_first: bool = True
 ) -> np.ndarray:
@@ -422,30 +375,6 @@ def build_dataset_frame(
             frame[key] = values[key.removeprefix(f"{prefix}.images.")]
 
     return frame
-
-
-def create_empty_dataset_info_v21(
-    codebase_version: str,
-    fps: int,
-    features: dict,
-    use_videos: bool,
-    robot_type: str | None = None,
-) -> dict:
-    return {
-        "codebase_version": codebase_version,
-        "robot_type": robot_type,
-        "total_episodes": 0,
-        "total_frames": 0,
-        "total_tasks": 0,
-        "total_videos": 0,
-        "total_chunks": 0,
-        "chunks_size": DEFAULT_CHUNK_SIZE,
-        "fps": fps,
-        "splits": {},
-        "data_path": V21_DEFAULT_PARQUET_PATH,
-        "video_path": V21_DEFAULT_VIDEO_PATH if use_videos else None,
-        "features": features,
-    }
 
 
 def get_episode_data_index(
