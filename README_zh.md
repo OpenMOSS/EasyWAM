@@ -33,6 +33,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 
 ## 📰 最新动态
 
+- **[2026-09-29]** EasyWAM 新增 LIBERO-Pro 官方测评；新增可选择 `clean` 与 `random` 数据的 RoboTwin 训练模式；数据管线统一到 LeRobot v3，并精简数据预处理、文本缓存及模型运行路径；同时完成数据目录与 LIBERO 命名对齐，更新评测并发默认配置和 benchmark 结果展示。
 - **[2026-09-18]** EasyWAM 新增 RoboCasa365 和 RoboDojo 的训练与评测支持，将 RoboTwin 适配到新版上游并加入独立的动态批量推理；评测现支持单 GPU 多模型 worker 和 GPU 并发调优工具。训练新增可配置的 checkpoint 保留策略、动作之后的 state token 布局，以及通用的 FLUX 文本 embedding 预计算。本次还更新了 Unified、MoT、Hidden 在 Wan2.2 和 Cosmos2.5 下的 LIBERO、LIBERO-Plus 结果及 Wan2.2 LoRA 的 LIBERO 结果，并修订架构分析和评测默认配置。
 - **[2026-09-12]** EasyWAM 新增动态批量评测，仅需少量 worker 即可执行评测，大幅降低测评显存占用并提升 GPU 利用率。本次更新还加入任务/trial 进度展示、LeRobot v3 支持、优化了文本 padding mask 语义的 FlashAttention 2/3/4、可配置的 state token 位置与因果注意力、执行与缓存优化、自动 run 日志、更完善的文档以及新的 Benchmark 结果。
 - **[2026-09-03]** EasyWAM 新增 FLUX.2/ImageWAM backbone 集成。
