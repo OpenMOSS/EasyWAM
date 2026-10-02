@@ -1,5 +1,3 @@
-"""Rectified-flow training and second-order UniPC inference scheduler."""
-
 from __future__ import annotations
 
 import torch

@@ -1,5 +1,3 @@
-"""Cosmos-Predict2.5 video tokenizer interface."""
-
 from __future__ import annotations
 
 from pathlib import Path

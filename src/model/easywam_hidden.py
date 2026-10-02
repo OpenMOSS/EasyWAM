@@ -20,7 +20,7 @@ from .helpers.batching import (
     randn_per_sample,
     validate_single_inference_image,
 )
-from .backbone.wan22.loader import load_wan22_ti2v_5b_components
+from .backbone.wan22 import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 
 
@@ -28,7 +28,6 @@ logger = get_logger(__name__)
 
 
 class EasyWAMHidden(nn.Module):
-    """EasyWAM-Hidden model with cached video-hidden action conditioning."""
 
     inference_compile_targets = ("forward_video", "forward_action")
 
@@ -403,7 +402,7 @@ class EasyWAMHidden(nn.Module):
         loss_lambda_video: float = 1.0,
         loss_lambda_action: float = 1.0,
     ) -> "EasyWAMHidden":
-        from .backbone.loader import load_easywam_backbone, normalize_backbone_config
+        from .backbone import load_easywam_backbone, normalize_backbone_config
 
         cfg = normalize_backbone_config(backbone)
         action_cfg = dict(action_dit_config)

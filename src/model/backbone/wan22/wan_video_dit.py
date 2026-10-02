@@ -33,7 +33,6 @@ def sinusoidal_embedding_1d(dim, position):
 
 
 def precompute_freqs_cis_3d(dim: int, end: int = 1024, theta: float = 10000.0):
-    # 3d rope precompute
     f_freqs_cis = precompute_freqs_cis(dim - 2 * (dim // 3), end, theta)
     h_freqs_cis = precompute_freqs_cis(dim // 3, end, theta)
     w_freqs_cis = precompute_freqs_cis(dim // 3, end, theta)
@@ -41,7 +40,6 @@ def precompute_freqs_cis_3d(dim: int, end: int = 1024, theta: float = 10000.0):
 
 
 def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
-    # 1d rope precompute
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
                    [: (dim // 2)].double() / dim))
     freqs = torch.outer(torch.arange(end, device=freqs.device), freqs)
@@ -65,13 +63,6 @@ def rope_apply(x, freqs, num_heads):
 def create_group_causal_attn_mask(
     num_temporal_groups: int, num_query_per_group: int, num_key_per_group: int, mode: str = "causal"
 ) -> torch.Tensor:
-    """Build a group-level boolean attention mask.
-
-    ``causal`` exposes the current and previous key groups;
-    ``group_diagonal`` exposes only the matching group. The returned shape is
-    ``(num_temporal_groups * num_query_per_group,
-    num_temporal_groups * num_key_per_group)``.
-    """
     assert mode in ["causal", "group_diagonal"], f"Mode {mode} must be 'causal' or 'group_diagonal'"
 
     total_num_query_tokens = num_temporal_groups * num_query_per_group
@@ -92,7 +83,7 @@ def create_group_causal_attn_mask(
     return attn_mask
 
 
-class AttentionModule(nn.Module):
+class WanAttentionModule(nn.Module):
     def __init__(self, num_heads, attention_backend: str = "sdpa"):
         super().__init__()
         self.num_heads = num_heads
@@ -109,7 +100,7 @@ class AttentionModule(nn.Module):
         )
 
 
-class SelfAttention(nn.Module):
+class WanSelfAttention(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
@@ -154,7 +145,7 @@ class SelfAttention(nn.Module):
         return self.o(x)
 
 
-class CrossAttention(nn.Module):
+class WanCrossAttention(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
@@ -178,7 +169,6 @@ class CrossAttention(nn.Module):
         self.attention_backend = require_attention_backend(attention_backend)
             
     def project_kv(self, ctx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Project static cross-attention context once for inference reuse."""
         return self.norm_k(self.k(ctx)), self.v(ctx)
 
     def forward_with_projected_kv(
@@ -211,14 +201,14 @@ class CrossAttention(nn.Module):
         return self.forward_with_projected_kv(x, projected_kv, ctx_mask)
 
 
-class GateModule(nn.Module):
+class WanGateModule(nn.Module):
     def __init__(self,):
         super().__init__()
 
     def forward(self, x, gate, residual):
         return x + gate * residual
 
-class DiTBlock(nn.Module):
+class WanDiTBlock(nn.Module):
     def __init__(
         self,
         hidden_dim: int,
@@ -234,10 +224,10 @@ class DiTBlock(nn.Module):
         self.num_heads = num_heads
         self.ffn_dim = ffn_dim
 
-        self.self_attn = SelfAttention(
+        self.self_attn = WanSelfAttention(
             hidden_dim, attn_head_dim, num_heads, eps, attention_backend=attention_backend
         )
-        self.cross_attn = CrossAttention(
+        self.cross_attn = WanCrossAttention(
             hidden_dim, attn_head_dim, num_heads, eps, attention_backend=attention_backend)
         self.norm1 = nn.LayerNorm(hidden_dim, eps=eps, elementwise_affine=False)
         self.norm2 = nn.LayerNorm(hidden_dim, eps=eps, elementwise_affine=False)
@@ -245,7 +235,7 @@ class DiTBlock(nn.Module):
         self.ffn = nn.Sequential(nn.Linear(hidden_dim, ffn_dim), nn.GELU(
             approximate='tanh'), nn.Linear(ffn_dim, hidden_dim))
         self.modulation = nn.Parameter(torch.randn(1, 6, hidden_dim) / hidden_dim**0.5)
-        self.gate = GateModule()
+        self.gate = WanGateModule()
 
     def forward(
         self,
@@ -258,14 +248,12 @@ class DiTBlock(nn.Module):
         context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ):
         if isinstance(context_mask, torch.Tensor) and context_mask.dim() == 3:
-            context_mask = context_mask.unsqueeze(1) # (B, 1, seq_len, context_len), 1 for heads
+            context_mask = context_mask.unsqueeze(1)
         has_seq = len(t_mod.shape) == 4
         chunk_dim = 2 if has_seq else 1
-        # msa: multi-head self-attention  mlp: multi-layer perceptron
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=chunk_dim)
         if has_seq:
-            # means t_mod has separate modulation for each token, otherwise same modulation for all tokens in the block
             shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
                 shift_msa.squeeze(2), scale_msa.squeeze(2), gate_msa.squeeze(2),
                 shift_mlp.squeeze(2), scale_mlp.squeeze(2), gate_mlp.squeeze(2),
@@ -280,7 +268,7 @@ class DiTBlock(nn.Module):
         return x
 
 
-class MLP(torch.nn.Module):
+class WanMLP(torch.nn.Module):
     def __init__(self, in_dim, out_dim, has_pos_emb=False):
         super().__init__()
         self.proj = torch.nn.Sequential(
@@ -300,7 +288,7 @@ class MLP(torch.nn.Module):
         return self.proj(x)
 
 
-class Head(nn.Module):
+class WanHead(nn.Module):
     def __init__(self, dim: int, out_dim: int, patch_size: Tuple[int, int, int], eps: float):
         super().__init__()
         self.dim = dim
@@ -310,7 +298,6 @@ class Head(nn.Module):
         self.modulation = nn.Parameter(torch.randn(1, 2, dim) / dim**0.5)
 
     def condition_tokens(self, x: torch.Tensor, t_mod: torch.Tensor) -> torch.Tensor:
-        """Apply the native Wan output normalization/modulation without projection."""
         if len(t_mod.shape) == 3:
             shift, scale = (self.modulation.unsqueeze(0).to(dtype=t_mod.dtype, device=t_mod.device) + t_mod.unsqueeze(2)).chunk(2, dim=2)
             return self.norm(x) * (1 + scale.squeeze(2)) + shift.squeeze(2)
@@ -393,7 +380,7 @@ class WanVideoDiT(torch.nn.Module):
         self.time_projection = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_dim, hidden_dim * 6))
         self.blocks = nn.ModuleList([
-            DiTBlock(
+            WanDiTBlock(
                 hidden_dim,
                 attn_head_dim,
                 num_heads,
@@ -403,10 +390,8 @@ class WanVideoDiT(torch.nn.Module):
             )
             for _ in range(num_layers)
         ])
-        self.head = Head(hidden_dim, out_dim, patch_size, eps)
+        self.head = WanHead(hidden_dim, out_dim, patch_size, eps)
         self.freqs = precompute_freqs_cis_3d(attn_head_dim)
-        # Unified action tokens use full-head 1D RoPE.
-        # This tensor is derived metadata rather than checkpoint state.
         self.freqs_aux = precompute_freqs_cis(attn_head_dim, end=4096)
         if has_ref_conv:
             self.ref_conv = nn.Conv2d(16, hidden_dim, kernel_size=(2, 2), stride=(2, 2))
@@ -653,7 +638,6 @@ class WanVideoDiT(torch.nn.Module):
         cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
         freqs_override: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
-        """Prepare heterogeneous tokens using the native Wan staged representation."""
         video = self.pre_dit(
             x=x,
             timestep=timestep_video,
@@ -750,7 +734,6 @@ class WanVideoDiT(torch.nn.Module):
     def post_unified_dit(
         self, tokens: torch.Tensor, pre_state: Dict[str, Any]
     ) -> Dict[str, torch.Tensor]:
-        """Decode video and expose natively conditioned action features."""
         video_len = int(pre_state["meta"]["video_len"])
         action_len = int(pre_state["meta"]["action_len"])
         action_slice = slice(video_len, video_len + action_len)
@@ -770,7 +753,6 @@ class WanVideoDiT(torch.nn.Module):
         pre_state: Dict[str, Any],
         self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
     ) -> torch.Tensor:
-        """Backbone-neutral staged block entry used by EasyWAM-Hidden."""
         return self.blocks[layer_index](
             tokens,
             pre_state["context"],
@@ -809,7 +791,7 @@ class WanVideoDiT(torch.nn.Module):
             video_seq_len=x_tokens.shape[1],
             video_tokens_per_frame=int(pre_state["meta"]["tokens_per_frame"]),
             device=x_tokens.device,
-        ) if self.video_attention_mask_mode != "bidirectional" else None # special rule for faster speed
+        ) if self.video_attention_mask_mode != "bidirectional" else None
 
         for block in self.blocks:
             if self.use_gradient_checkpointing:

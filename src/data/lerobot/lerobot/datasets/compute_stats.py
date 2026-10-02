@@ -1,18 +1,3 @@
-#!/usr/bin/env python
-
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import numpy as np
 
 from .utils import load_image_as_numpy
@@ -21,18 +6,6 @@ from .utils import load_image_as_numpy
 def estimate_num_samples(
     dataset_len: int, min_num_samples: int = 100, max_num_samples: int = 10_000, power: float = 0.75
 ) -> int:
-    """Heuristic to estimate the number of samples based on dataset size.
-    The power controls the sample growth relative to dataset size.
-    Lower the power for less number of samples.
-
-    For default arguments, we have:
-    - from 1 to ~500, num_samples=100
-    - at 1000, num_samples=177
-    - at 2000, num_samples=299
-    - at 5000, num_samples=594
-    - at 10000, num_samples=1000
-    - at 20000, num_samples=1681
-    """
     if dataset_len < min_num_samples:
         min_num_samples = dataset_len
     return max(min_num_samples, min(int(dataset_len**power), max_num_samples))
@@ -84,18 +57,18 @@ def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], featu
     ep_stats = {}
     for key, data in episode_data.items():
         if features[key]["dtype"] == "string":
-            continue  # String features do not have numerical statistics.
+            continue
         elif features[key]["dtype"] in ["image", "video"]:
             if is_compute_episode_stats_image:
-                ep_ft_array = sample_images(data)  # data is a list of image paths
-                axes_to_reduce = (0, 2, 3)  # keep channel dim
+                ep_ft_array = sample_images(data)
+                axes_to_reduce = (0, 2, 3)
                 keepdims = True
             else:
                 continue
         else:
-            ep_ft_array = data  # data is already a np.ndarray
-            axes_to_reduce = 0  # compute stats over the first axis
-            keepdims = data.ndim == 1  # keep as np.array
+            ep_ft_array = data
+            axes_to_reduce = 0
+            keepdims = data.ndim == 1
 
         ep_stats[key] = get_feature_stats(ep_ft_array, axis=axes_to_reduce, keepdims=keepdims)
 
@@ -124,7 +97,6 @@ def _assert_type_and_shape(stats_list: list[dict[str, dict]]):
 
 
 def aggregate_feature_stats(stats_ft_list: list[dict[str, dict]]) -> dict[str, dict[str, np.ndarray]]:
-    """Aggregates stats for a single feature."""
     means = np.stack([s["mean"] for s in stats_ft_list])
     variances = np.stack([s["std"] ** 2 for s in stats_ft_list])
     counts = np.stack([s["count"] for s in stats_ft_list])
@@ -136,7 +108,6 @@ def aggregate_feature_stats(stats_ft_list: list[dict[str, dict]]) -> dict[str, d
     weighted_means = means * counts
     total_mean = weighted_means.sum(axis=0) / total_count
 
-    # Combine dataset variances with the parallel variance formula.
     delta_means = means - total_mean
     weighted_variances = (variances + delta_means**2) * counts
     total_variance = weighted_variances.sum(axis=0) / total_count
@@ -151,17 +122,6 @@ def aggregate_feature_stats(stats_ft_list: list[dict[str, dict]]) -> dict[str, d
 
 
 def aggregate_stats(stats_list: list[dict[str, dict]]) -> dict[str, dict[str, np.ndarray]]:
-    """Aggregate stats from multiple compute_stats outputs into a single set of stats.
-
-    The final stats will have the union of all data keys from each of the stats dicts.
-
-    For instance:
-    - new_min = min(min_dataset_0, min_dataset_1, ...)
-    - new_max = max(max_dataset_0, max_dataset_1, ...)
-    - new_mean = (mean of all data, weighted by counts)
-    - new_std = (std of all data)
-    """
-
     _assert_type_and_shape(stats_list)
 
     data_keys = {key for stats in stats_list for key in stats}

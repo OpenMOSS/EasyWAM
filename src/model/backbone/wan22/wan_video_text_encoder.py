@@ -1,25 +1,12 @@
-"""Wan 2.2 text encoder implementation."""
-
+import html
 import math
+import string
+import ftfy
+import regex as re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer
-import html
-import string
-try:
-    import ftfy
-except ModuleNotFoundError:
-    class _FTFY:
-        @staticmethod
-        def fix_text(text):
-            return text
-
-    ftfy = _FTFY()
-try:
-    import regex as re
-except ModuleNotFoundError:
-    import re
 
 def fp16_clamp(x):
     if x.dtype == torch.float16 and torch.isinf(x).any():
@@ -28,17 +15,17 @@ def fp16_clamp(x):
     return x
 
 
-class GELU(nn.Module):
+class WanGELU(nn.Module):
 
     def forward(self, x):
         return 0.5 * x * (1.0 + torch.tanh(
             math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
 
 
-class T5LayerNorm(nn.Module):
+class WanT5LayerNorm(nn.Module):
 
     def __init__(self, dim, eps=1e-6):
-        super(T5LayerNorm, self).__init__()
+        super(WanT5LayerNorm, self).__init__()
         self.dim = dim
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
@@ -51,17 +38,16 @@ class T5LayerNorm(nn.Module):
         return self.weight * x
 
 
-class T5Attention(nn.Module):
+class WanT5Attention(nn.Module):
 
     def __init__(self, dim, dim_attn, num_heads, dropout=0.1):
         assert dim_attn % num_heads == 0
-        super(T5Attention, self).__init__()
+        super(WanT5Attention, self).__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.num_heads = num_heads
         self.head_dim = dim_attn // num_heads
 
-        # layers
         self.q = nn.Linear(dim, dim_attn, bias=False)
         self.k = nn.Linear(dim, dim_attn, bias=False)
         self.v = nn.Linear(dim, dim_attn, bias=False)
@@ -69,21 +55,13 @@ class T5Attention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, context=None, mask=None, pos_bias=None):
-        """
-        x:          [B, L1, C].
-        context:    [B, L2, C] or None.
-        mask:       [B, L2] or [B, L1, L2] or None.
-        """
-        # check inputs
         context = x if context is None else context
         b, n, c = x.size(0), self.num_heads, self.head_dim
 
-        # compute query, key, value
         q = self.q(x).view(b, -1, n, c)
         k = self.k(context).view(b, -1, n, c)
         v = self.v(context).view(b, -1, n, c)
 
-        # attention bias
         attn_bias = x.new_zeros(b, n, q.size(1), k.size(1))
         if pos_bias is not None:
             attn_bias += pos_bias
@@ -93,27 +71,24 @@ class T5Attention(nn.Module):
                              -1) if mask.ndim == 2 else mask.unsqueeze(1)
             attn_bias.masked_fill_(mask == 0, torch.finfo(x.dtype).min)
 
-        # compute attention (T5 does not use scaling)
         attn = torch.einsum('binc,bjnc->bnij', q, k) + attn_bias
         attn = F.softmax(attn.float(), dim=-1).type_as(attn)
         x = torch.einsum('bnij,bjnc->binc', attn, v)
 
-        # output
         x = x.reshape(b, -1, n * c)
         x = self.o(x)
         x = self.dropout(x)
         return x
 
 
-class T5FeedForward(nn.Module):
+class WanT5FeedForward(nn.Module):
 
     def __init__(self, dim, dim_ffn, dropout=0.1):
-        super(T5FeedForward, self).__init__()
+        super(WanT5FeedForward, self).__init__()
         self.dim = dim
         self.dim_ffn = dim_ffn
 
-        # layers
-        self.gate = nn.Sequential(nn.Linear(dim, dim_ffn, bias=False), GELU())
+        self.gate = nn.Sequential(nn.Linear(dim, dim_ffn, bias=False), WanGELU())
         self.fc1 = nn.Linear(dim, dim_ffn, bias=False)
         self.fc2 = nn.Linear(dim_ffn, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
@@ -126,7 +101,7 @@ class T5FeedForward(nn.Module):
         return x
 
 
-class T5SelfAttention(nn.Module):
+class WanT5SelfAttention(nn.Module):
 
     def __init__(self,
                  dim,
@@ -136,7 +111,7 @@ class T5SelfAttention(nn.Module):
                  num_buckets,
                  shared_pos=True,
                  dropout=0.1):
-        super(T5SelfAttention, self).__init__()
+        super(WanT5SelfAttention, self).__init__()
         self.dim = dim
         self.dim_attn = dim_attn
         self.dim_ffn = dim_ffn
@@ -144,12 +119,11 @@ class T5SelfAttention(nn.Module):
         self.num_buckets = num_buckets
         self.shared_pos = shared_pos
 
-        # layers
-        self.norm1 = T5LayerNorm(dim)
-        self.attn = T5Attention(dim, dim_attn, num_heads, dropout)
-        self.norm2 = T5LayerNorm(dim)
-        self.ffn = T5FeedForward(dim, dim_ffn, dropout)
-        self.pos_embedding = None if shared_pos else T5RelativeEmbedding(
+        self.norm1 = WanT5LayerNorm(dim)
+        self.attn = WanT5Attention(dim, dim_attn, num_heads, dropout)
+        self.norm2 = WanT5LayerNorm(dim)
+        self.ffn = WanT5FeedForward(dim, dim_ffn, dropout)
+        self.pos_embedding = None if shared_pos else WanT5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=True)
 
     def forward(self, x, mask=None, pos_bias=None):
@@ -160,30 +134,26 @@ class T5SelfAttention(nn.Module):
         return x
 
 
-class T5RelativeEmbedding(nn.Module):
+class WanT5RelativeEmbedding(nn.Module):
 
     def __init__(self, num_buckets, num_heads, bidirectional, max_dist=128):
-        super(T5RelativeEmbedding, self).__init__()
+        super(WanT5RelativeEmbedding, self).__init__()
         self.num_buckets = num_buckets
         self.num_heads = num_heads
         self.bidirectional = bidirectional
         self.max_dist = max_dist
 
-        # layers
         self.embedding = nn.Embedding(num_buckets, num_heads)
 
     def forward(self, lq, lk):
         device = self.embedding.weight.device
-        rel_pos = torch.arange(lk, device=device).unsqueeze(0) - \
-            torch.arange(lq, device=device).unsqueeze(1)
+        rel_pos = torch.arange(lk, device=device).unsqueeze(0) - torch.arange(lq, device=device).unsqueeze(1)
         rel_pos = self._relative_position_bucket(rel_pos)
         rel_pos_embeds = self.embedding(rel_pos)
-        rel_pos_embeds = rel_pos_embeds.permute(2, 0, 1).unsqueeze(
-            0)  # [1, N, Lq, Lk]
+        rel_pos_embeds = rel_pos_embeds.permute(2, 0, 1).unsqueeze(0)
         return rel_pos_embeds.contiguous()
 
     def _relative_position_bucket(self, rel_pos):
-        # preprocess
         if self.bidirectional:
             num_buckets = self.num_buckets // 2
             rel_buckets = (rel_pos > 0).long() * num_buckets
@@ -193,7 +163,6 @@ class T5RelativeEmbedding(nn.Module):
             rel_buckets = 0
             rel_pos = -torch.min(rel_pos, torch.zeros_like(rel_pos))
 
-        # embeddings for small and large positions
         max_exact = num_buckets // 2
         rel_pos_large = max_exact + (torch.log(rel_pos.float() / max_exact) /
                                      math.log(self.max_dist / max_exact) *
@@ -204,18 +173,18 @@ class T5RelativeEmbedding(nn.Module):
         return rel_buckets
 
 def init_weights(m):
-    if isinstance(m, T5LayerNorm):
+    if isinstance(m, WanT5LayerNorm):
         nn.init.ones_(m.weight)
-    elif isinstance(m, T5FeedForward):
+    elif isinstance(m, WanT5FeedForward):
         nn.init.normal_(m.gate[0].weight, std=m.dim**-0.5)
         nn.init.normal_(m.fc1.weight, std=m.dim**-0.5)
         nn.init.normal_(m.fc2.weight, std=m.dim_ffn**-0.5)
-    elif isinstance(m, T5Attention):
+    elif isinstance(m, WanT5Attention):
         nn.init.normal_(m.q.weight, std=(m.dim * m.dim_attn)**-0.5)
         nn.init.normal_(m.k.weight, std=m.dim**-0.5)
         nn.init.normal_(m.v.weight, std=m.dim**-0.5)
         nn.init.normal_(m.o.weight, std=(m.num_heads * m.dim_attn)**-0.5)
-    elif isinstance(m, T5RelativeEmbedding):
+    elif isinstance(m, WanT5RelativeEmbedding):
         nn.init.normal_(
             m.embedding.weight, std=(2 * m.num_buckets * m.num_heads)**-0.5)
 
@@ -241,19 +210,16 @@ class WanTextEncoder(torch.nn.Module):
         self.num_buckets = num_buckets
         self.shared_pos = shared_pos
 
-        # layers
         self.token_embedding = vocab if isinstance(vocab, nn.Embedding) \
             else nn.Embedding(vocab, dim)
-        self.pos_embedding = T5RelativeEmbedding(
+        self.pos_embedding = WanT5RelativeEmbedding(
             num_buckets, num_heads, bidirectional=True) if shared_pos else None
         self.dropout = nn.Dropout(dropout)
         self.blocks = nn.ModuleList([
-            T5SelfAttention(dim, dim_attn, dim_ffn, num_heads, num_buckets,
+            WanT5SelfAttention(dim, dim_attn, dim_ffn, num_heads, num_buckets,
                             shared_pos, dropout) for _ in range(num_layers)
         ])
-        self.norm = T5LayerNorm(dim)
-
-        # Checkpoint loading fully initializes this module.
+        self.norm = WanT5LayerNorm(dim)
 
     def forward(self, ids, mask=None):
         x = self.token_embedding(ids)
@@ -292,7 +258,7 @@ def canonicalize(text, keep_punctuation_exact_string=None):
     return text.strip()
 
 
-class HuggingfaceTokenizer:
+class WanHuggingfaceTokenizer:
 
     def __init__(self, name, seq_len=None, clean=None, **kwargs):
         assert clean in (None, 'whitespace', 'lower', 'canonicalize')
@@ -300,14 +266,12 @@ class HuggingfaceTokenizer:
         self.seq_len = seq_len
         self.clean = clean
 
-        # init tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(name, **kwargs)
         self.vocab_size = self.tokenizer.vocab_size
 
     def __call__(self, sequence, **kwargs):
         return_mask = kwargs.pop('return_mask', False)
 
-        # arguments
         _kwargs = {'return_tensors': 'pt'}
         if self.seq_len is not None:
             _kwargs.update({
@@ -317,14 +281,12 @@ class HuggingfaceTokenizer:
             })
         _kwargs.update(**kwargs)
 
-        # tokenization
         if isinstance(sequence, str):
             sequence = [sequence]
         if self.clean:
             sequence = [self._clean(u) for u in sequence]
         ids = self.tokenizer(sequence, **_kwargs)
 
-        # output
         if return_mask:
             return ids.input_ids, ids.attention_mask
         else:

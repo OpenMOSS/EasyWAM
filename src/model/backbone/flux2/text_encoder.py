@@ -7,7 +7,6 @@ import torch.nn as nn
 
 
 class Flux2Qwen3TextEncoder(nn.Module):
-    """Qwen3 adapter producing the multi-layer context expected by FLUX.2."""
 
     def __init__(self, model: nn.Module, tokenizer, output_layers=(9, 18, 27), max_length: int = 512):
         super().__init__()

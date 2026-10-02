@@ -10,8 +10,6 @@ from .protocol import BLOCK_PROTOCOL_MAIN
 
 @dataclass
 class BackboneComponents:
-    """The common loading contract consumed by EasyWAM model recipes."""
-
     name: str
     dit: nn.Module
     vae: nn.Module

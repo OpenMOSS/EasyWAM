@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 
 from model.component.action_dit import ActionDiT
-from model.backbone.loader import load_easywam_backbone
+from model.backbone import load_easywam_backbone
 
 
 def _parse_dtype(name: str) -> torch.dtype:

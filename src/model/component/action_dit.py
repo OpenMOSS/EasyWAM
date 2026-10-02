@@ -3,22 +3,224 @@ from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
+from einops import rearrange
 
 from ..backbone.protocol import BLOCK_PROTOCOL_MAIN
 
 from utils.logging_config import get_logger
 
 from ..helpers.gradient import gradient_checkpoint_forward
-from ..backbone.wan22.wan_video_dit import (
-    DiTBlock,
-    sinusoidal_embedding_1d,
-    precompute_freqs_cis,
+from .attention import (
+    KeyPaddingMask,
+    StructuredAttentionMask,
+    elide_fully_valid_attention_mask,
+    require_attention_backend,
+    run_attention,
 )
-from .attention import KeyPaddingMask, elide_fully_valid_attention_mask, require_attention_backend
 
 logger = get_logger(__name__)
 
 STATE_POSITIONS = ("context", "sequence")
+
+
+def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor):
+    return (x * (1 + scale) + shift)
+
+
+def sinusoidal_embedding_1d(dim, position):
+    sinusoid = torch.outer(position.type(torch.float64), torch.pow(
+        10000, -torch.arange(dim//2, dtype=torch.float64, device=position.device).div(dim//2)))
+    x = torch.cat([torch.cos(sinusoid), torch.sin(sinusoid)], dim=1)
+    return x.to(position.dtype)
+
+
+def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
+                   [: (dim // 2)].double() / dim))
+    freqs = torch.outer(torch.arange(end, device=freqs.device), freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+
+
+def rope_apply(x, freqs, num_heads):
+    xh = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
+    x1, x2 = xh.reshape(*xh.shape[:-1], -1, 2).unbind(-1)
+    freqs = freqs.to(device=x.device)
+    cos = freqs.real.to(dtype=xh.dtype)
+    sin = freqs.imag.to(dtype=xh.dtype)
+    out = torch.stack(
+        (x1 * cos - x2 * sin, x1 * sin + x2 * cos),
+        dim=-1,
+    )
+    return out.flatten(-2).flatten(2)
+
+
+class ActionSelfAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        attn_head_dim: int,
+        num_heads: int,
+        eps: float = 1e-6,
+        attention_backend: str = "sdpa",
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.attn_head_dim = attn_head_dim
+        self.attn_hidden_dim = self.num_heads * self.attn_head_dim
+
+        self.q = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.k = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.v = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.o = nn.Linear(self.attn_hidden_dim, hidden_dim)
+        self.norm_q = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
+        self.norm_k = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
+        self.attention_backend = require_attention_backend(attention_backend)
+
+    def forward(
+        self,
+        x,
+        freqs,
+        self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
+    ):
+        q = self.norm_q(self.q(x))
+        k = self.norm_k(self.k(x))
+        v = self.v(x)
+        q = rope_apply(q, freqs, self.num_heads)
+        k = rope_apply(k, freqs, self.num_heads)
+        x = run_attention(
+            q=q,
+            k=k,
+            v=v,
+            num_heads=self.num_heads,
+            attention_mask=self_attn_mask,
+            backend=self.attention_backend,
+        )
+        return self.o(x)
+
+
+class ActionCrossAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        attn_head_dim: int,
+        num_heads: int,
+        eps: float = 1e-6,
+        attention_backend: str = "sdpa",
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.attn_head_dim = attn_head_dim
+        self.attn_hidden_dim = self.num_heads * self.attn_head_dim
+
+        self.q = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.k = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.v = nn.Linear(hidden_dim, self.attn_hidden_dim)
+        self.o = nn.Linear(self.attn_hidden_dim, hidden_dim)
+        self.norm_q = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
+        self.norm_k = nn.RMSNorm(self.attn_hidden_dim, eps=eps)
+        self.attention_backend = require_attention_backend(attention_backend)
+
+    def project_kv(self, ctx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.norm_k(self.k(ctx)), self.v(ctx)
+
+    def forward_with_projected_kv(
+        self,
+        x: torch.Tensor,
+        projected_kv: tuple[torch.Tensor, torch.Tensor],
+        ctx_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        q = self.norm_q(self.q(x))
+        k, v = projected_kv
+        x = run_attention(
+            q=q,
+            k=k,
+            v=v,
+            num_heads=self.num_heads,
+            attention_mask=ctx_mask,
+            backend=self.attention_backend,
+        )
+        return self.o(x)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        ctx: torch.Tensor,
+        ctx_mask: Optional[torch.Tensor] = None,
+        projected_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
+    ):
+        if projected_kv is None:
+            projected_kv = self.project_kv(ctx)
+        return self.forward_with_projected_kv(x, projected_kv, ctx_mask)
+
+
+class ActionGateModule(nn.Module):
+    def __init__(self,):
+        super().__init__()
+
+    def forward(self, x, gate, residual):
+        return x + gate * residual
+
+class ActionDiTBlock(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        attn_head_dim: int,
+        num_heads: int,
+        ffn_dim: int,
+        eps: float = 1e-6,
+        attention_backend: str = "sdpa",
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.attn_head_dim = attn_head_dim
+        self.num_heads = num_heads
+        self.ffn_dim = ffn_dim
+
+        self.self_attn = ActionSelfAttention(
+            hidden_dim, attn_head_dim, num_heads, eps, attention_backend=attention_backend
+        )
+        self.cross_attn = ActionCrossAttention(
+            hidden_dim, attn_head_dim, num_heads, eps, attention_backend=attention_backend)
+        self.norm1 = nn.LayerNorm(hidden_dim, eps=eps, elementwise_affine=False)
+        self.norm2 = nn.LayerNorm(hidden_dim, eps=eps, elementwise_affine=False)
+        self.norm3 = nn.LayerNorm(hidden_dim, eps=eps)
+        self.ffn = nn.Sequential(nn.Linear(hidden_dim, ffn_dim), nn.GELU(
+            approximate='tanh'), nn.Linear(ffn_dim, hidden_dim))
+        self.modulation = nn.Parameter(torch.randn(1, 6, hidden_dim) / hidden_dim**0.5)
+        self.gate = ActionGateModule()
+
+    def forward(
+        self,
+        x,
+        context,
+        t_mod,
+        freqs,
+        context_mask=None,
+        self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
+        context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
+    ):
+        if isinstance(context_mask, torch.Tensor) and context_mask.dim() == 3:
+            context_mask = context_mask.unsqueeze(1)
+        has_seq = len(t_mod.shape) == 4
+        chunk_dim = 2 if has_seq else 1
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+            self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=chunk_dim)
+        if has_seq:
+            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+                shift_msa.squeeze(2), scale_msa.squeeze(2), gate_msa.squeeze(2),
+                shift_mlp.squeeze(2), scale_mlp.squeeze(2), gate_mlp.squeeze(2),
+            )
+        input_x = modulate(self.norm1(x), shift_msa, scale_msa)
+        x = self.gate(x, gate_msa, self.self_attn(input_x, freqs, self_attn_mask=self_attn_mask))
+        x = x + self.cross_attn(
+            self.norm3(x), context, ctx_mask=context_mask, projected_kv=context_kv
+        )
+        input_x = modulate(self.norm2(x), shift_mlp, scale_mlp)
+        x = self.gate(x, gate_mlp, self.ffn(input_x))
+        return x
 
 
 def normalize_state_position(value: str) -> str:
@@ -71,7 +273,6 @@ class ActionEncoder(nn.Module):
 
 
 class StateEncoder(nn.Module):
-    """Two-layer state value encoder."""
 
     def __init__(self, state_dim: int, hidden_dim: int, projector_hidden_dim: int):
         super().__init__()
@@ -170,7 +371,7 @@ class ActionDiT(nn.Module):
         self.time_projection = nn.Sequential(nn.SiLU(), nn.Linear(hidden_dim, hidden_dim * 6))
         self.blocks = nn.ModuleList(
             [
-                DiTBlock(
+                ActionDiTBlock(
                     hidden_dim=hidden_dim,
                     attn_head_dim=attn_head_dim,
                     num_heads=num_heads,

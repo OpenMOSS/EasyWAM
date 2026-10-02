@@ -1,12 +1,8 @@
-from typing import Literal, Dict, Annotated, Union, Any, List, Tuple, Optional
+from typing import Literal, Dict, Annotated, Union, Any
 import torch
 import json
 from collections import defaultdict
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
-import hashlib
-from pathlib import Path
-from git import Repo
 from utils.logging_config import get_logger
 
 from utils.pytorch_utils import dict_apply
@@ -107,7 +103,6 @@ class SingleFieldLinearNormalizer:
             elif mode == "q01/q99":
                 input_min, input_max = stats["q01"], stats["q99"]
             else: 
-                # parse const_min/const_max
                 input_min, input_max = map(float, mode.split("/"))
                 input_min = torch.full_like(stats["min"], input_min)
                 input_max = torch.full_like(stats["max"], input_max)
@@ -191,98 +186,3 @@ def load_dataset_stats_from_json(file_path: str,
     )
 
     return data
-
-
-def search_dataset_stats_cache_json(cache_dir: str | Path, data_config: DictConfig) -> Tuple[bool, str | None]:
-    if isinstance(cache_dir, str):
-        cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    def get_git_hash() -> Optional[str]:
-        repo = Repo(__file__, search_parent_directories=True)
-        return repo.head.commit.hexsha
-
-    def to_plain(value: Any) -> Any:
-        if OmegaConf.is_config(value):
-            return OmegaConf.to_container(value, resolve=True)
-        return value
-
-    def normalize_str_list(value: Any) -> List[str]:
-        value = to_plain(value)
-        if value is None:
-            return []
-        if isinstance(value, str):
-            value = [value]
-        return [str(item) for item in value if item is not None]
-
-    def normalize_transforms(value: Any) -> Any:
-        value = to_plain(value)
-        if isinstance(value, dict):
-            return [value]
-        return value
-
-    def normalize_dataset_dirs(cfg: DictConfig) -> Any:
-        dataset_cfg = cfg.get("dataset")
-        if dataset_cfg is None:
-            return None
-        embodiment_datasets = dataset_cfg.get("embodiment_datasets")
-        if embodiment_datasets is not None:
-            emb_dirs: Dict[str, List[str]] = {}
-            for emb, emb_cfg in embodiment_datasets.items():
-                dataset_groups = emb_cfg.get("dataset_groups")
-                if dataset_groups is None:
-                    emb_dirs[emb] = []
-                    continue
-                dirs: List[str] = []
-                for group in dataset_groups:
-                    group_dirs = group.get("dataset_dirs")
-                    if group_dirs is None:
-                        continue
-                    dirs.extend(normalize_str_list(group_dirs))
-                emb_dirs[emb] = sorted(dirs)
-            return emb_dirs
-
-        dataset_dirs = dataset_cfg.get("dataset_dirs")
-        return sorted(normalize_str_list(dataset_dirs))
-
-    def normalize_action_state_transforms(cfg: DictConfig) -> Any:
-        processor_cfg = cfg.get("processor")
-        if processor_cfg is None:
-            return None
-        embodiment_processors = processor_cfg.get("embodiment_processors")
-        if embodiment_processors is not None:
-            emb_transforms: Dict[str, Any] = {}
-            for emb, emb_cfg in embodiment_processors.items():
-                transforms = emb_cfg.get("action_state_transforms")
-                emb_transforms[emb] = normalize_transforms(transforms)
-            return emb_transforms
-
-        transforms = processor_cfg.get("action_state_transforms")
-        return normalize_transforms(transforms)
-
-    signature = {
-        "action_size": data_config.dataset.action_size, 
-        "dataset_dirs": normalize_dataset_dirs(data_config),
-        "action_state_transforms": normalize_action_state_transforms(data_config),
-    }
-    signature_json = json.dumps(signature, sort_keys=True, separators=(",", ":"))
-    dataset_hash = hashlib.sha256(signature_json.encode("utf-8"), usedforsecurity=False).hexdigest()
-
-    git_hash = get_git_hash()
-    precise_name = f"dataset_stats_{dataset_hash}_{git_hash}.json"
-    precise = cache_dir / precise_name
-    if precise.exists():
-        logger.info(f"Found dataset stats cache with precisely matching dataset and git hash: {precise_name}.")
-        return True, str(precise)
-    
-    candidates = sorted(cache_dir.glob(f"dataset_stats_{dataset_hash}_*.json"))
-    if not candidates:
-        logger.info(f"No dataset stats cache found for dataset hash {dataset_hash}")
-        return False, str(precise) # return precise cache path for saving cache
-
-    picked = candidates[0]
-    prefix = f"dataset_stats_{dataset_hash}_"
-    picked_git_hash = picked.name[len(prefix):-5]
-    assert picked_git_hash != git_hash
-    logger.warning(f"Found substitute dataset stats cache {picked.name} which mismatch current git hash {git_hash}.")
-    return True, str(picked)

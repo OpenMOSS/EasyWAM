@@ -167,7 +167,6 @@ class WAMProcessor(BaseProcessor):
         return batch
 
     def preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform a dataset sample into the tensors consumed by WAM."""
         sample = {}
         sample["instruction"] = self.augment_instruction(data)
         sample["image_is_pad"] = data["image_is_pad"]
@@ -207,7 +206,6 @@ class WAMProcessor(BaseProcessor):
         else:
             sample["pixel_values"] = pixel_values
 
-        # Keep ground-truth actions for open-loop evaluation.
         if not self.is_train and "action" in data:
             sample["gt_action"] = deepcopy(data["action"])
 
@@ -238,7 +236,6 @@ class WAMProcessor(BaseProcessor):
         return sample
 
     def postprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Undo action transforms and normalization for policy output."""
         assert "action" in data, "Action is required in postprocess"
         data["state"] = data.pop("proprio")
         data = self.action_state_merger.backward(data)

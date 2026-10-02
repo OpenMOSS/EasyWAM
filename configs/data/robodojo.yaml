@@ -51,6 +51,11 @@ train:
       - _target_: data.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize
         size: [240, 320]
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.0
     val_transforms:
       - _target_: data.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize
@@ -112,6 +117,11 @@ val:
       - _target_: data.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize
         size: [240, 320]
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.0
     val_transforms:
       - _target_: data.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize

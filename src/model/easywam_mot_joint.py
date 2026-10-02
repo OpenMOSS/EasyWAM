@@ -13,7 +13,6 @@ logger = get_logger(__name__)
 
 
 class EasyWAMMoTJoint(EasyWAMMoT):
-    """EasyWAM MoT-Joint model with joint video/action denoising."""
 
     model_variant = "mot_joint"
 

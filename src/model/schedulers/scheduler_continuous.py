@@ -2,7 +2,6 @@ import torch
 
 
 class ContinuousFlowMatchScheduler:
-    """Continuous-time Flow-Matching scheduler with shift-based sampling."""
 
     def __init__(self, num_train_timesteps: int = 1000, shift: float = 5.0, eps: float = 1e-10):
         if num_train_timesteps <= 0:

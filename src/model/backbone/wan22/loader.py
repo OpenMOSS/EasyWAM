@@ -5,12 +5,12 @@ from typing import Any
 import torch
 import time
 
-from ...helpers.io import LocalModelFile, hash_model_file, load_state_dict
+from ...helpers.io import LocalModelFile, load_state_dict
 from ...helpers.state_dict_converters import (
     wan_video_vae_state_dict_converter,
 )
 from .wan_video_dit import WanVideoDiT
-from .wan_video_text_encoder import HuggingfaceTokenizer, WanTextEncoder
+from .wan_video_text_encoder import WanHuggingfaceTokenizer, WanTextEncoder
 from .wan_video_vae import WanVideoVAE38
 from utils.logging_config import get_logger
 
@@ -23,7 +23,7 @@ class Wan22LoadedComponents:
     dit: WanVideoDiT
     vae: WanVideoVAE38
     text_encoder: WanTextEncoder | None
-    tokenizer: HuggingfaceTokenizer | None
+    tokenizer: WanHuggingfaceTokenizer | None
     dit_path: str
     vae_path: str
     text_encoder_path: str | None
@@ -33,19 +33,16 @@ class Wan22LoadedComponents:
 WAN22_MODEL_REGISTRY = [
     {
         # Example: LocalModelFile(root="./checkpoints/Wan2.2-TI2V-5B", pattern="models_t5_umt5-xxl-enc-bf16.pth")
-        "model_hash": "9c8818c2cbea55eca56c7b447df170da",
         "model_name": "wan_video_text_encoder",
         "model_class": WanTextEncoder,
     },
     {
         # Example: LocalModelFile(root="./checkpoints/Wan2.2-TI2V-5B", pattern="diffusion_pytorch_model*.safetensors")
-        "model_hash": "1f5ab7703c6fc803fdded85ff040c316",
         "model_name": "wan_video_dit",
         "model_class": WanVideoDiT,
     },
     {
         # Example: LocalModelFile(root="./checkpoints/Wan2.2-TI2V-5B", pattern="Wan2.2_VAE.pth")
-        "model_hash": "e1de6c02cdac79f8b739f4d3698cd216",
         "model_name": "wan_video_vae",
         "model_class": WanVideoVAE38,
         "state_dict_converter": wan_video_vae_state_dict_converter,
@@ -93,17 +90,14 @@ def _load_registered_model(
     device: str,
     model_kwargs_override: dict[str, Any] | None = None,
 ):
-    model_hash = hash_model_file(path)
-
     matched_config = None
     for config in WAN22_MODEL_REGISTRY:
-        if config["model_hash"] == model_hash and config["model_name"] == model_name:
+        if config["model_name"] == model_name:
             matched_config = config
             break
     if matched_config is None:
         raise ValueError(
-            f"Cannot detect model type for {model_name}. File: {path}. "
-            f"Model hash: {model_hash}. This standalone package follows DiffSynth hash-based loading."
+            f"Unknown Wan model name: {model_name}."
         )
 
     model_class = matched_config["model_class"]
@@ -177,7 +171,7 @@ def load_wan22_ti2v_5b_components(
         dit_path = str(dit_model_config.path)
         logger.info("Finished loading pretrained Wan2.2 video DiT.")
     text_encoder: WanTextEncoder | None = None
-    tokenizer: HuggingfaceTokenizer | None = None
+    tokenizer: WanHuggingfaceTokenizer | None = None
     text_encoder_path: str | None = None
     tokenizer_path: str | None = None
     if load_text_encoder:
@@ -192,7 +186,7 @@ def load_wan22_ti2v_5b_components(
             torch_dtype=torch_dtype,
             device=device,
         )
-        tokenizer = HuggingfaceTokenizer(
+        tokenizer = WanHuggingfaceTokenizer(
             name=tokenizer_config.path,
             seq_len=int(tokenizer_max_len),
             clean="whitespace",

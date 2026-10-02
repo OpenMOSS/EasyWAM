@@ -1,18 +1,3 @@
-#!/usr/bin/env python
-
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import importlib.resources
 import io
 import json
@@ -77,14 +62,6 @@ DEFAULT_FEATURES = {
 
 
 def flatten_dict(d: dict, parent_key: str = "", sep: str = "/") -> dict:
-    """Flatten a nested dictionary structure by collapsing nested keys into one key with a separator.
-
-    For example:
-    ```
-    >>> dct = {"a": {"b": 1, "c": {"d": 2}}, "e": 3}`
-    >>> print(flatten_dict(dct))
-    {"a/b": 1, "a/c/d": 2, "e": 3}
-    """
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -123,7 +100,6 @@ def serialize_dict(stats: dict[str, torch.Tensor | np.ndarray | dict]) -> dict:
 
 
 def embed_images(dataset: datasets.Dataset) -> datasets.Dataset:
-    # Embed image bytes into the table before saving to parquet
     format = dataset.format
     dataset = dataset.with_format("arrow")
     dataset = dataset.map(embed_table_storage, batched=False)
@@ -143,7 +119,6 @@ def write_json(data: dict, fpath: Path) -> None:
 
 
 def load_jsonlines(fpath: Path) -> list[Any]:
-    # allow \t and \n
     loose_loader = partial(json.loads, strict=False)
     with jsonlines.open(fpath, "r", loads=loose_loader) as reader:
         return list(reader)
@@ -190,7 +165,6 @@ def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
 
 
 def load_tasks(local_dir: Path) -> tuple[dict[int, str], dict[str, int]]:
-    """Load the v3 task table without relying on its physical row order."""
     path = local_dir / TASKS_PATH
     frame = pd.read_parquet(path)
     if "task_index" not in frame.columns:
@@ -219,7 +193,6 @@ def load_tasks(local_dir: Path) -> tuple[dict[int, str], dict[str, int]]:
 
 
 def load_episodes(local_dir: Path) -> dict[int, dict]:
-    """Load all relational v3 episode metadata shards."""
     episodes_dir = local_dir / EPISODES_DIR
     files = sorted(episodes_dir.rglob("*.parquet"))
     if not files:
@@ -276,11 +249,6 @@ def load_image_as_numpy(
 
 
 def hf_transform_to_torch(items_dict: dict[torch.Tensor | None]):
-    """Get a transform function that convert items from Hugging Face dataset (pyarrow)
-    to torch tensors. Importantly, images are converted from PIL, which corresponds to
-    a channel last representation (h w c) of uint8 type, to a torch image representation
-    with channel first (c h w) of float32 type in range [0,1].
-    """
     for key in items_dict:
         first_item = items_dict[key][0]
         if type(first_item) == dict and 'bytes' in first_item and first_item['bytes'] is not None:
@@ -399,44 +367,21 @@ def check_timestamps_sync(
     tolerance_s: float,
     raise_value_error: bool = True,
 ) -> bool:
-    """
-    This check is to make sure that each timestamp is separated from the next by (1/fps) +/- tolerance
-    to account for possible numerical error.
-
-    Args:
-        timestamps (np.ndarray): Array of timestamps in seconds.
-        episode_indices (np.ndarray): Array indicating the episode index for each timestamp.
-        episode_data_index (dict[str, np.ndarray]): A dictionary that includes 'to',
-            which identifies indices for the end of each episode.
-        fps (int): Frames per second. Used to check the expected difference between consecutive timestamps.
-        tolerance_s (float): Allowed deviation from the expected (1/fps) difference.
-        raise_value_error (bool): Whether to raise a ValueError if the check fails.
-
-    Returns:
-        bool: True if all checked timestamp differences lie within tolerance, False otherwise.
-
-    Raises:
-        ValueError: If the check fails and `raise_value_error` is True.
-    """
     if timestamps.shape != episode_indices.shape:
         raise ValueError(
             "timestamps and episode_indices should have the same shape. "
             f"Found {timestamps.shape=} and {episode_indices.shape=}."
         )
 
-    # Consecutive differences
     diffs = np.diff(timestamps)
     within_tolerance = np.abs(diffs - (1.0 / fps)) <= tolerance_s
 
-    # Mask to ignore differences at the boundaries between episodes
     mask = np.ones(len(diffs), dtype=bool)
-    ignored_diffs = episode_data_index["to"][:-1] - 1  # indices at the end of each episode
+    ignored_diffs = episode_data_index["to"][:-1] - 1
     mask[ignored_diffs] = False
     filtered_within_tolerance = within_tolerance[mask]
 
-    # Check if all remaining diffs are within tolerance
     if not np.all(filtered_within_tolerance):
-        # Track original indices before masking
         original_indices = np.arange(len(diffs))
         filtered_indices = original_indices[mask]
         outside_tolerance_filtered_indices = np.nonzero(~filtered_within_tolerance)[0]
@@ -467,10 +412,6 @@ def check_timestamps_sync(
 def check_delta_timestamps(
     delta_timestamps: dict[str, list[float]], fps: int, tolerance_s: float, raise_value_error: bool = True
 ) -> bool:
-    """This will check if all the values in delta_timestamps are multiples of 1/fps +/- tolerance.
-    This is to ensure that these delta_timestamps added to any timestamp from a dataset will themselves be
-    actual timestamps from the dataset.
-    """
     outside_tolerance = {}
     for key, delta_ts in delta_timestamps.items():
         within_tolerance = [abs(ts * fps - round(ts * fps)) / fps <= tolerance_s for ts in delta_ts]
@@ -503,10 +444,6 @@ def get_delta_indices(delta_timestamps: dict[str, list[float]], fps: int) -> dic
 
 
 def cycle(iterable):
-    """The equivalent of itertools.cycle, but safe for Pytorch dataloaders.
-
-    See https://github.com/pytorch/pytorch/issues/23900 for information on why itertools.cycle is not safe.
-    """
     iterator = iter(iterable)
     while True:
         try:
@@ -516,9 +453,6 @@ def cycle(iterable):
 
 
 def create_branch(repo_id, *, branch: str, repo_type: str | None = None) -> None:
-    """Create a branch on a existing Hugging Face repo. Delete the branch if it already
-    exists before creating it.
-    """
     api = HfApi()
 
     branches = api.list_repo_refs(repo_id, repo_type=repo_type).branches
@@ -535,10 +469,6 @@ def create_lerobot_dataset_card(
     dataset_info: dict | None = None,
     **kwargs,
 ) -> DatasetCard:
-    """
-    Keyword arguments will be used to replace values in src/lerobot/datasets/card_template.md.
-    Note: If specified, license must be one of https://huggingface.co/docs/hub/repositories-licenses.
-    """
     card_tags = ["LeRobot"]
 
     if tags:
@@ -569,8 +499,6 @@ def create_lerobot_dataset_card(
 
 
 class IterableNamespace(SimpleNamespace):
-    """Namespace with mapping access and recursive conversion of dictionaries."""
-
     def __init__(self, dictionary: dict[str, Any] = None, **kwargs):
         super().__init__(**kwargs)
         if dictionary is not None:
@@ -625,15 +553,13 @@ def validate_features_presence(actual_features: set[str], expected_features: set
     return error_message
 
 def is_valid_numpy_dtype_string(dtype_str: str) -> bool:
-    """Return whether a string names a NumPy dtype."""
     try:
         np.dtype(dtype_str)
         return True
     except TypeError:
         return False
 def validate_feature_dtype_and_shape(name: str, feature: dict, value: np.ndarray | PILImage.Image | str | bytes):
-    if isinstance(value, bytes) or isinstance(value, array.array): # ROS 1 and 2
-        # Encoded ROS image payloads are validated when decoded.
+    if isinstance(value, bytes) or isinstance(value, array.array):
         return ""
     expected_dtype = feature["dtype"]
     expected_shape = feature["shape"]
@@ -667,7 +593,6 @@ def validate_feature_numpy_array(
 
 
 def validate_feature_image_or_video(name: str, expected_shape: list[str], value: np.ndarray | PILImage.Image):
-    # Note: The check of pixels range ([0,1] for float and [0,255] for uint8) is done by the image writer threads.
     error_message = ""
     if isinstance(value, np.ndarray):
         actual_shape = value.shape

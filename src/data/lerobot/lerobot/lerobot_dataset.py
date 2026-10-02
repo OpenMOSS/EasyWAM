@@ -1,18 +1,3 @@
-#!/usr/bin/env python
-
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import contextlib
 from bisect import bisect_right
 import logging
@@ -138,77 +123,62 @@ class LeRobotDatasetMetadata:
 
     @property
     def data_path(self) -> str:
-        """Formattable string for the parquet files."""
         return self.info["data_path"]
 
     @property
     def video_path(self) -> str | None:
-        """Formattable string for the video files."""
         return self.info["video_path"]
 
     @property
     def robot_type(self) -> str | None:
-        """Robot type used in recording this dataset."""
         return self.info["robot_type"]
 
     @property
     def fps(self) -> int:
-        """Frames per second used during data collection."""
         return self.info["fps"]
 
     @property
     def features(self) -> dict[str, dict]:
-        """All features contained in the dataset."""
         return self.info["features"]
 
     @property
     def image_keys(self) -> list[str]:
-        """Keys to access visual modalities stored as images."""
         return [key for key, ft in self.features.items() if ft["dtype"] == "image"]
 
     @property
     def video_keys(self) -> list[str]:
-        """Keys to access visual modalities stored as videos."""
         return [key for key, ft in self.features.items() if ft["dtype"] == "video"]
 
     @property
     def camera_keys(self) -> list[str]:
-        """Keys to access visual modalities (regardless of their storage method)."""
         return [key for key, ft in self.features.items() if ft["dtype"] in ["video", "image"]]
 
     @property
     def names(self) -> dict[str, list | dict]:
-        """Names of the various dimensions of vector modalities."""
         return {key: ft["names"] for key, ft in self.features.items()}
 
     @property
     def shapes(self) -> dict:
-        """Shapes for the different features."""
         return {key: tuple(ft["shape"]) for key, ft in self.features.items()}
 
     @property
     def total_episodes(self) -> int:
-        """Total number of episodes available."""
         return self.info["total_episodes"]
 
     @property
     def total_frames(self) -> int:
-        """Total number of frames saved in this dataset."""
         return self.info["total_frames"]
 
     @property
     def total_tasks(self) -> int:
-        """Total number of different tasks performed in this dataset."""
         return self.info["total_tasks"]
 
     @property
     def total_chunks(self) -> int:
-        """Total number of chunks (groups of episodes)."""
         return self.info["total_chunks"]
 
     @property
     def chunks_size(self) -> int:
-        """Max number of episodes per chunk."""
         return self.info["chunks_size"]
 
     def __repr__(self):
@@ -237,12 +207,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
     ):
-        """Load a LeRobot v3.0 dataset from a local directory or the Hub.
-
-        ``episodes`` optionally restricts the logical view while preserving
-        shard offsets.
-
-        """
         super().__init__()
         self.repo_id = repo_id
         self._local_only = root is not None
@@ -362,11 +326,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         )
 
     def download_episodes(self, download_videos: bool = True) -> None:
-        """Downloads the dataset from the given 'repo_id' at the provided version. If 'episodes' is given, this
-        will only download those episodes (selected by their episode_index). If 'episodes' is None, the whole
-        dataset will be downloaded. Thanks to the behavior of snapshot_download, if the files are already present
-        in 'local_dir', they won't be downloaded again.
-        """
         files = None
         ignore_patterns = None if download_videos else "videos/"
         if self.episodes is not None:
@@ -388,7 +347,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return list(dict.fromkeys(fpaths))
 
     def load_hf_dataset(self) -> datasets.Dataset:
-        """hf_dataset contains all the observations, states, actions, rewards, etc."""
         files = sorted(str(path) for path in (self.root / "data").rglob("*.parquet"))
         if not files:
             raise FileNotFoundError(f"No LeRobot v3 data parquet files found under {self.root / 'data'}")
@@ -404,19 +362,16 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def fps(self) -> int:
-        """Frames per second used during data collection."""
         return self.meta.fps
 
     @property
     def num_frames(self) -> int:
-        """Number of frames in selected episodes."""
         if self.hf_dataset is None:
             return sum(self.meta.episodes[ep_idx]["length"] for ep_idx in self._selected_episode_ids)
         return self._episode_ends[-1] if self._episode_ends else 0
 
     @property
     def num_episodes(self) -> int:
-        """Number of episodes selected."""
         return len(self._selected_episode_ids)
 
     def _get_local_episode_position(self, idx: int) -> int:
@@ -442,7 +397,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def hf_features(self) -> datasets.Features:
-        """Features of the hf_dataset."""
         if self.hf_dataset is not None:
             return self.hf_dataset.features
         else:
@@ -455,7 +409,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             key: [max(ep_start.item(), min(ep_end.item() - 1, idx + delta)) for delta in delta_idx]
             for key, delta_idx in self.delta_indices.items()
         }
-        padding = {  # Pad values outside of current episode range
+        padding = {
             f"{key}_is_pad": torch.BoolTensor(
                 [(idx + delta < ep_start.item()) | (idx + delta >= ep_end.item()) for delta in delta_idx]
             )
@@ -514,11 +468,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return res
 
     def _query_videos(self, query_timestamps: dict[str, list[float]], ep_idx: int) -> dict[str, torch.Tensor]:
-        """Note: When using data workers (e.g. DataLoader with num_workers>0), do not call this function
-        in the main process (e.g. by using a second Dataloader with num_workers=0). It will result in a
-        Segmentation Fault. This probably happens because a memory reference to the video loader is created in
-        the main process and a subprocess fails to access it.
-        """
         item = {}
         for vid_key, query_ts in query_timestamps.items():
             from_timestamp = self.meta.episodes[ep_idx].get(
@@ -575,7 +524,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
             for cam in image_keys:
                 item[cam] = self.image_transforms(item[cam])
 
-        # Use episode tasks only when a single task is unambiguous.
         if "task_index" in item:
             task_idx = int(item["task_index"].item())
             if task_idx not in self.meta.tasks:
@@ -618,12 +566,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         )
 
 class MultiLeRobotDataset(torch.utils.data.Dataset):
-    """A dataset consisting of multiple underlying `LeRobotDataset`s.
-
-    The underlying `LeRobotDataset`s are effectively concatenated, and this class adopts much of the API
-    structure of `LeRobotDataset`.
-    """
-
     def __init__(
         self,
         dataset_dirs: list[str],
@@ -641,7 +583,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         self.ds_names = ds_names
         self.ds_roots = ds_roots
         self.tolerances_s = tolerances_s if tolerances_s else dict.fromkeys(ds_names, 0.0001)
-        # Apply transforms and timestamp offsets after combining datasets.
         self._datasets = []
         for ds_root, ds_name in zip(ds_roots, ds_names, strict=True):
             _dataset = LeRobotDataset(
@@ -656,7 +597,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             )
             self._datasets.append(_dataset)
 
-        # Default collation requires every dataset to expose the same keys.
         self.disabled_features = set()
         intersection_features = set(self._datasets[0].features)
         for ds in self._datasets:
@@ -677,7 +617,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
-        # A shared aggregate assumes compatible normalization ranges across datasets.
         self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
 
     def set_during_training(self, during_training: bool):
@@ -686,33 +625,18 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def repo_id_to_index(self):
-        """Return a mapping from dataset repo_id to a dataset index automatically created by this class.
-
-        This index is incorporated as a data key in the dictionary returned by `__getitem__`.
-        """
         return {repo_id: i for i, repo_id in enumerate(self.ds_names)}
 
     @property
     def repo_index_to_id(self):
-        """Return the inverse mapping if repo_id_to_index."""
         return {v: k for k, v in self.repo_id_to_index}
 
     @property
     def fps(self) -> int:
-        """Frames per second used during data collection.
-
-        NOTE: Fow now, this relies on a check in __init__ to make sure all sub-datasets have the same info.
-        """
         return self._datasets[0].meta.info["fps"]
 
     @property
     def video(self) -> bool:
-        """Returns True if this dataset loads video frames from mp4 files.
-
-        Returns False if it only loads images from png files.
-
-        NOTE: Fow now, this relies on a check in __init__ to make sure all sub-datasets have the same info.
-        """
         return self._datasets[0].meta.info.get("video", False)
 
     @property
@@ -724,7 +648,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def camera_keys(self) -> list[str]:
-        """Keys to access image and video stream from cameras."""
         keys = []
         for key, feats in self.features.items():
             if isinstance(feats, (datasets.Image, VideoFrame)):
@@ -733,12 +656,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def video_frame_keys(self) -> list[str]:
-        """Keys to access video frames that requires to be decoded into images.
-
-        Note: It is empty if the dataset contains images only,
-        or equal to `self.cameras` if the dataset contains videos only,
-        or can even be a subset of `self.cameras` in a case of a mixed image/video dataset.
-        """
         video_frame_keys = []
         for key, feats in self.features.items():
             if isinstance(feats, VideoFrame):
@@ -747,21 +664,14 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def num_frames(self) -> int:
-        """Number of samples/frames."""
         return sum(d.num_frames for d in self._datasets)
 
     @property
     def num_episodes(self) -> int:
-        """Number of episodes."""
         return sum(d.num_episodes for d in self._datasets)
 
     @property
     def tolerance_s(self) -> float:
-        """Tolerance in seconds used to discard loaded frames when their timestamps
-        are not close enough from the requested frames. It is only used when `delta_timestamps`
-        is provided or when loading video frames from mp4 files.
-        """
-        # 1e-4 to account for possible numerical error
         return 1 / self.fps - 1e-4
     
     def get_episode_data(self, episode_idx: int) -> dict:

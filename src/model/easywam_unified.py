@@ -19,7 +19,7 @@ from .component.attention import (
     build_structured_attention_mask,
     elide_fully_valid_attention_mask,
 )
-from .backbone.wan22.loader import load_wan22_ti2v_5b_components
+from .backbone.wan22 import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
 from .helpers.batching import (
@@ -33,7 +33,6 @@ logger = get_logger(__name__)
 
 
 class EasyWAMUnified(nn.Module):
-    """EasyWAM-Unified model for single-chunk video/action prediction."""
 
     inference_compile_targets = ("_forward_dit",)
 
@@ -322,7 +321,7 @@ class EasyWAMUnified(nn.Module):
         loss_lambda_action: float = 1.0,
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ) -> "EasyWAMUnified":
-        from .backbone.loader import load_easywam_backbone, normalize_backbone_config
+        from .backbone import load_easywam_backbone, normalize_backbone_config
 
         cfg = normalize_backbone_config(backbone)
         components = load_easywam_backbone(

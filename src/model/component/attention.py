@@ -221,21 +221,12 @@ def dense_attention_mask(
 def elide_fully_valid_attention_mask(
     mask: Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask],
 ) -> Optional[torch.Tensor | StructuredAttentionMask | KeyPaddingMask]:
-    """Drop a boolean all-True mask because it imposes no attention constraint.
-
-    Call this once while preparing an attention payload rather than once per
-    transformer layer. Besides avoiding an unnecessary mask, this lets external
-    FlashAttention kernels handle the otherwise-unmasked operation.
-    """
     if mask is None:
         return mask
     if isinstance(mask, StructuredAttentionMask):
         return None if mask.is_fully_valid else mask
     if isinstance(mask, KeyPaddingMask):
         return None if mask.is_fully_valid else mask
-    # Never inspect a CUDA tensor from Python here: `.item()` would serialize the
-    # host with every denoising step. Common callers normalize masks while they
-    # are still on CPU; externally supplied CUDA masks stay explicit.
     if (
         mask.device.type == "cpu"
         and mask.dtype == torch.bool

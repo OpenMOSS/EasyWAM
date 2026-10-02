@@ -1,5 +1,3 @@
-"""Cosmos-Predict2.5 Reason1 text-conditioning adapter."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,8 +13,6 @@ COSMOS_REASON_SYSTEM_PROMPT = (
 
 
 class Cosmos25TextEncoder(nn.Module):
-    """Produce Cosmos-Predict2.5 Reason1 conditioning features."""
-
     hidden_dim = 3584
     num_hidden_layers = 28
     raw_output_dim = hidden_dim * num_hidden_layers
@@ -63,7 +59,6 @@ class Cosmos25TextEncoder(nn.Module):
 
     @staticmethod
     def _conversation(prompt: str) -> list[dict]:
-        """Build the text-only conversation used by Cosmos-Predict2.5."""
         return [
             {
                 "role": "system",
@@ -76,7 +71,6 @@ class Cosmos25TextEncoder(nn.Module):
         ]
 
     def _tokenize(self, prompt: str):
-        # Apply the official Qwen chat template and tokenize in one operation.
         return self.tokenizer.apply_chat_template(
             self._conversation(prompt),
             tokenize=True,

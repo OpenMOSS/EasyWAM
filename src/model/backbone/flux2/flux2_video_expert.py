@@ -12,7 +12,6 @@ from .imports import ensure_flux2_importable
 
 
 class Flux2VideoExpert(nn.Module):
-    """Protocol adapter around the official FLUX.2 Klein transformer."""
 
     backbone_name = "flux2"
     block_protocol = BLOCK_PROTOCOL_FLUX2
@@ -38,7 +37,6 @@ class Flux2VideoExpert(nn.Module):
 
     @property
     def blocks(self):
-        """Compatibility traversal only; execution is defined by block_protocol."""
         return list(self.double_blocks) + list(self.single_blocks)
 
     @classmethod

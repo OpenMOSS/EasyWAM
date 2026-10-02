@@ -1,5 +1,3 @@
-"""Native PyTorch Cosmos-Predict2.5 2B diffusion transformer."""
-
 from __future__ import annotations
 
 import math
@@ -62,8 +60,6 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 class CosmosVideoRope3D(nn.Module):
-    """Split-half 3D rotary embedding used by the 2B checkpoint."""
-
     def __init__(self, head_dim: int = 128, rope_scale: tuple[float, float, float] = (1.0, 3.0, 3.0)):
         super().__init__()
         if head_dim != 128:
@@ -73,7 +69,6 @@ class CosmosVideoRope3D(nn.Module):
         self.theta_t = 10000.0 * rope_scale[0] ** (dim_t / (dim_t - 2))
         self.theta_h = 10000.0 * rope_scale[1] ** (dim_h / (dim_h - 2))
         self.theta_w = 10000.0 * rope_scale[2] ** (dim_w / (dim_w - 2))
-        # The checkpoint stores these ranges as non-learned compatibility buffers.
         self.register_buffer("seq", torch.arange(head_dim, dtype=torch.float32), persistent=True)
         self.register_buffer(
             "dim_spatial_range",
@@ -98,7 +93,6 @@ class CosmosVideoRope3D(nn.Module):
         return positions[:, None] * frequencies[None, :]
 
     def forward(self, t: int, h: int, w: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-        # 44 temporal + 42 height + 42 width channels = a 128-D head.
         angles_t = self._axis_angles(t, self.dim_temporal_range, self.theta_t, device)[:, None, None, :].expand(t, h, w, -1)
         angles_h = self._axis_angles(h, self.dim_spatial_range, self.theta_h, device)[None, :, None, :].expand(t, h, w, -1)
         angles_w = self._axis_angles(w, self.dim_spatial_range, self.theta_w, device)[None, None, :, :].expand(t, h, w, -1)
@@ -215,7 +209,6 @@ class CosmosTransformerBlock(nn.Module):
         modulation: torch.Tensor,
         modulation_indices: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, Callable[[torch.Tensor], torch.Tensor]]:
-        """Align frame-level modulation with flattened or heterogeneous tokens."""
         if modulation_indices is None:
             steps = modulation.shape[1]
             if not steps or x.shape[1] % steps:
@@ -381,7 +374,6 @@ class CosmosFinalLayer(nn.Module):
         embedding: torch.Tensor,
         adaln_lora: torch.Tensor,
     ) -> torch.Tensor:
-        """Apply native Cosmos output normalization/modulation without projection."""
         shift, scale = (self.adaln_modulation(embedding) + adaln_lora[..., : 2 * x.shape[-1]]).chunk(2, -1)
         for _ in range(x.ndim - embedding.ndim):
             shift = shift.unsqueeze(2)
@@ -411,7 +403,6 @@ class Cosmos25DiTConfig:
 
 
 class Cosmos25VideoDiT(nn.Module):
-    """Cosmos-Predict2.5-2B Image2World DiT with native checkpoint names."""
 
     block_protocol = BLOCK_PROTOCOL_MAIN
 
@@ -433,7 +424,6 @@ class Cosmos25VideoDiT(nn.Module):
             nn.Linear(config.reason_context_dim, config.context_dim, bias=True),
             nn.GELU(),
         )
-        # EasyWAM backbone protocol metadata.
         self.backbone_name = "cosmos25"
         self.hidden_dim = config.hidden_size
         self.freq_dim = config.hidden_size
@@ -744,7 +734,6 @@ class Cosmos25VideoDiT(nn.Module):
         padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if condition_mask is not None or padding_mask is not None:
-            # Standalone callers can still provide explicit masks through the native path.
             b, _, t, h, w = x.shape
             if padding_mask is None:
                 padding_mask = torch.zeros((b, 1, t, h, w), device=x.device, dtype=x.dtype)

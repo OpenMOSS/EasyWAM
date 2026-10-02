@@ -20,7 +20,6 @@ logger = get_logger(__name__)
 
 
 def _concat_sequence_values(left: Any, right: Any, dim: int) -> Any:
-    """Concatenate tensor-like backbone metadata along its token/frame axis."""
     if left is None and right is None:
         return None
     if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
@@ -49,7 +48,6 @@ def _concat_sequence_values(left: Any, right: Any, dim: int) -> Any:
 
 
 class EasyWAMMoTIDM(EasyWAMMoTJoint):
-    """EasyWAM MoT-IDM model with teacher-forced conditional video."""
 
     model_variant = "mot_idm"
 
@@ -483,7 +481,6 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         )
 
         infer_timesteps_action, infer_deltas_action = self.infer_action_scheduler.build_inference_schedule(
-            # Cosmos' Karras schedule can contain one more point than the requested step count.
             num_inference_steps=len(infer_timesteps_video),
             device=self.device,
             dtype=latents_action.dtype,

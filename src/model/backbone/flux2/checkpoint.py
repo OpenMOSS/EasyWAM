@@ -9,7 +9,6 @@ import torch
 def convert_imagewam_flux2_checkpoint_payload(
     payload: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Convert an ImageWAM FLUX.2 checkpoint to the EasyWAM checkpoint contract."""
     if "mot" not in payload or not isinstance(payload["mot"], Mapping):
         raise ValueError("ImageWAM FLUX.2 checkpoint must contain a mapping at `mot`.")
     if "state_encoder" in payload and "proprio_encoder" in payload:
@@ -50,7 +49,6 @@ def audit_mot_state_dict(
     target: torch.nn.Module,
     source_state: Mapping[str, torch.Tensor],
 ) -> dict[str, Any]:
-    """Return exact key/shape coverage before mutating the target module."""
     target_state = target.state_dict()
     source_keys = set(source_state)
     target_keys = set(target_state)

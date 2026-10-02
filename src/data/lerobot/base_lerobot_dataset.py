@@ -127,7 +127,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             delta_timestamps=delta_timestamps,
         )
         
-        # Convert local episode offsets to positions in the combined dataset.
         episode_data_index = []
         end_index = 0
         for dataset in self.multi_dataset._datasets:
@@ -196,7 +195,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         if idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds {len(self)}.")
 
-        # Retry a failed frame read with another sample.
         sample_idx = idx
         attempt = 0
         last_exception: Optional[Exception] = None
@@ -252,7 +250,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         return sample
 
     def set_processor(self, processor: BaseProcessor):
-        """Set processor instance from external initialization."""
         self.processor = processor
         if self.is_training_set:
             self.processor.train()
@@ -306,7 +303,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
                     action_q01[key].append(torch.quantile(cur_action, 0.01, dim=0, keepdim=False))
                     action_q99[key].append(torch.quantile(cur_action, 0.99, dim=0, keepdim=False))
 
-        # Aggregate episode statistics across equally sized windows.
         def get_mean_std(means, vars):
             means = torch.stack(means)
             vars = torch.stack(vars)
@@ -355,7 +351,6 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
 
 
 def sliding_window_with_replication(x: torch.Tensor, window_size: int) -> torch.Tensor:
-    """Build sliding windows by repeating the last row at the boundary."""
     assert x.dim() == 2
     assert window_size > 0
     

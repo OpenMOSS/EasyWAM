@@ -111,7 +111,6 @@ class MoT(nn.Module):
         base_mod = block.modulation.to(dtype=t_mod.dtype, device=t_mod.device)
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (base_mod + t_mod).chunk(6, dim=chunk_dim)
         if has_seq:
-            # Tokenwise modulation uses a separate value for each token.
             shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
                 shift_msa.squeeze(2),
                 scale_msa.squeeze(2),
@@ -202,24 +201,6 @@ class MoT(nn.Module):
         torch.Tensor,
         torch.Tensor,
     ]:
-        """Build per-expert attention tensors and post-block states.
-
-        Args:
-            block: Transformer block for current layer (`expert.blocks[layer_idx]`).
-            x: Current expert tokens, shape [B, S, D].
-            freqs: RoPE frequencies aligned with token sequence, shape [S, 1, rope_dim].
-            t_mod: Time modulation tensor for this expert/layer.
-
-        Returns:
-            q: Query after q-proj, RMSNorm, and RoPE, shape [B, S, H*Dh].
-            k: Key after k-proj, RMSNorm, and RoPE, shape [B, S, H*Dh].
-            v: Value after v-proj, shape [B, S, H*Dh].
-            residual_x: Original input `x` for residual path in post block.
-            gate_msa: Gating tensor for self-attention residual branch.
-            shift_mlp: Shift tensor for MLP modulation.
-            scale_mlp: Scale tensor for MLP modulation.
-            gate_mlp: Gating tensor for MLP residual branch.
-        """
         if hasattr(block, "prepare_mixed_attention"):
             q, k, v, state = block.prepare_mixed_attention(
                 x,
@@ -262,23 +243,6 @@ class MoT(nn.Module):
         mixed_slice: torch.Tensor,
         context_payload: Optional[dict],
     ) -> torch.Tensor:
-        """Apply post-attention computations.
-
-        Args:
-            block: Transformer block for current layer.
-            residual_x: Residual input tokens before attention update, shape [B, S, D].
-            gate_msa: Gating tensor used after mixed self-attention.
-            shift_mlp: Shift tensor for MLP input modulation.
-            scale_mlp: Scale tensor for MLP input modulation.
-            gate_mlp: Gating tensor used after MLP.
-            mixed_slice: Mixed-attention output for this expert, shape [B, S, H*Dh].
-            context_payload: Optional dict for cross-attention.
-                - `context`: encoder states [B, L, D]
-                - `mask`: attention mask [B, S, L] or [B, 1, S, L]
-
-        Returns:
-            Updated expert tokens after self-attn residual, optional cross-attn, and MLP.
-        """
         if hasattr(block, "finish_mixed_attention"):
             context = None if context_payload is None else context_payload.get("context")
             context_mask = None if context_payload is None else context_payload.get("mask")
@@ -329,23 +293,6 @@ class MoT(nn.Module):
         video_context_payload: Optional[dict],
         video_attention_mask: torch.Tensor | StructuredAttentionMask,
     ) -> list[dict[str, torch.Tensor]]:
-        """Prefill video branch once and cache per-layer K/V for action denoising.
-
-        Args:
-            video_tokens: Video tokens before layer 0, shape [B, Sv, D].
-            video_freqs: Video RoPE frequencies, shape [Sv, 1, rope_dim].
-            video_t_mod: Video time modulation tensor.
-            video_context_payload: Optional dict for video cross-attention.
-                - `context`: encoder states [B, L, D]
-                - `mask`: attention mask [B, Sv, L] or [B, 1, Sv, L]
-            video_attention_mask: Video self-attention mask, shape [Sv, Sv].
-
-        Returns:
-            Layer-wise cache list with length `num_layers`.
-            Each entry contains:
-                - `k`: video key tensor [B, Sv, H*Dh]
-                - `v`: video value tensor [B, Sv, H*Dh]
-        """
         if "video" not in self.mixtures:
             raise ValueError("MoT requires `video` expert for `prefill_video_cache`.")
         if video_attention_mask.ndim != 2:
@@ -382,14 +329,12 @@ class MoT(nn.Module):
                 freqs=video_freqs,
                 t_mod=video_t_mod,
             )
-            # Video prefill uses only video self-attention mask.
             mixed = self._mixed_attention(
                 q_cat=q,
                 k_cat=k,
                 v_cat=v,
                 attention_mask=video_attention_mask,
             )
-            # Cache video keys and values for later action decoding.
             x = self._apply_post_block(
                 block=block,
                 residual_x=residual_x,
@@ -413,22 +358,6 @@ class MoT(nn.Module):
         attention_mask: torch.Tensor | StructuredAttentionMask,
         video_seq_len: int,
     ) -> torch.Tensor:
-        """Run action branch with cached video K/V instead of recomputing video tokens.
-
-        Args:
-            action_tokens: Action tokens before layer 0, shape [B, Sa, D].
-            action_freqs: Action RoPE frequencies, shape [Sa, 1, rope_dim].
-            action_t_mod: Action time modulation tensor.
-            action_context_payload: Optional dict for action cross-attention.
-                - `context`: encoder states [B, L, D]
-                - `mask`: attention mask [B, Sa, L] or [B, 1, Sa, L]
-            video_kv_cache: Layer-wise cached video K/V from `prefill_video_cache`.
-            attention_mask: Joint [video+action] mask, shape [Sv+Sa, Sv+Sa].
-            video_seq_len: Video token count `Sv` in the joint sequence prefix.
-
-        Returns:
-            Updated action tokens after all layers, shape [B, Sa, D].
-        """
         if "action" not in self.mixtures:
             raise ValueError("MoT requires `action` expert for `forward_action_with_video_cache`.")
         if len(video_kv_cache) != self.num_layers:
@@ -447,7 +376,6 @@ class MoT(nn.Module):
                 "`attention_mask` seq length mismatch: "
                 f"mask={attention_mask.shape[0]} vs expected_total={total_seq_len}"
             )
-        # Use the action query rows from the joint [video+action] mask.
         if isinstance(attention_mask, StructuredAttentionMask):
             action_attention_mask = attention_mask.slice(video_seq_len, total_seq_len)
         else:
@@ -457,7 +385,6 @@ class MoT(nn.Module):
         x = action_tokens
         for layer_idx in range(self.num_layers):
             block = expert.blocks[layer_idx]
-            # Action query/key/value are still step-dependent and must be recomputed each step.
             (
                 q_action,
                 k_action,
@@ -486,7 +413,6 @@ class MoT(nn.Module):
                     f"`video_kv_cache[{layer_idx}]` seq len mismatch, expected {video_seq_len}."
                 )
 
-            # Mixed attention: action queries attend to cached video K/V plus current action K/V.
             k_cat = torch.cat([k_video, k_action], dim=1)
             v_cat = torch.cat([v_video, v_action], dim=1)
             mixed = self._mixed_attention(
@@ -732,7 +658,6 @@ class MoT(nn.Module):
         video_t_mod: dict[str, object],
         attention_mask: dict[str, torch.Tensor],
     ) -> dict[str, object]:
-        """Run the fixed FLUX.2 text/image prefix once and retain layer K/V."""
         if self.block_protocol != BLOCK_PROTOCOL_FLUX2:
             raise ValueError("`prefill_flux2_video_cache` requires block_protocol='flux2'.")
         video_expert = self.mixtures["video"]
@@ -801,7 +726,6 @@ class MoT(nn.Module):
         attention_mask: dict[str, torch.Tensor],
         video_seq_len: int,
     ) -> torch.Tensor:
-        """Denoise FLUX.2 action tokens against a cached text/image prefix."""
         if self.block_protocol != BLOCK_PROTOCOL_FLUX2:
             raise ValueError(
                 "`forward_flux2_action_with_video_cache` requires block_protocol='flux2'."

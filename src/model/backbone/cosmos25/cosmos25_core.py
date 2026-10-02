@@ -1,5 +1,3 @@
-"""Standalone Cosmos-Predict2.5 Image2World core."""
-
 from __future__ import annotations
 
 from pathlib import Path

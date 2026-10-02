@@ -1,5 +1,3 @@
-"""Backbone-neutral component loading for EasyWAM models."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -35,7 +33,7 @@ def load_easywam_backbone(
     cfg = normalize_backbone_config(config)
     name = cfg["name"]
     if name == "wan22":
-        from .wan22.loader import load_wan22_ti2v_5b_components
+        from .wan22 import load_wan22_ti2v_5b_components
 
         loaded = load_wan22_ti2v_5b_components(
             device=str(device),
@@ -62,7 +60,7 @@ def load_easywam_backbone(
         )
 
     if name == "flux2":
-        from .flux2.loader import load_flux2_components
+        from .flux2 import load_flux2_components
 
         variant = str(cfg.get("variant", "klein-base-4b"))
         default_qwen = "Qwen/Qwen3-4B" if "4b" in variant.lower() else "Qwen/Qwen3-8B"
@@ -81,7 +79,7 @@ def load_easywam_backbone(
             skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
         )
 
-    from .cosmos25.loader import load_cosmos25_components
+    from .cosmos25 import load_cosmos25_components
 
     loaded = load_cosmos25_components(
         model_id=cfg["model_id"],

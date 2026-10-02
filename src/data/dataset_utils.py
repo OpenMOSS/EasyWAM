@@ -7,7 +7,6 @@ from PIL import Image
 
 
 def obtain_image_size(data: torch.Tensor | Image.Image) -> tuple[int, int]:
-    """Return the width and height of an image or video tensor."""
 
     if isinstance(data, Image.Image):
         width, height = data.size
@@ -23,7 +22,6 @@ class ResizeSmallestSideAspectPreserving:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor | Image.Image:
-        """Resize until both dimensions meet the target size."""
 
         assert self.args is not None, "Please specify args in augmentations"
 
@@ -39,7 +37,7 @@ class ResizeSmallestSideAspectPreserving:
 
         return transforms_F.resize(
             video,
-            size=target_size,  # type: ignore
+            size=target_size,
             interpolation=self.args.get("interpolation", transforms_F.InterpolationMode.BICUBIC),
             antialias=True,
         )
@@ -50,7 +48,6 @@ class CenterCrop:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor | Image.Image:
-        """Center crop to the requested size."""
         assert (
             (self.args is not None) and ("img_w" in self.args) and ("img_h" in self.args)
         ), "Please specify size in args"
@@ -64,7 +61,6 @@ class Normalize:
         self.args = args
 
     def __call__(self, video: torch.Tensor | Image.Image) -> torch.Tensor:
-        """Convert to a tensor and normalize by mean and standard deviation."""
         assert self.args is not None, "Please specify args"
 
         mean = self.args["mean"]

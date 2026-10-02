@@ -11,8 +11,6 @@ from .wan_video_dit import WanVideoDiT
 
 
 class Wan22Core(torch.nn.Module):
-    """Standalone Wan2.2-TI2V-5B core without pipeline unit graph."""
-
     def __init__(
         self,
         dit: WanVideoDiT,
@@ -225,7 +223,6 @@ class Wan22Core(torch.nn.Module):
         context = inputs["context"]
         context_mask = inputs["context_mask"]
 
-        # 1. Continuous timestep sampling and noise injection.
         noise = torch.randn_like(input_latents)
         timestep = self.train_scheduler.sample_training_t(
             batch_size=batch_size,
@@ -235,12 +232,11 @@ class Wan22Core(torch.nn.Module):
         latents = self.train_scheduler.add_noise(input_latents, noise, timestep)
         target = self.train_scheduler.training_target(input_latents, noise, timestep)
 
-        # 2. fix first latent
         if inputs["first_frame_latents"] is not None:
             latents[:, :, 0: 1] = inputs["first_frame_latents"]
 
         pred = self._model_fn(
-            latents=latents, # [B, C, Latent_T, H', W']
+            latents=latents,
             timestep=timestep,
             context=context,
             context_mask=context_mask,

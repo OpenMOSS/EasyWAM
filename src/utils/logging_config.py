@@ -13,7 +13,6 @@ def setup_logging(
     formatter_kwargs: Optional[dict] = None,
     preserve_hydra_handlers: bool = True
 ) -> None:
-    """Configure root logging and silence non-main distributed processes."""
     if is_main_process is None:
         is_main_process = _is_main_process()
 
@@ -63,7 +62,6 @@ def setup_logging(
 
 
 def _is_main_process() -> bool:
-    """Identify the main process without synchronization."""
     if dist is not None and dist.is_available() and dist.is_initialized():
         return dist.get_rank() == 0
 
@@ -74,11 +72,6 @@ def _is_main_process() -> bool:
     return True
 
 def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
-    """
-    Drop-in replacement for accelerate.logging.get_logger:
-    - No implicit barriers.
-    - Only the main process emits log records by default.
-    """
     logger = logging.getLogger(name)
     logger.setLevel(level)
 

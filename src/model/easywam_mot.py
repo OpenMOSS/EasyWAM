@@ -31,7 +31,6 @@ logger = get_logger(__name__)
 
 
 class EasyWAMMoT(torch.nn.Module):
-    """MoT world model with video/action experts."""
 
     model_variant = "mot"
 
@@ -69,7 +68,6 @@ class EasyWAMMoT(torch.nn.Module):
         self.backbone_name = getattr(video_expert, "backbone_name", "wan22")
         self.action_expert = action_expert
         self.mot = mot
-        # Keep trainer compatibility: optimizer and freeze logic use `model.dit`.
         self.dit = self.mot
 
         self.vae = vae
@@ -117,7 +115,7 @@ class EasyWAMMoT(torch.nn.Module):
             num_train_timesteps=action_num_train_timesteps,
             shift=action_infer_shift,
         )
-        # Optional aliases for consistency with Wan22Core naming.
+        
         self.train_scheduler = self.train_video_scheduler
         self.infer_scheduler = self.infer_video_scheduler
 
@@ -155,7 +153,7 @@ class EasyWAMMoT(torch.nn.Module):
         loss_lambda_action: float = 1.0,
         **model_init_kwargs: Any,
     ):
-        from .backbone.loader import load_easywam_backbone, normalize_backbone_config
+        from .backbone import load_easywam_backbone, normalize_backbone_config
 
         cfg = normalize_backbone_config(backbone)
         components = load_easywam_backbone(
@@ -267,7 +265,7 @@ class EasyWAMMoT(torch.nn.Module):
         loss_lambda_action: float = 1.0,
         **model_init_kwargs: Any,
     ):
-        from .backbone.wan22.loader import load_wan22_ti2v_5b_components
+        from .backbone.wan22 import load_wan22_ti2v_5b_components
 
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for EasyWAM-MoT.from_wan22_pretrained().")
@@ -348,7 +346,6 @@ class EasyWAMMoT(torch.nn.Module):
 
     def train(self, mode: bool = True):
         super().train(mode)
-        # Keep frozen encoders in evaluation mode during DiT training.
         self.vae.eval()
         if self.text_encoder is not None:
             self.text_encoder.eval()
@@ -456,7 +453,7 @@ class EasyWAMMoT(torch.nn.Module):
     def _encode_flux2_image_tokens(
         self, image: torch.Tensor, *, time_value: float
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        from .backbone.flux2.flux2_video_expert import Flux2VideoExpert
+        from .backbone.flux2 import Flux2VideoExpert
 
         if image.ndim == 3:
             image = image.unsqueeze(0)
@@ -1050,7 +1047,6 @@ class EasyWAMMoT(torch.nn.Module):
         projected_context: Optional[torch.Tensor] = None,
         cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
     ) -> torch.Tensor:
-        """Run standalone video denoising through the shared staged backbone API."""
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
             timestep=timestep_video,

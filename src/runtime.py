@@ -68,7 +68,7 @@ def create_wan22_model(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    from model.backbone.wan22.wan22_core import Wan22Core
+    from model.backbone.wan22 import Wan22Core
 
     if isinstance(dit_config, DictConfig):
         dit_config = OmegaConf.to_container(dit_config, resolve=True)
@@ -101,7 +101,6 @@ def create_cosmos25_model(
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
 ):
-    """Create the standalone Cosmos-Predict2.5-2B Image2World backbone."""
     from model.backbone.cosmos25 import Cosmos25Core
 
     return Cosmos25Core.from_cosmos25_pretrained(
@@ -249,21 +248,18 @@ def _create_easywam_mot(
 
 
 def create_easywam_mot(*args, **kwargs):
-    """Create the original action-only EasyWAM MoT model."""
     from model.easywam_mot import EasyWAMMoT
 
     return _create_easywam_mot(EasyWAMMoT, *args, **kwargs)
 
 
 def create_easywam_mot_joint(*args, **kwargs):
-    """Create the EasyWAM MoT-Joint model."""
     from model.easywam_mot_joint import EasyWAMMoTJoint
 
     return _create_easywam_mot(EasyWAMMoTJoint, *args, **kwargs)
 
 
 def create_easywam_mot_idm(*args, **kwargs):
-    """Create the EasyWAM MoT-IDM model."""
     from model.easywam_mot_idm import EasyWAMMoTIDM
 
     return _create_easywam_mot(EasyWAMMoTIDM, *args, **kwargs)

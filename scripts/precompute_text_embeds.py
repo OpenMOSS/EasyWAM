@@ -18,8 +18,6 @@ from data.lerobot.text_embedding_cache import (
     prompt_hash,
     text_embedding_cache_filename,
 )
-from model.backbone.wan22.loader import _load_registered_model, _resolve_configs
-from model.backbone.wan22.wan_video_text_encoder import HuggingfaceTokenizer
 from utils.config_resolvers import register_default_resolvers
 from utils.logging_config import get_logger, setup_logging
 
@@ -278,6 +276,9 @@ def main(cfg: DictConfig):
 
     tokenizer = None
     if backbone_name == "wan22":
+        from model.backbone.wan22 import WanHuggingfaceTokenizer
+        from model.backbone.wan22.loader import _load_registered_model, _resolve_configs
+
         _, text_config, _, tokenizer_config = _resolve_configs(
             model_id=model_id,
             tokenizer_model_id=tokenizer_model_id,
@@ -290,13 +291,13 @@ def main(cfg: DictConfig):
             torch_dtype=torch_dtype,
             device=device,
         ).eval()
-        tokenizer = HuggingfaceTokenizer(
+        tokenizer = WanHuggingfaceTokenizer(
             name=tokenizer_config.path,
             seq_len=context_len,
             clean="whitespace",
         )
     elif backbone_name == "cosmos25":
-        from model.backbone.cosmos25.cosmos_video_text_encoder import Cosmos25TextEncoder
+        from model.backbone.cosmos25 import Cosmos25TextEncoder
         from model.backbone.cosmos25.loader import (
             load_cosmos25_text_projection,
             resolve_cosmos25_dit_path,
@@ -314,7 +315,7 @@ def main(cfg: DictConfig):
     elif backbone_name == "flux2":
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        from model.backbone.flux2.text_encoder import Flux2Qwen3TextEncoder
+        from model.backbone.flux2 import Flux2Qwen3TextEncoder
 
         qwen_tokenizer = AutoTokenizer.from_pretrained(tokenizer_model_id)
         qwen = AutoModelForCausalLM.from_pretrained(

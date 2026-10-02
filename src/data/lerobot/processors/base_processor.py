@@ -88,7 +88,6 @@ class BaseProcessor(ABC):
         )
 
     def augment_instruction(self, data: Dict[str, str] | List[str]) -> List[str]:
-        """Choose the instruction language and optional high-level task."""
         if "coarse_task" in data:
             high_level_instruction = data["coarse_task"]
         else:
@@ -97,7 +96,6 @@ class BaseProcessor(ABC):
             return f"[high] {high_level_instruction}"
 
         low_level_instruction = data["task"]
-        # Galaxea lerobot use @ to split Chinese and English instruction
         if "@" in low_level_instruction:
             zh, eng = low_level_instruction.split("@")
             low_level_instruction = zh if self.use_zh_instruction else eng
@@ -143,7 +141,6 @@ class BaseProcessor(ABC):
         return batch
 
     def preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform a dataset sample into the tensors consumed by the policy."""
         sample = {}
         sample["instruction"] = self.augment_instruction(data)
         sample["image_is_pad"] = data["image_is_pad"]
@@ -172,7 +169,6 @@ class BaseProcessor(ABC):
         else:
             sample["pixel_values"] = pixel_values
 
-        # Keep ground-truth actions for open-loop evaluation.
         if not self.is_train and "action" in data:
             sample["gt_action"] = deepcopy(data["action"])
 
@@ -198,7 +194,6 @@ class BaseProcessor(ABC):
         return sample
 
     def postprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Undo action transforms and normalization for policy output."""
         assert "action" in data, "Action is required in postprocess"
         data["state"] = data.pop("proprio")
         data = self.action_state_merger.backward(data)

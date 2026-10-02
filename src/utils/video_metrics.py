@@ -13,9 +13,9 @@ def pil_frames_to_video_tensor(frames: Sequence[Image.Image]) -> torch.Tensor:
     frame_tensors = []
     for frame in frames:
         arr = np.array(frame.convert("RGB"), dtype=np.float32) / 255.0
-        x = torch.from_numpy(arr).permute(2, 0, 1).contiguous()  # [3, H, W]
+        x = torch.from_numpy(arr).permute(2, 0, 1).contiguous()
         frame_tensors.append(x)
-    return torch.stack(frame_tensors, dim=1)  # [3, T, H, W]
+    return torch.stack(frame_tensors, dim=1)
 
 
 def _gaussian_kernel_2d(kernel_size: int, sigma: float, channels: int, device: torch.device, dtype: torch.dtype):
@@ -29,10 +29,6 @@ def _gaussian_kernel_2d(kernel_size: int, sigma: float, channels: int, device: t
 
 
 def video_psnr(pred: torch.Tensor, target: torch.Tensor, data_range: float = 1.0, eps: float = 1e-8) -> float:
-    """
-    Compute average PSNR over all frames.
-    Expects `pred` and `target` in shape [3, T, H, W] with values in [0, 1].
-    """
     if pred.shape != target.shape:
         raise ValueError(f"Shape mismatch: pred={tuple(pred.shape)} target={tuple(target.shape)}")
 
@@ -52,10 +48,6 @@ def video_ssim(
     k1: float = 0.01,
     k2: float = 0.03,
 ) -> float:
-    """
-    Compute average SSIM over all frames.
-    Expects `pred` and `target` in shape [3, T, H, W] with values in [0, 1].
-    """
     if pred.shape != target.shape:
         raise ValueError(f"Shape mismatch: pred={tuple(pred.shape)} target={tuple(target.shape)}")
     if pred.ndim != 4 or pred.shape[0] != 3:

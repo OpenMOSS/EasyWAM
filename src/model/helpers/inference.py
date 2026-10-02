@@ -17,7 +17,6 @@ def configure_model_execution(
     vae_micro_batch_size: int | None = 1,
     inference_cross_kv_reuse: bool = True,
 ) -> torch.nn.Module:
-    """Apply ordinary runtime settings shared by training and evaluation."""
     if vae_micro_batch_size is not None:
         if isinstance(vae_micro_batch_size, bool) or int(vae_micro_batch_size) <= 0:
             raise ValueError("vae_micro_batch_size must be a positive integer or null.")
@@ -47,7 +46,6 @@ def configure_inference_compile(
     dynamic: bool | None = None,
     options: Mapping[str, Any] | None = None,
 ) -> torch.nn.Module:
-    """Compile the model-specific tensor-heavy inference functions on demand."""
     if not enabled:
         return model
 

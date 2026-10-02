@@ -1,5 +1,3 @@
-"""Strict local checkpoint loading for Cosmos-Predict2.5."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

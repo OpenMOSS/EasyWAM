@@ -263,7 +263,6 @@ def load_standard_state_dict(
     *,
     strict: bool = False,
 ):
-    """Load a normal Linear state dict into either a base or PEFT-injected module."""
     layers = dict(iter_lora_layers(module))
     if not layers:
         return module.load_state_dict(state_dict, strict=strict)

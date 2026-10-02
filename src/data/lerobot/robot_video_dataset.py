@@ -220,7 +220,6 @@ class RobotVideoDataset(torch.utils.data.Dataset):
 
         video = video.permute(1, 0, 2, 3)
 
-        # Drop the final proprio step to align it with the action horizon.
         action = sample["action"]
         proprio = sample["proprio"][:-1, :]
         if video.shape[1] <= 1:
@@ -303,7 +302,6 @@ class RobotVideoDataset(torch.utils.data.Dataset):
             data = self._get(idx)
         except Exception as e:
             print(f"Error processing sample idx {idx}: {e}. Returning a random sample instead.")
-            # trace back
             print(traceback.format_exc())
             random_idx = np.random.randint(len(self))
             data = self._get(random_idx)

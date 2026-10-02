@@ -121,7 +121,6 @@ class Flux2ActionHead(nn.Module):
 
 
 class ActionDiTFlux2(nn.Module):
-    """A slim action stream following FLUX.2's double/single stage topology."""
 
     block_protocol = BLOCK_PROTOCOL_FLUX2
 
