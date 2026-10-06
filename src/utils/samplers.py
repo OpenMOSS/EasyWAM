@@ -29,11 +29,11 @@ class ResumableEpochSampler(Sampler[int]):
     def __iter__(self) -> Iterator[int]:
         g = torch.Generator(device="cpu")
         g.manual_seed(self.seed + self.epoch + self.epoch_offset)
-        indices = torch.randperm(len(self.dataset), generator=g).tolist()
+        indices = torch.randperm(len(self.dataset), generator=g)
         if self.epoch == 0 and self.resume_batch_offset > 0:
             sample_offset = self.resume_batch_offset * self.batch_size * self.num_processes
             indices = indices[sample_offset:]
-        return iter(indices)
+        return (index for chunk in indices.split(65536) for index in chunk.tolist())
 
     def __len__(self) -> int:
         return len(self.dataset)

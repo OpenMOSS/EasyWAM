@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional, List
+from collections.abc import Mapping
 
 import torch
 import numpy as np
@@ -35,7 +36,11 @@ class WAMProcessor(BaseProcessor):
 
         tokenizer: Optional[Any] = None,
         delta_action_dim_mask: Optional[Dict[str, List[bool]]] = None,
+        stack_images: bool = True,
+        include_gt_action: bool = True,
     ):
+        self.stack_images = bool(stack_images)
+        self.include_gt_action = bool(include_gt_action)
         self.shape_meta = shape_meta
         self.num_obs_steps = num_obs_steps
         self.num_output_cameras = num_output_cameras
@@ -184,7 +189,7 @@ class WAMProcessor(BaseProcessor):
             assert image.ndim == 4, f"Expected 4 dimensions (num_image_steps, C, H, W), got shape {image.shape}"
             
             transforms = self.train_transforms if self.is_train else self.val_transforms
-            current_transforms = transforms[key] if isinstance(transforms, dict) else transforms
+            current_transforms = transforms[key] if isinstance(transforms, Mapping) else transforms
             for trans in current_transforms:
                 image = trans(image)
             
@@ -193,20 +198,14 @@ class WAMProcessor(BaseProcessor):
                 f"Expected shape {meta_shape}, got {image.shape} after transforms for key {key}"
 
             processed_images.append(image)
-        pixel_values = torch.stack(processed_images, dim=0)
-        
-        if self.num_output_cameras > pixel_values.shape[0]:
-            out = torch.zeros((self.num_output_cameras,) + pixel_values.shape[1:], device=pixel_values.device, dtype=pixel_values.dtype)
-            out[0: pixel_values.shape[0]] = pixel_values
-            sample["pixel_values"] = out
-        elif self.num_output_cameras < pixel_values.shape[0]:
-            logger.warning(f"num_output_cameras {self.num_output_cameras} is less than the number of cameras in data {pixel_values.shape[0]}, "
-                           f"truncating the input to the first {self.num_output_cameras} cameras.")
-            sample["pixel_values"] = pixel_values[:self.num_output_cameras]
-        else:
-            sample["pixel_values"] = pixel_values
+        if self.num_output_cameras != len(processed_images):
+            if self.num_output_cameras < len(processed_images):
+                processed_images = processed_images[:self.num_output_cameras]
+            else:
+                processed_images.extend(torch.zeros_like(processed_images[0]) for _ in range(self.num_output_cameras - len(processed_images)))
+        sample["pixel_values"] = torch.stack(processed_images, dim=0) if self.stack_images else processed_images
 
-        if not self.is_train and "action" in data:
+        if self.include_gt_action and not self.is_train and "action" in data:
             sample["gt_action"] = deepcopy(data["action"])
 
         if "action" in data and self.delta_action_dim_mask is not None:

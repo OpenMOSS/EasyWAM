@@ -1,5 +1,7 @@
 import contextlib
+import copy
 from bisect import bisect_right
+from functools import partial
 import logging
 from pathlib import Path
 from typing import Callable
@@ -13,6 +15,7 @@ from huggingface_hub.constants import REPOCARD_NAME
 from huggingface_hub.errors import RevisionNotFoundError
 
 from ..constants import HF_LEROBOT_HOME
+from ..resources import shared_resource
 from .datasets.compute_stats import aggregate_stats
 from .datasets.utils import (
     check_delta_timestamps,
@@ -206,6 +209,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
+        image_output_dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
         self.repo_id = repo_id
@@ -217,13 +221,17 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.tolerance_s = tolerance_s
         self.revision = revision if revision else CODEBASE_VERSION
         self.video_backend = video_backend if video_backend else get_safe_default_codec()
+        self.image_output_dtype = image_output_dtype
+        self._force_cache_sync = force_cache_sync
         self.delta_indices = None
         self.during_training = True
 
         self.root.mkdir(exist_ok=True, parents=True)
 
-        self.meta = LeRobotDatasetMetadata(
-            self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync
+        self.meta = shared_resource(
+            ("metadata", str(self.root.resolve()), self.revision),
+            lambda: LeRobotDatasetMetadata(self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync),
+            refresh=force_cache_sync,
         )
         self._selected_episode_ids = (
             list(self.episodes) if self.episodes is not None else list(self.meta.episodes)
@@ -350,15 +358,24 @@ class LeRobotDataset(torch.utils.data.Dataset):
         files = sorted(str(path) for path in (self.root / "data").rglob("*.parquet"))
         if not files:
             raise FileNotFoundError(f"No LeRobot v3 data parquet files found under {self.root / 'data'}")
-        hf_dataset = load_dataset("parquet", data_files=files, split="train")
+        hf_dataset = shared_resource(
+            ("frames", str(self.root.resolve()), self.revision),
+            lambda: load_dataset("parquet", data_files=files, split="train"),
+            refresh=self._force_cache_sync,
+        )
         if len(hf_dataset) != self.meta.total_frames:
             raise ValueError(
                 f"LeRobot v3 data frame count mismatch at {self.root}: "
                 f"metadata={self.meta.total_frames}, parquet={len(hf_dataset)}"
             )
 
-        hf_dataset.set_transform(hf_transform_to_torch)
-        return hf_dataset
+        # Arrow tables are immutable; only formatting state needs a private wrapper.
+        formatted = copy.copy(hf_dataset)
+        if self.meta.image_keys:
+            formatted.set_transform(partial(hf_transform_to_torch, image_output_dtype=self.image_output_dtype))
+        else:
+            formatted.set_format("torch")
+        return formatted
 
     @property
     def fps(self) -> int:
@@ -402,69 +419,83 @@ class LeRobotDataset(torch.utils.data.Dataset):
         else:
             return get_hf_features_from_features(self.features)
 
-    def _get_query_indices(self, idx: int, ep_idx: int) -> tuple[dict[str, list[int | bool]]]:
-        ep_start = self.episode_data_index["from"][ep_idx]
-        ep_end = self.episode_data_index["to"][ep_idx]
-        query_indices = {
-            key: [max(ep_start.item(), min(ep_end.item() - 1, idx + delta)) for delta in delta_idx]
-            for key, delta_idx in self.delta_indices.items()
-        }
-        padding = {
-            f"{key}_is_pad": torch.BoolTensor(
-                [(idx + delta < ep_start.item()) | (idx + delta >= ep_end.item()) for delta in delta_idx]
-            )
-            for key, delta_idx in self.delta_indices.items()
-        }
+    def _get_query_indices(self, idx: int, ep_idx: int) -> tuple[dict[str, list[int]], dict[str, torch.Tensor]]:
+        ep_start = int(self.episode_data_index["from"][ep_idx])
+        ep_end = int(self.episode_data_index["to"][ep_idx])
+        windows = {}
+        query_indices, padding = {}, {}
+        for key, delta_indices in self.delta_indices.items():
+            window = tuple(delta_indices)
+            if window not in windows:
+                positions = [idx + delta for delta in window]
+                windows[window] = (
+                    [max(ep_start, min(ep_end - 1, position)) for position in positions],
+                    torch.tensor([position < ep_start or position >= ep_end for position in positions], dtype=torch.bool),
+                )
+            query_indices[key], padding[f"{key}_is_pad"] = windows[window]
         return query_indices, padding
 
-    def _get_query_timestamps(
-        self,
-        current_ts: float,
-        query_indices: dict[str, list[int]] | None = None,
-    ) -> dict[str, list[float]]:
-        query_timestamps = {}
+    @staticmethod
+    def _as_tensor(values):
+        return values if isinstance(values, torch.Tensor) else torch.stack(values)
+
+    def _get_query_timestamps(self, current_ts, query_indices=None):
+        result, fetched = {}, {}
         for key in self.meta.video_keys:
             if query_indices is not None and key in query_indices:
-                storage_indices = self._to_storage_indices(query_indices[key])
-                timestamps = self.hf_dataset.select(storage_indices)["timestamp"]
-                query_timestamps[key] = torch.stack(timestamps).tolist()
+                indices = tuple(query_indices[key])
+                if indices not in fetched:
+                    batch = self.hf_dataset[self._to_storage_indices(indices)]
+                    fetched[indices] = self._as_tensor(batch["timestamp"]).tolist()
+                result[key] = fetched[indices]
             else:
-                query_timestamps[key] = [current_ts]
-
-        return query_timestamps
-
-    def _query_hf_dataset(self, query_indices: dict[str, list[int]]) -> dict:
-        return {
-            key: torch.stack(self.hf_dataset.select(q_idx)[key])
-            for key, q_idx in query_indices.items()
-            if key not in self.meta.video_keys
-        }
-
-    def _query_hf_dataset_fast(self, query_indices: dict[str, list[int]]) -> dict:
-        result = {}
-        processed_indices = set()
-        index_to_selected = {}
-        for key, q_idx in query_indices.items():
-            if key not in self.meta.video_keys :
-                if 'images' in key and not self.during_training:
-                    continue
-                q_idx_tuple = tuple(q_idx)
-                if q_idx_tuple not in processed_indices:
-                    selected_data = self.hf_dataset.select(self._to_storage_indices(q_idx))
-                    index_to_selected[q_idx_tuple] = selected_data
-                    processed_indices.add(q_idx_tuple)
-                else:
-                    selected_data = index_to_selected[q_idx_tuple]
-                result[key] = torch.stack(selected_data[key])
+                result[key] = [current_ts]
         return result
-    
+
+    def _query_hf_dataset(self, query_indices):
+        return self._query_hf_dataset_fast(query_indices)
+
+    def _query_hf_dataset_fast(self, query_indices):
+        result, fetched = {}, {}
+        for key, indices in query_indices.items():
+            if key in self.meta.video_keys or ("images" in key and not self.during_training):
+                continue
+            window = tuple(indices)
+            if window not in fetched:
+                fetched[window] = self.hf_dataset[self._to_storage_indices(window)]
+            result[key] = self._as_tensor(fetched[window][key])
+        return result
+
+    def _read_sample_rows(self, idx, query_indices):
+        # Read the union once; gather each window back in its original order,
+        # including repeated boundary frames used for padding.
+        logical = list(dict.fromkeys([idx] + [i for rows in query_indices.values() for i in rows]))
+        positions = {index: position for position, index in enumerate(logical)}
+        # Every window is clamped to the same episode, so one storage offset suffices.
+        storage_offset = self._to_storage_index(idx) - idx
+        batch = self.hf_dataset[[index + storage_offset for index in logical]]
+        row = {key: values[positions[idx]] for key, values in batch.items()}
+        result, timestamps, gathers, timestamp_windows = {}, {}, {}, {}
+        for key, indices in query_indices.items():
+            window = tuple(indices)
+            if window not in gathers:
+                gathers[window] = torch.tensor([positions[i] for i in indices], dtype=torch.long)
+            if key in self.meta.video_keys:
+                if window not in timestamp_windows:
+                    timestamp_windows[window] = self._as_tensor(batch["timestamp"])[gathers[window]].tolist()
+                timestamps[key] = timestamp_windows[window]
+            elif not ("images" in key and not self.during_training):
+                values = batch[key]
+                result[key] = values[gathers[window]] if isinstance(values, torch.Tensor) else self._as_tensor([values[positions[i]] for i in indices])
+        return row, result, timestamps
+
     def get_episode_data(self, episode_id: int) -> dict:
         ep_start = self.episode_data_index["from"][episode_id].item()
         ep_end = self.episode_data_index["to"][episode_id].item()
         q_idx = self._to_storage_indices(list(range(ep_start, ep_end)))
         selected_data = self.hf_dataset[q_idx]
         res_keys = self.meta.features.keys() - set(self.meta.video_keys)
-        res = {key : torch.stack(selected_data[key]) for key in res_keys}
+        res = {key: self._as_tensor(selected_data[key]) for key in res_keys}
         return res
 
     def _query_videos(self, query_timestamps: dict[str, list[float]], ep_idx: int) -> dict[str, torch.Tensor]:
@@ -479,7 +510,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 )
             query_ts = [float(from_timestamp) + timestamp for timestamp in query_ts]
             video_path = self.root / self.meta.get_video_file_path(ep_idx, vid_key)
-            frames = decode_video_frames(video_path, query_ts, self.tolerance_s, self.video_backend)
+            frames = decode_video_frames(video_path, query_ts, self.tolerance_s, self.video_backend, self.image_output_dtype)
             item[vid_key] = frames.squeeze(0)
 
         return item
@@ -496,26 +527,21 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if idx < 0:
             idx += self.num_frames
         episode_position = self._get_local_episode_position(idx)
-        item = self.hf_dataset[self._to_storage_index(idx)]
+        query_indices, query_timestamps = {}, None
+        if self.delta_indices is not None:
+            query_indices, padding = self._get_query_indices(idx, episode_position)
+        else:
+            padding = {}
+        item, query_result, query_timestamps = self._read_sample_rows(idx, query_indices)
         ep_idx = item["episode_index"].item()
         expected_ep_idx = self._selected_episode_ids[episode_position]
         if ep_idx != expected_ep_idx:
-            raise ValueError(
-                f"LeRobot episode metadata/data mismatch at logical index {idx}: "
-                f"expected episode {expected_ep_idx}, got {ep_idx}"
-            )
-
-        query_indices = None
-        if self.delta_indices is not None:
-            query_indices, padding = self._get_query_indices(idx, episode_position)
-            query_result = self._query_hf_dataset_fast(query_indices)
-            item = {**item, **padding}
-            for key, val in query_result.items():
-                item[key] = val
-
-        if len(self.meta.video_keys) > 0 and self.during_training:
+            raise ValueError(f"LeRobot episode metadata/data mismatch at logical index {idx}: expected episode {expected_ep_idx}, got {ep_idx}")
+        item = {**item, **padding, **query_result}
+        if self.meta.video_keys and self.during_training:
             current_ts = item["timestamp"].item()
-            query_timestamps = self._get_query_timestamps(current_ts, query_indices)
+            for key in self.meta.video_keys:
+                query_timestamps.setdefault(key, [current_ts])
             video_frames = self._query_videos(query_timestamps, ep_idx)
             item = {**video_frames, **item}
 
@@ -575,6 +601,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         tolerances_s: dict | None = None,
         download_videos: bool = True,
         video_backend: str | None = None,
+        image_output_dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
         self.dataset_dirs = dataset_dirs
@@ -594,6 +621,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                 tolerance_s=self.tolerances_s[ds_name],
                 download_videos=download_videos,
                 video_backend=video_backend,
+                image_output_dtype=image_output_dtype,
             )
             self._datasets.append(_dataset)
 

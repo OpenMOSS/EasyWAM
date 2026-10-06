@@ -9,6 +9,7 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 
 from utils.logging_config import get_logger, setup_logging
+from data.lerobot.resources import reuse_during_construction
 
 logger = get_logger(__name__)
 
@@ -498,6 +499,7 @@ def create_easywam_hidden(
     return _apply_video_dit_lora(model, lora)
 
 
+@reuse_during_construction
 def build_datasets(data_cfg: DictConfig):
     from utils import misc
 

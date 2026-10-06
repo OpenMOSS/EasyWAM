@@ -6,6 +6,8 @@ import numpy as np
 from utils.logging_config import get_logger
 
 from utils.pytorch_utils import dict_apply
+from pathlib import Path
+from ..resources import shared_resource
 
 logger = get_logger(__name__)
 
@@ -146,7 +148,7 @@ def save_dataset_stats_to_json(dataset_stats: dict, file_path: str):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(serializable_stats, f, ensure_ascii=False, indent=2)
 
-def load_dataset_stats_from_json(file_path: str, 
+def _load_dataset_stats_from_json(file_path: str,
                                  try_convert_tensor: bool = True) -> Dict[str, Any]:
 
     def is_numeric_list(obj):
@@ -186,3 +188,10 @@ def load_dataset_stats_from_json(file_path: str,
     )
 
     return data
+
+
+def load_dataset_stats_from_json(file_path: str, try_convert_tensor: bool = True):
+    return shared_resource(
+        ("normalization", str(Path(file_path).resolve()), try_convert_tensor),
+        lambda: _load_dataset_stats_from_json(file_path, try_convert_tensor),
+    )

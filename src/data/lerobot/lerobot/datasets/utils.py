@@ -208,7 +208,8 @@ def load_episodes(local_dir: Path) -> dict[int, dict]:
         "dataset_to_index",
     }
     for path in files:
-        table = pq.read_table(path)
+        columns = [name for name in pq.read_schema(path).names if not name.startswith("stats/")]
+        table = pq.read_table(path, columns=columns)
         missing = required.difference(table.column_names)
         if missing:
             raise ValueError(f"LeRobot v3 episode metadata {path} is missing columns: {sorted(missing)}")
@@ -248,7 +249,7 @@ def load_image_as_numpy(
     return img_array
 
 
-def hf_transform_to_torch(items_dict: dict[torch.Tensor | None]):
+def hf_transform_to_torch(items_dict: dict[torch.Tensor | None], image_output_dtype: torch.dtype = torch.float32):
     for key in items_dict:
         first_item = items_dict[key][0]
         if type(first_item) == dict and 'bytes' in first_item and first_item['bytes'] is not None:
@@ -256,7 +257,7 @@ def hf_transform_to_torch(items_dict: dict[torch.Tensor | None]):
             items_dict[key] = [to_pil(img) for img in items_dict[key]]
             first_item = items_dict[key][0]
         if isinstance(first_item, PILImage.Image):
-            to_tensor = transforms.ToTensor()
+            to_tensor = transforms.PILToTensor() if image_output_dtype == torch.uint8 else transforms.ToTensor()
             items_dict[key] = [to_tensor(img) for img in items_dict[key]]
         elif first_item is None:
             pass

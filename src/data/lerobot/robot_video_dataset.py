@@ -19,6 +19,7 @@ from .text_embedding_cache import (
 )
 from ..dataset_utils import ResizeSmallestSideAspectPreserving, CenterCrop, Normalize
 from .prompts import DEFAULT_PROMPT
+from .resources import reuse_during_construction, shared_resource
 from utils.logging_config import get_logger
 from utils import misc, pytorch_utils
 from accelerate import PartialState
@@ -26,6 +27,7 @@ logger = get_logger(__name__)
 
 
 class RobotVideoDataset(torch.utils.data.Dataset):
+    @reuse_during_construction
     def __init__(
         self,
         dataset_dirs,
@@ -115,7 +117,8 @@ class RobotVideoDataset(torch.utils.data.Dataset):
                     logger.info("Calculating dataset stats for normalization...")
                     dataset_stats = self.lerobot_dataset.get_dataset_stats(processor)
                     work_dir = misc.get_work_dir()
-                    save_dataset_stats_to_json(dataset_stats, os.path.join(work_dir, "dataset_stats.json"))
+                    stats_output = os.path.join(work_dir, "dataset_stats.json")
+                    shared_resource(("saved_stats", stats_output, str(pretrained_norm_stats)), lambda: save_dataset_stats_to_json(dataset_stats, stats_output))
                 else:
                     dataset_stats = None
                 if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -127,8 +130,11 @@ class RobotVideoDataset(torch.utils.data.Dataset):
                 logger.info(f"Using dataset stats: {pretrained_norm_stats}")
                 if PartialState().is_main_process:
                     work_dir = misc.get_work_dir()
-                    save_dataset_stats_to_json(dataset_stats, os.path.join(work_dir, "dataset_stats.json"))
+                    stats_output = os.path.join(work_dir, "dataset_stats.json")
+                    shared_resource(("saved_stats", stats_output, str(pretrained_norm_stats)), lambda: save_dataset_stats_to_json(dataset_stats, stats_output))
 
+            if hasattr(processor, "include_gt_action"):
+                processor.include_gt_action = False
             processor.set_normalizer_from_stats(dataset_stats)
             self.lerobot_dataset.set_processor(processor)
         
@@ -139,7 +145,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         sample_idx = idx
         sample = None
         for attempt in range(self.max_padding_retry + 1):
-            sample = self.lerobot_dataset[sample_idx]
+            sample = self.lerobot_dataset.__getitem__(sample_idx)
 
             if not self.skip_padding_as_possible:
                 break
@@ -156,66 +162,46 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         
         image_is_pad = sample["image_is_pad"]
 
-        video = sample["pixel_values"]
-        num_cameras = 1
-        if video.ndim == 5:
-            num_cameras, T_video, C, H, W = video.shape
+        images = sample["pixel_values"]
+        if isinstance(images, (list, tuple)):
+            cameras = list(images)
+        elif images.ndim == 5:
+            cameras = list(images.unbind(0))
+        elif images.ndim == 4:
+            cameras = [images]
         else:
-            assert video.ndim == 4, f"Expected video to have shape [T, C, H, W], but got {video.shape}"
-            T_video, C, H, W = video.shape
+            raise ValueError(f"Expected camera images with 4 or 5 dimensions, got {images.shape}")
         expected_video_frames = len(self.video_sample_indices)
-        if T_video != expected_video_frames:
-            raise ValueError(
-                "Sparse video frame count mismatch: "
-                f"expected {expected_video_frames}, got {T_video}."
-            )
+        if any(camera.shape[0] != expected_video_frames for camera in cameras):
+            raise ValueError(f"Sparse video frame count mismatch: expected {expected_video_frames}.")
         if image_is_pad.shape[0] != expected_video_frames:
-            raise ValueError(
-                "Sparse image padding length mismatch: "
-                f"expected {expected_video_frames}, got {image_is_pad.shape[0]}."
-            )
-
-        video = video.view(num_cameras, T_video, C, H, W)
+            raise ValueError(f"Sparse image padding length mismatch: expected {expected_video_frames}, got {image_is_pad.shape[0]}.")
         if self.concat_multi_camera == "robotwin":
-            if num_cameras != 3:
-                raise ValueError(
-                    f"`concat_multi_camera='robotwin'` requires exactly 3 cameras, got {num_cameras}"
+            if len(cameras) != 3:
+                raise ValueError(f"`concat_multi_camera='robotwin'` requires exactly 3 cameras, got {len(cameras)}")
+            sizes = [(256, 320), (128, 160), (128, 160)]
+            cameras = [
+                camera if tuple(camera.shape[-2:]) == size else transforms_F.resize(
+                    camera, list(size),
+                    interpolation=transforms_F.InterpolationMode.BILINEAR,
+                    antialias=True,
                 )
-            cam_top = transforms_F.resize(
-                video[0],
-                size=[256, 320],
-                interpolation=transforms_F.InterpolationMode.BILINEAR,
-                antialias=True,
-            )
-            cam_left = transforms_F.resize(
-                video[1],
-                size=[128, 160],
-                interpolation=transforms_F.InterpolationMode.BILINEAR,
-                antialias=True,
-            )
-            cam_right = transforms_F.resize(
-                video[2],
-                size=[128, 160],
-                interpolation=transforms_F.InterpolationMode.BILINEAR,
-                antialias=True,
-            )
-            bottom = torch.cat([cam_left, cam_right], dim=-1)
-            video = torch.cat([cam_top, bottom], dim=-2)
-        elif num_cameras > 1:
-            if self.concat_multi_camera == "horizontal":
-                video = torch.cat([video[i] for i in range(num_cameras)], dim=-1)
-            elif self.concat_multi_camera == "vertical":
-                video = torch.cat([video[i] for i in range(num_cameras)], dim=-2)
-            else:
-                raise ValueError(
-                    f"Invalid concat_multi_camera: {self.concat_multi_camera}. "
-                    "Expected one of: horizontal, vertical, robotwin."
-                )
+                for camera, size in zip(cameras, sizes)
+            ]
+            video = cameras[0].new_empty((expected_video_frames, 3, 384, 320))
+            video[:, :, :256] = cameras[0]
+            video[:, :, 256:, :160] = cameras[1]
+            video[:, :, 256:, 160:] = cameras[2]
+        elif len(cameras) > 1:
+            if self.concat_multi_camera not in {"horizontal", "vertical"}:
+                raise ValueError(f"Invalid concat_multi_camera: {self.concat_multi_camera}")
+            video = torch.cat(cameras, dim=-1 if self.concat_multi_camera == "horizontal" else -2)
         else:
-            video = video.squeeze(0)
+            video = cameras[0]
 
-        video = self.resize_transform(video)
-        video = self.crop_transform(video)
+        if tuple(video.shape[-2:]) != tuple(self.video_size):
+            video = self.resize_transform(video)
+            video = self.crop_transform(video)
         video = self.normalize_transform(video)
 
         video = video.permute(1, 0, 2, 3)

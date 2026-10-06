@@ -6,13 +6,13 @@ train:
     images:
       - key: cam_high
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 256, 320]
       - key: cam_left_wrist
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 128, 160]
       - key: cam_right_wrist
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 128, 160]
     action:
       - key: default
         raw_shape: 14 # before transform
@@ -36,6 +36,8 @@ train:
     shape_meta: ${data.train.shape_meta}
     num_obs_steps: ${data.train.num_frames}
     num_output_cameras: 3
+    stack_images: false
+    include_gt_action: false
     action_output_dim: 14
     proprio_output_dim: 14
 
@@ -48,18 +50,46 @@ train:
       _target_: data.lerobot.transforms.action_state_merger.ConcatLeftAlign
 
     train_transforms:
-      - _target_: data.lerobot.transforms.image.ToTensor
-      - _target_: torchvision.transforms.Resize
-        size: [240, 320]
-      - _target_: torchvision.transforms.ColorJitter
-        brightness: 0.2
-        contrast: 0.2
-        saturation: 0.2
-        hue: 0.0
+      cam_high:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [256, 320]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
+      cam_left_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
+      cam_right_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
     val_transforms:
-      - _target_: data.lerobot.transforms.image.ToTensor
-      - _target_: torchvision.transforms.Resize
-        size: [240, 320]
+      cam_high:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [256, 320]
+      cam_left_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+      cam_right_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
   text_embedding_cache_dir: ./data/text_embeds_cache/robodojo/${model.backbone.name}
   context_len: ${model.backbone.tokenizer_max_len}
   text_encoder_id: ${model.backbone.text_encoder_id}
@@ -72,13 +102,13 @@ val:
     images:
       - key: cam_high
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 256, 320]
       - key: cam_left_wrist
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 128, 160]
       - key: cam_right_wrist
         raw_shape: [3, 480, 640]
-        shape: [3, 240, 320]
+        shape: [3, 128, 160]
     action:
       - key: default
         raw_shape: 14 # before transform
@@ -102,6 +132,8 @@ val:
     shape_meta: ${data.train.shape_meta}
     num_obs_steps: ${data.train.num_frames}
     num_output_cameras: 3
+    stack_images: false
+    include_gt_action: false
     action_output_dim: 14
     proprio_output_dim: 14
 
@@ -114,18 +146,46 @@ val:
       _target_: data.lerobot.transforms.action_state_merger.ConcatLeftAlign
 
     train_transforms:
-      - _target_: data.lerobot.transforms.image.ToTensor
-      - _target_: torchvision.transforms.Resize
-        size: [240, 320]
-      - _target_: torchvision.transforms.ColorJitter
-        brightness: 0.2
-        contrast: 0.2
-        saturation: 0.2
-        hue: 0.0
+      cam_high:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [256, 320]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
+      cam_left_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
+      cam_right_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.0
     val_transforms:
-      - _target_: data.lerobot.transforms.image.ToTensor
-      - _target_: torchvision.transforms.Resize
-        size: [240, 320]
+      cam_high:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [256, 320]
+      cam_left_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
+      cam_right_wrist:
+        - _target_: data.lerobot.transforms.image.ToTensor
+        - _target_: torchvision.transforms.Resize
+          size: [128, 160]
   text_embedding_cache_dir: ./data/text_embeds_cache/robodojo/${model.backbone.name}
   context_len: ${model.backbone.tokenizer_max_len}
   text_encoder_id: ${model.backbone.text_encoder_id}

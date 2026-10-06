@@ -12,6 +12,7 @@ class ConcatLeftAlign:
     ):
         self.action_target_dim = action_target_dim
         self.state_target_dim = state_target_dim
+        self._padding_masks = {}
 
     def set_shape_meta(self, shape_meta):
         self.action_meta = shape_meta["action"]
@@ -40,16 +41,17 @@ class ConcatLeftAlign:
 
         return batch
 
-    @staticmethod
-    def _pad(x: torch.Tensor, dim: int):
+    def _pad(self, x: torch.Tensor, dim: int):
         if dim is None:
             dim = x.shape[-1]
         
         assert x.ndim == 2 and x.shape[-1] <= dim
         pad_dim = dim - x.shape[-1]
-        x_padded = pad(x, (0, pad_dim))
-        mask = torch.zeros_like(x[0]).bool()
-        mask = pad(mask, (0, pad_dim), value=True)
+        x_padded = pad(x, (0, pad_dim)) if pad_dim else x
+        cache_key = (dim, x.shape[-1], x.device)
+        if cache_key not in self._padding_masks:
+            self._padding_masks[cache_key] = torch.arange(dim, device=x.device) >= x.shape[-1]
+        mask = self._padding_masks[cache_key]
         return x_padded, mask
 
     @staticmethod
@@ -61,7 +63,7 @@ class ConcatLeftAlign:
     
     @staticmethod
     def _concat(x: Dict[str, torch.Tensor], meta: Dict[str, Dict]):
-        x = torch.cat([x[m["key"]] for m in meta], dim=-1)
+        x = x[meta[0]["key"]] if len(meta) == 1 else torch.cat([x[m["key"]] for m in meta], dim=-1)
         assert x.ndim == 2
         return x
 
