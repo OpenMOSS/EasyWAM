@@ -201,6 +201,8 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
+Existing caches are reused by default; if all prompts are cached, the text encoder is not loaded. Add `+overwrite=true` to regenerate embeddings.
+
 ### 🏋️ Train
 
 The launchers accept Hydra overrides directly. Set the number of local processes through `NPROC_PER_NODE`:

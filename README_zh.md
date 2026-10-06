@@ -201,6 +201,8 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 python scripts/precompute_text_embeds.py task=libero_easywam_mot_cosmos25
 ```
 
+默认复用已有缓存；所有 prompt 均已缓存时不会加载文本编码器。需要重新生成时，在命令后添加 `+overwrite=true`。
+
 ### 🏋️ 训练
 
 训练脚本直接接收 Hydra overrides，通过 `NPROC_PER_NODE` 设置本机进程数：
