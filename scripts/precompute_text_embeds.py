@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 import re
 import uuid
@@ -7,12 +8,13 @@ from typing import Any
 
 import hydra
 import torch
+import pyarrow.parquet as pq
 import torch.distributed as dist
 from omegaconf import DictConfig, ListConfig
 from tqdm import tqdm
 
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
-from data.lerobot.lerobot.datasets.utils import load_info, load_tasks
+from data.lerobot.lerobot.datasets.utils import load_info
 from data.lerobot.text_embedding_cache import (
     build_text_embedding_payload,
     prompt_hash,
@@ -124,14 +126,34 @@ def _read_unique_prompts(dataset_dirs: list[str]) -> list[str]:
                 f"Unsupported LeRobot dataset version {version!r} at {root}; "
                 "expected v3.0."
             )
-        tasks, _ = load_tasks(root)
-
-        for task in tasks.values():
-            prompt = DEFAULT_PROMPT.format(task=str(task))
-            total_task_rows += 1
-            if prompt not in seen:
-                seen.add(prompt)
-                prompts.append(prompt)
+        table = pq.ParquetFile(root / "meta/tasks.parquet")
+        names = table.schema_arrow.names
+        if "task_index" not in names:
+            raise ValueError(f"LeRobot v3 task metadata is missing task_index: {root}")
+        metadata = json.loads((table.schema_arrow.metadata or {}).get(b"pandas", b"{}"))
+        index_columns = [column for column in metadata.get("index_columns", []) if isinstance(column, str)]
+        if "task" in names and "task" not in index_columns:
+            task_columns = ["task"]
+        elif index_columns:
+            task_columns = index_columns
+        elif "__index_level_0__" in names:
+            task_columns = ["__index_level_0__"]
+        else:
+            raise ValueError(f"Missing task text column in {root / 'meta/tasks.parquet'}")
+        task_indices = set()
+        for batch in table.iter_batches(columns=["task_index", *task_columns]):
+            columns = [batch.column(i).to_pylist() for i in range(batch.num_columns)]
+            for task_index, *labels in zip(*columns):
+                task_index = int(task_index)
+                if task_index in task_indices:
+                    raise ValueError(f"LeRobot v3 task metadata contains duplicate task indices: {root}")
+                task_indices.add(task_index)
+                task = labels[0] if len(labels) == 1 else tuple(labels)
+                prompt = DEFAULT_PROMPT.format(task=str(task))
+                total_task_rows += 1
+                if prompt not in seen:
+                    seen.add(prompt)
+                    prompts.append(prompt)
 
     logger.info(
         "Loaded %d task rows from %d datasets, deduplicated to %d prompts.",
@@ -157,8 +179,9 @@ def _model_id_to_enc_id(model_id: str) -> str:
     return enc_id or "textenc"
 
 
-def _atomic_torch_save(payload: dict[str, Any], output_path: Path):
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+def _atomic_torch_save(payload: dict[str, Any], output_path: Path, *, ensure_parent: bool = True):
+    if ensure_parent:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = output_path.parent / f".{output_path.name}.tmp.{uuid.uuid4().hex}"
     torch.save(payload, str(tmp_path))
     os.replace(tmp_path, output_path)
@@ -206,7 +229,7 @@ def main(cfg: DictConfig):
             torch.cuda.device_count(),
         )
 
-    overwrite = _to_bool(cfg.get("overwrite", True))
+    overwrite = _to_bool(cfg.get("overwrite", False))
     model_cfg = cfg.model
     if model_cfg is None:
         raise ValueError("`cfg.model` is required.")
@@ -262,6 +285,54 @@ def main(cfg: DictConfig):
     else:
         raise ValueError(f"Unsupported backbone for text caching: {backbone_name!r}")
 
+    stats = {
+        str(cache_dir): {"new": 0, "overwrite": 0, "skip": 0}
+        for cache_dir in cache_dirs
+    }
+    local_prompts = prompts[rank::world_size] if is_distributed else prompts
+    fully_cached_local = 0
+    if not overwrite:
+        prompts_to_encode: list[str] = []
+        for prompt in local_prompts:
+            hashed = prompt_hash(prompt)
+            filename = _cache_filename(hashed, context_len, enc_id)
+            if all((cache_dir / filename).is_file() for cache_dir in cache_dirs):
+                fully_cached_local += 1
+                for cache_dir in cache_dirs:
+                    stats[str(cache_dir)]["skip"] += 1
+            else:
+                prompts_to_encode.append(prompt)
+        local_prompts = prompts_to_encode
+
+    prompts_encoded_local = len(local_prompts)
+    prompts_encoded_global = prompts_encoded_local
+    fully_cached_global = fully_cached_local
+    if is_distributed:
+        reduce_device = torch.device(device) if device.startswith("cuda") else torch.device("cpu")
+        count_tensor = torch.tensor(
+            [prompts_encoded_local, fully_cached_local],
+            device=reduce_device,
+            dtype=torch.long,
+        )
+        dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+        prompts_encoded_global = int(count_tensor[0].item())
+        fully_cached_global = int(count_tensor[1].item())
+    if (not is_distributed) or rank == 0:
+        logger.info(
+            "Per-prompt cache: required=%d cached=%d to_encode=%d overwrite=%s",
+            len(prompts),
+            fully_cached_global,
+            prompts_encoded_global,
+            overwrite,
+        )
+
+    if prompts_encoded_global == 0:
+        logger.info("All required text embeddings are cached; skipping text encoder initialization.")
+        if is_distributed:
+            dist.barrier()
+            dist.destroy_process_group()
+        return
+
     logger.info(
         "Preparing text encoder for backbone=%s with text_encoder_model_id=%s "
         "tokenizer_model_id=%s device=%s dtype=%s context_len=%d overwrite=%s",
@@ -273,6 +344,9 @@ def main(cfg: DictConfig):
         context_len,
         overwrite,
     )
+
+    for cache_dir in cache_dirs:
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = None
     if backbone_name == "wan22":
@@ -330,47 +404,6 @@ def main(cfg: DictConfig):
             max_length=context_len,
         ).eval()
 
-    stats = {
-        str(cache_dir): {"new": 0, "overwrite": 0, "skip": 0}
-        for cache_dir in cache_dirs
-    }
-    local_prompts = prompts[rank::world_size] if is_distributed else prompts
-    fully_cached_local = 0
-    if not overwrite:
-        prompts_to_encode: list[str] = []
-        for prompt in local_prompts:
-            hashed = prompt_hash(prompt)
-            filename = _cache_filename(hashed, context_len, enc_id)
-            if all((cache_dir / filename).is_file() for cache_dir in cache_dirs):
-                fully_cached_local += 1
-                for cache_dir in cache_dirs:
-                    stats[str(cache_dir)]["skip"] += 1
-            else:
-                prompts_to_encode.append(prompt)
-        local_prompts = prompts_to_encode
-
-    prompts_encoded_local = len(local_prompts)
-    prompts_encoded_global = prompts_encoded_local
-    fully_cached_global = fully_cached_local
-    if is_distributed:
-        reduce_device = torch.device(device) if device.startswith("cuda") else torch.device("cpu")
-        count_tensor = torch.tensor(
-            [prompts_encoded_local, fully_cached_local],
-            device=reduce_device,
-            dtype=torch.long,
-        )
-        dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
-        prompts_encoded_global = int(count_tensor[0].item())
-        fully_cached_global = int(count_tensor[1].item())
-    if (not is_distributed) or rank == 0:
-        logger.info(
-            "Per-prompt cache: required=%d cached=%d to_encode=%d overwrite=%s",
-            len(prompts),
-            fully_cached_global,
-            prompts_encoded_global,
-            overwrite,
-        )
-
     over_length_prompts = 0
     with tqdm(
         total=len(local_prompts),
@@ -419,7 +452,7 @@ def main(cfg: DictConfig):
                             stats[key]["overwrite"] += 1
                         else:
                             stats[key]["new"] += 1
-                        _atomic_torch_save(payload, cache_path)
+                        _atomic_torch_save(payload, cache_path, ensure_parent=False)
 
                 pbar.update(len(batch_prompts))
 
