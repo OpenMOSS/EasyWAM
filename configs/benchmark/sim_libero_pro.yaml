@@ -68,11 +68,11 @@ MULTIRUN:
   task_ids: null
   num_gpus: 4
   gpu_ids: null
-  workers_per_gpu: 2
-  env_num_per_worker: 4
+  workers_per_gpu: 3
+  env_num_per_worker: 16
   inference_batch_size: 4
   inference_batch_wait_ms: 10
-  prompt_cache_size: 40
+  prompt_cache_size: 20
 
 WORKER:
   task_file: null

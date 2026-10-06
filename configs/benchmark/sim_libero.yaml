@@ -64,7 +64,7 @@ MULTIRUN:
   env_num_per_worker: 10
   inference_batch_size: 4
   inference_batch_wait_ms: 3
-  prompt_cache_size: 40
+  prompt_cache_size: 20
 
 # Internal worker arguments populated by run_libero_manager.py.
 WORKER:
