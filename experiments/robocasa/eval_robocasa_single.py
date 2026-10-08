@@ -29,6 +29,7 @@ for path in (PROJECT_ROOT, SRC_ROOT):
 from data.lerobot.processors.wam_processor import WAMProcessor  # noqa: E402
 from data.lerobot.prompts import DEFAULT_PROMPT  # noqa: E402
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json  # noqa: E402
+from experiments.image_utils import rgb_to_tensor
 from experiments.prompt_context_cache import PromptContextCache  # noqa: E402
 from experiments.robocasa.env_process import CAMERA_KEYS, RoboCasaEnvProcess  # noqa: E402
 from model.helpers.inference import (  # noqa: E402
@@ -156,16 +157,14 @@ def _normalize_state(state: np.ndarray, processor: WAMProcessor) -> torch.Tensor
 
 
 def _denormalize_action(action: torch.Tensor, processor: WAMProcessor) -> np.ndarray:
-    if action.ndim == 2:
-        action = action.unsqueeze(0)
-    if action.ndim != 3:
-        raise ValueError(f"Expected action [B,T,D], got {tuple(action.shape)}.")
+    if action.ndim != 2:
+        raise ValueError(f"Expected action [T,D], got {tuple(action.shape)}.")
     action_meta = processor.shape_meta["action"]
     if len(action_meta) != 1:
         raise ValueError("RoboCasa evaluation expects one merged action field.")
     key = action_meta[0]["key"]
     normalizer = processor.normalizer.normalizers["action"][key]
-    return normalizer.backward(action.float().cpu()).numpy()
+    return normalizer.backward(action.unsqueeze(0).float().cpu()).numpy()
 
 
 def observation_to_model_input(
@@ -177,8 +176,7 @@ def observation_to_model_input(
             f"Concatenated image is {rgb.shape[:2]}, but config expects "
             f"{(runtime.input_h, runtime.input_w)}."
         )
-    image = torch.from_numpy(rgb.copy()).permute(2, 0, 1).unsqueeze(0).float()
-    image = image * (2.0 / 255.0) - 1.0
+    image = rgb_to_tensor(rgb)
     proprio = _normalize_state(extract_robocasa_state(observation), runtime.processor)
     return image, proprio, rgb
 

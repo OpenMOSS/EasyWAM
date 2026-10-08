@@ -166,9 +166,7 @@ class DynamicInferenceBatcher:
         elapsed = time.perf_counter() - started
         actions = result["action"]
         videos = result.get("video")
-        if videos is not None and videos and not isinstance(videos[0], list):
-            videos = [videos]
-        if actions.ndim < 1 or actions.shape[0] != len(requests):
+        if actions.ndim != 3 or actions.shape[0] != len(requests):
             raise ValueError("Model action output batch size does not match the request batch.")
         if videos is not None and len(videos) != len(requests):
             raise ValueError("Model video output batch size does not match the request batch.")

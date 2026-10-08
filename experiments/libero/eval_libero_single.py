@@ -24,6 +24,8 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from experiments.image_utils import center_crop_resize as _center_crop_resize, rgb_to_tensor
+
 from experiments.libero.libero_utils import (
     LIBERO_ENV_RESOLUTION,
     get_libero_dummy_action,
@@ -132,18 +134,6 @@ def _load_model_checkpoint(model: torch.nn.Module, ckpt: str) -> None:
     logging.info("Loaded checkpoint via model.load_checkpoint: %s", ckpt)
 
 
-def _center_crop_resize(image: np.ndarray, width: int, height: int) -> np.ndarray:
-    pil_image = Image.fromarray(image)
-    src_w, src_h = pil_image.size
-    scale = max(width / src_w, height / src_h)
-    resized = pil_image.resize((round(src_w * scale), round(src_h * scale)), resample=Image.BILINEAR)
-    rw, rh = resized.size
-    left = max((rw - width) // 2, 0)
-    top = max((rh - height) // 2, 0)
-    cropped = resized.crop((left, top, left + width, top + height))
-    return np.asarray(cropped, dtype=np.uint8)
-
-
 def _normalize_proprio(
     proprio: np.ndarray,
     processor: WAMProcessor,
@@ -213,8 +203,7 @@ def _obs_to_model_input(
         f"shape_meta.images={image_shapes}, concat_multi_camera={concatenation}."
     )
 
-    x = torch.tensor(rgb).permute(2, 0, 1).unsqueeze(0).to(device=device, dtype=dtype)
-    x = x * (2.0 / 255.0) - 1.0
+    x = rgb_to_tensor(rgb, device=device, dtype=dtype)
 
     proprio = _normalize_proprio(_extract_sim_state(obs), processor)
 
@@ -237,10 +226,8 @@ def _extract_sim_state(obs: dict) -> np.ndarray:
 
 
 def _denormalize_action(action: torch.Tensor, processor: WAMProcessor) -> np.ndarray:
-    if action.ndim == 2:
-        action = action.unsqueeze(0)
-    if action.ndim != 3:
-        raise ValueError(f"Expected action tensor [B, T, D], got {tuple(action.shape)}")
+    if action.ndim != 2:
+        raise ValueError(f"Expected action tensor [T,D], got {tuple(action.shape)}")
 
     action_meta = processor.shape_meta["action"]
     if len(action_meta) != 1:
@@ -250,7 +237,7 @@ def _denormalize_action(action: torch.Tensor, processor: WAMProcessor) -> np.nda
 
     action_key = action_meta[0]["key"]
     normalizer = processor.normalizer.normalizers["action"][action_key]
-    action = action.to(dtype=torch.float32, device="cpu")
+    action = action.unsqueeze(0).to(dtype=torch.float32, device="cpu")
     denorm = normalizer.backward(action)
     return denorm.numpy()
 

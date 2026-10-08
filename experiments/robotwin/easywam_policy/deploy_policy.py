@@ -16,7 +16,6 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -29,7 +28,12 @@ if str(SRC_ROOT) not in sys.path:
 from data.lerobot.processors.wam_processor import WAMProcessor
 from data.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from data.lerobot.utils.normalizer import load_dataset_stats_from_json
-from experiments.robotwin.batched_inference import DynamicInferenceBatcher
+from experiments.batched_inference import DynamicInferenceBatcher
+from experiments.image_utils import (
+    concatenate_head_and_wrists,
+    resize_rgb as _resize_rgb,
+    rgb_to_tensor,
+)
 from model.helpers.inference import configure_inference_compile, configure_model_execution
 
 logger = logging.getLogger(__name__)
@@ -144,12 +148,6 @@ def _resolve_dataset_stats_path(dataset_stats_path: Optional[str]) -> Path:
     if not resolved.exists():
         raise FileNotFoundError(f"Dataset stats path not found: {resolved}")
     return resolved
-
-
-def _resize_rgb(image: np.ndarray, size_wh: tuple[int, int]) -> np.ndarray:
-    pil_image = Image.fromarray(image.astype(np.uint8), mode="RGB")
-    resized = pil_image.resize(size_wh, resample=Image.BILINEAR)
-    return np.asarray(resized, dtype=np.uint8)
 
 
 def _observation_instruction(observation: Dict[str, Any]) -> str:
@@ -299,10 +297,8 @@ class WorldActionRobotWinPolicy:
         return state_batch["state"][state_key]
 
     def _denormalize_action(self, action: torch.Tensor) -> np.ndarray:
-        if action.ndim == 2:
-            action = action.unsqueeze(0)
-        if action.ndim != 3:
-            raise ValueError(f"Expected action tensor [B,T,D], got {tuple(action.shape)}")
+        if action.ndim != 2:
+            raise ValueError(f"Expected action tensor [T,D], got {tuple(action.shape)}")
 
         action_meta = self.processor.shape_meta["action"]
         if len(action_meta) != 1:
@@ -310,7 +306,7 @@ class WorldActionRobotWinPolicy:
 
         action_key = action_meta[0]["key"]
         normalizer = self.processor.normalizer.normalizers["action"][action_key]
-        denorm = normalizer.backward(action.to(dtype=torch.float32, device="cpu"))
+        denorm = normalizer.backward(action.unsqueeze(0).to(dtype=torch.float32, device="cpu"))
         return denorm.numpy()
 
     def _build_robotwin_image_tensor(self, observation: Dict[str, Any]) -> torch.Tensor:
@@ -327,12 +323,8 @@ class WorldActionRobotWinPolicy:
         head = _resize_rgb(camera_rgb("cam_head"), (320, 256))
         left = _resize_rgb(camera_rgb("cam_left_wrist"), (160, 128))
         right = _resize_rgb(camera_rgb("cam_right_wrist"), (160, 128))
-        bottom = np.concatenate([left, right], axis=1)
-        image = np.concatenate([head, bottom], axis=0)  # [384, 320, 3]
-
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
-        image_tensor = image_tensor * (2.0 / 255.0) - 1.0
-        return image_tensor
+        image = concatenate_head_and_wrists(head, left, right)
+        return rgb_to_tensor(image)
 
     def _infer_action_chunk(
         self, observation: Dict[str, Any], instruction: str, session: _PolicySession

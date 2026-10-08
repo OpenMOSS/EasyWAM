@@ -10,8 +10,6 @@ class ActionEnsembler:
         self.action_cache.clear()
 
     def add_actions(self, action_chunk: np.ndarray, start_timestamp: int):
-        if action_chunk.ndim == 3:
-            action_chunk = action_chunk.squeeze(0)
         horizon, action_dim = action_chunk.shape
 
         for i in range(horizon):
