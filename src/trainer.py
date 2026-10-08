@@ -21,10 +21,10 @@ from tqdm.auto import tqdm
 
 from utils.fs import ensure_dir
 from utils.logging_config import get_logger, setup_logging
-from utils.pytorch_utils import set_global_seed
+from utils.pytorch_utils import set_global_seed, normalize_mixed_precision
 from utils.samplers import ResumableEpochSampler
 from utils.video_io import save_mp4
-from utils.video_metrics import pil_frames_to_video_tensor, video_psnr, video_ssim
+from utils.video_metrics import pil_frames_to_video_tensor, video_psnr, video_ssim_triplet
 
 logger = get_logger(__name__)
 
@@ -115,12 +115,7 @@ class EasyWAMTrainer:
         self.seed = int(cfg.seed)
         
         self.resume = cfg.resume
-        self.mixed_precision = str(cfg.mixed_precision).strip().lower()
-        if self.mixed_precision not in {"no", "fp16", "bf16"}:
-            raise ValueError(
-                f"Unsupported mixed_precision: {cfg.mixed_precision}. "
-                "Expected one of: ['no', 'fp16', 'bf16']."
-            )
+        self.mixed_precision = normalize_mixed_precision(cfg.mixed_precision)
         self.wandb_enabled = bool(cfg.wandb.enabled)
 
         self.accelerator = accelerator
@@ -483,83 +478,26 @@ class EasyWAMTrainer:
             state_encoder.requires_grad_(True)
 
     @staticmethod
-    def _to_batched_eval_sample(sample):
+    def _to_batched_eval_sample(sample: dict) -> dict:
         video = sample["video"]
-        prompt = sample["prompt"]
-        action = sample.get("action", None)
-        proprio = sample.get("proprio", None)
-        context = sample.get("context", None)
-        context_mask = sample.get("context_mask", None)
-
-        if not isinstance(video, torch.Tensor):
-            raise TypeError(
-                f"Expected tensor video for evaluation, got {type(video)}. "
-                "Evaluation now expects `video` with shape [3,T,H,W] or [B,3,T,H,W]."
-            )
-        if video.ndim == 4:
-            video = video.unsqueeze(0)
-        if video.ndim != 5:
-            raise ValueError(f"Expected video shape [3,T,H,W] or [B,3,T,H,W], got {tuple(video.shape)}")
-        num_video_frames = video.shape[2]
-        if num_video_frames <= 1:
-            raise ValueError(f"`sample['video']` must have at least 2 frames for action evaluation, got {num_video_frames}")
-
-        if isinstance(prompt, str):
-            prompt = [prompt]
-        elif isinstance(prompt, tuple):
-            prompt = list(prompt)
-        elif not isinstance(prompt, list):
-            raise TypeError(f"Expected prompt type str/list[str], got {type(prompt)}")
-        if len(prompt) != video.shape[0]:
-            raise ValueError(f"Prompt batch mismatch: len(prompt)={len(prompt)} vs video batch={video.shape[0]}")
-        
-        action_horizon = None
-        action = None
-        if "action" in sample:
-            action = sample["action"]
-            if not isinstance(action, torch.Tensor):
-                raise TypeError(
-                    f"`sample['action']` must be a torch.Tensor, got {type(action)}"
-                )
-            if action.ndim == 2:
-                action = action.unsqueeze(0)
-            if action.ndim != 3:
-                raise ValueError(f"`sample['action']` must be 3D [B, T, a_dim], got shape {tuple(action.shape)}")
-            if action.shape[1] % (num_video_frames - 1) != 0:
-                raise ValueError(f"`sample['action']` temporal dimension must be divisible by video frames-1={num_video_frames - 1}, got {action.shape[1]}")
-            action_horizon = int(action.shape[1])
-
-        proprio = None
-        if "proprio" in sample:
-            proprio = sample["proprio"]
-            if not isinstance(proprio, torch.Tensor):
-                raise TypeError(f"`sample['proprio']` must be a torch.Tensor, got {type(proprio)}")
-            if proprio.ndim == 2:
-                proprio = proprio.unsqueeze(0)
-            if proprio.ndim != 3:
-                raise ValueError(f"`sample['proprio']` must be 3D [B, T, d], got shape {tuple(proprio.shape)}")
-
-        if context is not None or context_mask is not None:
-            if context is None or context_mask is None:
-                raise ValueError("`context` and `context_mask` must both exist in eval sample.")
-            if context.ndim == 2:
-                context = context.unsqueeze(0)
-            if context_mask.ndim == 1:
-                context_mask = context_mask.unsqueeze(0)
-            if context.ndim != 3 or context_mask.ndim != 2:
-                raise ValueError(
-                    f"`context/context_mask` must be [B,L,D]/[B,L], got {tuple(context.shape)} and {tuple(context_mask.shape)}"
-                )
-
-        return {
-            "video": video,
-            "prompt": prompt,
-            "action": action,
-            "proprio": proprio,
-            "context": context,
-            "context_mask": context_mask,
-            "action_horizon": action_horizon,
-        }
+        if video.ndim != 4 or video.shape[0] != 3 or video.shape[1] <= 1:
+            raise ValueError(f"Evaluation dataset video must be [3,T,H,W] with T > 1, got {tuple(video.shape)}.")
+        if not isinstance(sample["prompt"], str):
+            raise TypeError("Evaluation dataset prompt must be a string.")
+        result = {"video": video.unsqueeze(0), "prompt": [sample["prompt"]]}
+        for key, rank in (("action", 2), ("proprio", 2), ("context", 2), ("context_mask", 1)):
+            value = sample.get(key)
+            if value is not None and value.ndim != rank:
+                raise ValueError(f"Evaluation dataset {key} must have rank {rank}, got {tuple(value.shape)}.")
+            result[key] = None if value is None else value.unsqueeze(0)
+        if (result["context"] is None) != (result["context_mask"] is None):
+            raise ValueError("context and context_mask must both exist in eval sample.")
+        action = result["action"]
+        action_horizon = None if action is None else action.shape[1]
+        if action_horizon is not None and action_horizon % (video.shape[1] - 1):
+            raise ValueError("Action horizon must be divisible by video transitions.")
+        result["action_horizon"] = action_horizon
+        return result
 
     @torch.inference_mode()
     def evaluate(self):
@@ -619,7 +557,6 @@ class EasyWAMTrainer:
         )
 
         psnr_rollout_vs_gt = video_psnr(pred=pred_video_tensor, target=gt_video_tensor)
-        ssim_rollout_vs_gt = video_ssim(pred=pred_video_tensor, target=gt_video_tensor)
 
         action_l1 = None
         action_l2 = None
@@ -634,16 +571,9 @@ class EasyWAMTrainer:
             action_meta = processor.shape_meta["action"]
             state_meta = processor.shape_meta["state"]
             for action_name, raw_action in (("pred", pred_action), ("gt", action)):
-                if not isinstance(raw_action, torch.Tensor):
-                    raise TypeError(f"{action_name} action must be a torch.Tensor, got {type(raw_action)}")
-                if raw_action.ndim == 2:
-                    action_btd = raw_action.unsqueeze(0)
-                elif raw_action.ndim == 3 and raw_action.shape[0] == 1:
-                    action_btd = raw_action
-                else:
-                    raise ValueError(
-                        f"{action_name} action must have shape [T, D] or [1, T, D], got {tuple(raw_action.shape)}"
-                    )
+                if raw_action.ndim != 2:
+                    raise ValueError(f"{action_name} action must be [T,D], got {tuple(raw_action.shape)}.")
+                action_btd = raw_action.unsqueeze(0)
                 action_btd = action_btd.detach().to(device="cpu", dtype=torch.float32)
 
                 batch = {
@@ -692,10 +622,11 @@ class EasyWAMTrainer:
         )
 
         psnr_decode_vs_gt = video_psnr(pred=vae_video_tensor, target=gt_video_tensor)
-        ssim_decode_vs_gt = video_ssim(pred=vae_video_tensor, target=gt_video_tensor)
 
         psnr_rollout_vs_decode = video_psnr(pred=pred_video_tensor, target=vae_video_tensor)
-        ssim_rollout_vs_decode = video_ssim(pred=pred_video_tensor, target=vae_video_tensor)
+        ssim_rollout_vs_gt, ssim_decode_vs_gt, ssim_rollout_vs_decode = video_ssim_triplet(
+            pred_video_tensor, gt_video_tensor, vae_video_tensor,
+        )
 
         video_path = self._save_eval_video(
             pred_video_tensor,
@@ -1076,17 +1007,6 @@ class EasyWAMTrainer:
                 self.global_step += 1
                 checkpoint_saved_at_current_step = False
                 current_lr = float(self.optimizer.param_groups[0]["lr"])
-                if self.accelerator.is_local_main_process:
-                    progress_bar.set_postfix(
-                        {
-                            "data_time": f"{data_time:.4f}",
-                            "forward_time": f"{forward_time:.4f}",
-                            "backward_time": f"{backward_time:.4f}",
-                            "loss": f"{loss.detach().float().item():.4f}",
-                            "grad_norm": f"{torch.as_tensor(grad_norm).detach().float().item():.4f}",
-                        },
-                        refresh=False,
-                    )
                 progress_bar.update(1)
                 should_log = self.log_every > 0 and (
                     self.global_step % self.log_every == 0 or self.global_step == self.max_steps
@@ -1098,6 +1018,15 @@ class EasyWAMTrainer:
                         grad_norm, device=loss.device, dtype=torch.float32
                     ).reshape(1)
                     global_grad_norm = float(self.accelerator.gather(grad_norm_tensor).mean().item())
+                    if self.accelerator.is_local_main_process:
+                        progress_bar.set_postfix(
+                            {
+                                **{name: f"{value:.4f}" for name, value in timing_averages.items()},
+                                "loss": f"{loss_averages['loss']:.4f}",
+                                "grad_norm": f"{global_grad_norm:.4f}",
+                            },
+                            refresh=False,
+                        )
                 if should_log and self.accelerator.is_main_process:
                     description = (
                         "[train] epoch=%d step=%d/%d loss_avg=%.6f "
