@@ -214,27 +214,16 @@ class ActionDiTFlux2(nn.Module):
         return self.head(tokens[:, :action_len], pre_state["t_mod"]["vec"])
 
     @staticmethod
-    def _expand_modulation(value: Any, length: int) -> Any:
-        if isinstance(value, torch.Tensor):
-            return value.expand(-1, length, -1)
-        if isinstance(value, (tuple, list)):
-            return tuple(
-                ActionDiTFlux2._expand_modulation(item, length) for item in value
-            )
-        raise TypeError(f"Unsupported FLUX.2 modulation value: {type(value).__name__}.")
-
-    @staticmethod
-    def _concat_modulation(left: Any, right: Any) -> Any:
-        if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
-            return torch.cat([left, right], dim=1)
-        if isinstance(left, (tuple, list)) and isinstance(right, (tuple, list)):
-            if len(left) != len(right):
-                raise ValueError("FLUX.2 modulation structures must have matching lengths.")
-            return tuple(
-                ActionDiTFlux2._concat_modulation(a, b)
-                for a, b in zip(left, right)
-            )
-        raise TypeError("FLUX.2 modulation structures must have matching types.")
+    def _concat_modulation(
+        left: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        right: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        action_len: int,
+        state_len: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return tuple(
+            torch.cat([action.expand(-1, action_len, -1), state.expand(-1, state_len, -1)], dim=1)
+            for action, state in zip(left, right)
+        )
 
     def append_state_tokens(
         self,
@@ -274,13 +263,12 @@ class ActionDiTFlux2(nn.Module):
         )
         pre_state["t_mod"] = {
             "vec": action_mod["vec"],
-            "double_img": self._concat_modulation(
-                self._expand_modulation(action_mod["double_img"], action_len),
-                self._expand_modulation(state_mod["double_img"], state_len),
+            "double_img": tuple(
+                self._concat_modulation(action, state, action_len, state_len)
+                for action, state in zip(action_mod["double_img"], state_mod["double_img"])
             ),
             "single": self._concat_modulation(
-                self._expand_modulation(action_mod["single"], action_len),
-                self._expand_modulation(state_mod["single"], state_len),
+                action_mod["single"], state_mod["single"], action_len, state_len
             ),
         }
         pre_state["meta"].update(

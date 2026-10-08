@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
+from model.helpers.static_cache import cache_static_method
+
 from ..protocol import BLOCK_PROTOCOL_MAIN
 from ...component.attention import (
     AttentionSegment,
@@ -92,13 +94,14 @@ class CosmosVideoRope3D(nn.Module):
         frequencies = theta ** (-dimension_range.to(device=device, dtype=torch.float32))
         return positions[:, None] * frequencies[None, :]
 
-    def forward(self, t: int, h: int, w: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    @cache_static_method("theta_t", "theta_h", "theta_w", "seq", "dim_spatial_range", "dim_temporal_range")
+    def forward(self, t: int, h: int, w: int, device: torch.device, dtype: torch.dtype = torch.float32) -> tuple[torch.Tensor, torch.Tensor]:
         angles_t = self._axis_angles(t, self.dim_temporal_range, self.theta_t, device)[:, None, None, :].expand(t, h, w, -1)
         angles_h = self._axis_angles(h, self.dim_spatial_range, self.theta_h, device)[None, :, None, :].expand(t, h, w, -1)
         angles_w = self._axis_angles(w, self.dim_spatial_range, self.theta_w, device)[None, None, :, :].expand(t, h, w, -1)
         half_angles = torch.cat((angles_t, angles_h, angles_w), dim=-1).reshape(t * h * w, 64)
         angles = torch.cat((half_angles, half_angles), dim=-1)
-        return angles.cos(), angles.sin()
+        return angles.cos().to(dtype=dtype), angles.sin().to(dtype=dtype)
 
 
 class CosmosAttention(nn.Module):
@@ -182,6 +185,8 @@ def _adaln_layer(hidden_size: int, rank: int) -> nn.Sequential:
 
 
 class CosmosTransformerBlock(nn.Module):
+    uses_mixed_attention_api = True
+
     def __init__(self, hidden_size: int, context_dim: int, num_heads: int, intermediate_size: int, rank: int, backend: str):
         super().__init__()
         self.layer_norm_self_attn = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -428,6 +433,7 @@ class Cosmos25VideoDiT(nn.Module):
         self.hidden_dim = config.hidden_size
         self.freq_dim = config.hidden_size
         self.text_dim = config.context_dim
+        self.context_dim = config.context_dim
         self.num_heads = config.num_heads
         self.attn_head_dim = config.hidden_size // config.num_heads
         self.patch_size = config.patch_size
@@ -470,8 +476,6 @@ class Cosmos25VideoDiT(nn.Module):
 
     @staticmethod
     def _timestep_features(timesteps: torch.Tensor, dim: int) -> torch.Tensor:
-        if timesteps.ndim == 1:
-            timesteps = timesteps[:, None]
         half = dim // 2
         exponent = -math.log(10000.0) * torch.arange(half, device=timesteps.device, dtype=torch.float32) / half
         phases = timesteps.float().reshape(-1, 1) * exponent.exp()[None]
@@ -547,7 +551,7 @@ class Cosmos25VideoDiT(nn.Module):
         frame_t = self.t_embedding_norm(frame_t)
         rope = freqs_override
         if rope is None:
-            rope = self.pos_embedder(tf, ph, pw, tokens.device)
+            rope = self.pos_embedder(tf, ph, pw, tokens.device, tokens.dtype)
         return {
             "tokens": tokens,
             "freqs": rope,
@@ -600,6 +604,24 @@ class Cosmos25VideoDiT(nn.Module):
         angles = torch.cat((half, half), dim=-1)
         return angles.cos(), angles.sin()
 
+    def _combine_unified_rope(self, video_rope, action_len, state_len, device, dtype):
+        cos, sin = video_rope
+        cos_parts, sin_parts = [cos], [sin]
+        for length in (action_len, state_len):
+            if length:
+                cos, sin = self._aux_rope(length, device)
+                cos_parts.append(cos)
+                sin_parts.append(sin)
+        return torch.cat(cos_parts).to(dtype), torch.cat(sin_parts).to(dtype)
+
+    @cache_static_method(
+        "pos_embedder.theta_t", "pos_embedder.theta_h", "pos_embedder.theta_w",
+        "pos_embedder.seq", "pos_embedder.dim_spatial_range", "pos_embedder.dim_temporal_range",
+    )
+    def _prepare_unified_rope(self, f, h, w, action_len, state_len, device, dtype):
+        rope = self.pos_embedder(f, h, w, device, dtype)
+        return self._combine_unified_rope(rope, action_len, state_len, device, dtype)
+
     def pre_unified_dit(
         self,
         x: torch.Tensor,
@@ -638,8 +660,6 @@ class Cosmos25VideoDiT(nn.Module):
                 video["meta"]["tokens_per_frame"]
             )
         ]
-        rope_cos, rope_sin = video["freqs"]
-        cos_parts, sin_parts = [rope_cos], [rope_sin]
         auxiliary_inputs = [(action_tokens, timestep_action)]
         if state_position == "sequence":
             auxiliary_inputs.append((state_tokens, timestep_state))
@@ -657,16 +677,11 @@ class Cosmos25VideoDiT(nn.Module):
                     dtype=torch.long,
                 )
             )
-            cos, sin = self._aux_rope(aux.shape[1], tokens.device)
-            cos_parts.append(cos)
-            sin_parts.append(sin)
         projected_context = video["context"]
         combined_context = projected_context
         if state_position == "context":
             combined_context = torch.cat([projected_context, state_tokens], dim=1)
             if video["context_mask"] is not None:
-                if not isinstance(video["context_mask"], KeyPaddingMask):
-                    raise TypeError("Expected a key-padding mask before appending state context.")
                 state_mask = torch.ones(
                     state_tokens.shape[:2], dtype=torch.bool, device=state_tokens.device
                 )
@@ -694,7 +709,15 @@ class Cosmos25VideoDiT(nn.Module):
             "adaln_lora": torch.cat(adaln_parts, dim=1),
             "token_to_timestep": torch.cat(modulation_indices),
         }
-        video["freqs"] = (torch.cat(cos_parts), torch.cat(sin_parts))
+        rope_state_len = state_tokens.shape[1] if state_position == "sequence" else 0
+        if freqs_override is None:
+            video["freqs"] = self._prepare_unified_rope(
+                *video["meta"]["grid_size"], action_tokens.shape[1], rope_state_len, tokens.device, tokens.dtype
+            )
+        else:
+            video["freqs"] = self._combine_unified_rope(
+                video["freqs"], action_tokens.shape[1], rope_state_len, tokens.device, tokens.dtype
+            )
         video["context"] = combined_context
         video["meta"].update(
             {

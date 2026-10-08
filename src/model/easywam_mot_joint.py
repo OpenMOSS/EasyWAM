@@ -8,6 +8,12 @@ from utils.logging_config import get_logger
 
 from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
 from .easywam_mot import EasyWAMMoT
+from .helpers.batching import (
+    ActionInferenceResult,
+    JointInferenceResult,
+    ActionBatchResult,
+    JointBatchResult,
+)
 
 logger = get_logger(__name__)
 
@@ -68,7 +74,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
     @torch.inference_mode()
     def infer_joint_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         num_video_frames: int,
         action_horizon: int,
@@ -84,7 +90,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         rand_device: str = "cpu",
         test_action_with_infer_action: bool = False,
         decode_video: bool = True,
-    ) -> dict[str, Any]:
+    ) -> JointBatchResult:
         if test_action_with_infer_action:
             logger.warning("Joint batch inference always jointly denoises video and action.")
         return super().infer_joint_batch(
@@ -99,7 +105,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
     @torch.inference_mode()
     def infer_action_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         action_horizon: int,
         num_video_frames: int,
@@ -112,7 +118,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         sigma_shift: Optional[float] = None,
         seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
         rand_device: str = "cpu",
-    ) -> dict[str, Any]:
+    ) -> ActionBatchResult:
         out = self.infer_joint_batch(
             prompt=prompt, input_image=input_image, num_video_frames=num_video_frames,
             action_horizon=action_horizon, proprio=proprio, context=context,
@@ -142,7 +148,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         rand_device: str = "cpu",
         test_action_with_infer_action: bool = False,
         decode_video: bool = True,
-    ) -> dict[str, Any]:
+    ) -> JointInferenceResult:
         if test_action_with_infer_action:
             logger.warning(
                 "EasyWAMMoTJoint.infer_joint always uses joint video/action denoising; "
@@ -183,7 +189,7 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
-    ) -> dict[str, Any]:
+    ) -> ActionInferenceResult:
         out = self.infer_joint(
             prompt=prompt,
             input_image=input_image,

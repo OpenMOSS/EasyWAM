@@ -5,46 +5,24 @@ from typing import Any, Optional, Sequence, Union
 import torch
 import torch.nn.functional as F
 
+from model.helpers.static_cache import cache_static_method
 from utils.logging_config import get_logger
 
 from .component.attention import (
     AttentionSegment,
-    KeyPaddingMask,
     StructuredAttentionMask,
+    prepare_key_padding_mask,
     build_structured_attention_mask,
 )
 from .easywam_mot_joint import EasyWAMMoTJoint
-from .helpers.batching import randn_per_sample
+from .helpers.batching import (
+    randn_per_sample,
+    validate_batch_inputs,
+    ActionBatchResult,
+    JointBatchResult,
+)
 
 logger = get_logger(__name__)
-
-
-def _concat_sequence_values(left: Any, right: Any, dim: int) -> Any:
-    if left is None and right is None:
-        return None
-    if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
-        if left.ndim <= dim or right.ndim <= dim:
-            raise ValueError(
-                f"Cannot concatenate values along dim={dim}: "
-                f"left={tuple(left.shape)}, right={tuple(right.shape)}"
-            )
-        return torch.cat([left, right], dim=dim)
-    if isinstance(left, dict) and isinstance(right, dict):
-        if set(left) != set(right):
-            raise ValueError(
-                "Backbone metadata dictionaries must have matching keys, "
-                f"got {sorted(left)} and {sorted(right)}."
-            )
-        return {key: _concat_sequence_values(left[key], right[key], dim) for key in left}
-    if isinstance(left, (tuple, list)) and isinstance(right, (tuple, list)):
-        if len(left) != len(right):
-            raise ValueError("Backbone metadata sequences must have matching lengths.")
-        values = [_concat_sequence_values(a, b, dim) for a, b in zip(left, right)]
-        return type(left)(values)
-    raise TypeError(
-        "Cannot concatenate incompatible backbone metadata values: "
-        f"{type(left).__name__} and {type(right).__name__}."
-    )
 
 
 class EasyWAMMoTIDM(EasyWAMMoTJoint):
@@ -61,6 +39,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             )
         self.video_cond_noise_prob = video_cond_noise_prob
 
+    @cache_static_method("video_expert.video_attention_mask_mode")
     @torch.no_grad()
     def _build_teacher_forcing_attention_mask(
         self,
@@ -143,7 +122,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         input_latents = inputs["input_latents"]
         batch_size = input_latents.shape[0]
         context = inputs["context"]
-        context_mask = inputs["context_mask"]
+        context_mask = prepare_key_padding_mask(inputs["context_mask"])
         action = inputs["action"]
         action_is_pad = inputs["action_is_pad"]
         image_is_pad = inputs["image_is_pad"]
@@ -192,6 +171,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             latents_cond[:, :, 0:1] = inputs["first_frame_latents"]
 
         video_pre_noisy = self.video_expert.pre_dit(
+            prepare_rotary_factors=False,
             x=latents_noisy,
             timestep=timestep_video,
             context=context,
@@ -199,6 +179,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             fuse_vae_embedding_in_latents=fuse_flag,
         )
         video_pre_cond = self.video_expert.pre_dit(
+            prepare_rotary_factors=False,
             x=latents_cond,
             timestep=timestep_video_cond,
             context=context,
@@ -206,6 +187,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             fuse_vae_embedding_in_latents=fuse_flag,
         )
         action_pre = self.action_expert.pre_dit(
+            prepare_rotary_factors=False,
             action_tokens=noisy_action,
             timestep=timestep_action,
             context=context,
@@ -223,32 +205,19 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         merged_video_tokens = torch.cat(
             [video_pre_noisy["tokens"], video_pre_cond["tokens"]], dim=1
         )
-        merged_video_freqs = _concat_sequence_values(
-            video_pre_noisy["freqs"], video_pre_cond["freqs"], dim=0
-        )
-        merged_video_t_mod = _concat_sequence_values(
-            video_pre_noisy["t_mod"], video_pre_cond["t_mod"], dim=1
-        )
-        noisy_context_mask = video_pre_noisy["context_mask"]
-        cond_context_mask = video_pre_cond["context_mask"]
-        if isinstance(noisy_context_mask, KeyPaddingMask) and isinstance(
-            cond_context_mask, KeyPaddingMask
-        ):
-            if not torch.equal(noisy_context_mask.valid, cond_context_mask.valid):
-                raise ValueError(
-                    "Noisy and conditional video branches must use the same context mask."
-                )
-            merged_video_context_mask = noisy_context_mask
-        elif noisy_context_mask is None and cond_context_mask is None:
-            merged_video_context_mask = None
-        elif isinstance(noisy_context_mask, torch.Tensor) and isinstance(
-            cond_context_mask, torch.Tensor
-        ):
-            merged_video_context_mask = _concat_sequence_values(
-                noisy_context_mask, cond_context_mask, dim=1
+        if self.backbone_name == "cosmos25":
+            merged_video_freqs = tuple(
+                torch.cat([noisy, cond], dim=0)
+                for noisy, cond in zip(video_pre_noisy["freqs"], video_pre_cond["freqs"])
             )
+            merged_video_t_mod = {
+                key: torch.cat([video_pre_noisy["t_mod"][key], video_pre_cond["t_mod"][key]], dim=1)
+                for key in ("embedding", "adaln_lora")
+            }
         else:
-            raise ValueError("Noisy and conditional video context masks must be both present or both absent.")
+            merged_video_freqs = torch.cat([video_pre_noisy["freqs"], video_pre_cond["freqs"]], dim=0)
+            merged_video_t_mod = torch.cat([video_pre_noisy["t_mod"], video_pre_cond["t_mod"]], dim=1)
+        merged_video_context_mask = video_pre_noisy["context_mask"]
 
         attention_mask = self._build_teacher_forcing_attention_mask(
             noisy_video_seq_len=noisy_video_seq_len,
@@ -323,7 +292,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
     @torch.inference_mode()
     def infer_joint_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         num_video_frames: int,
         action_horizon: int,
@@ -339,16 +308,11 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         rand_device: str = "cpu",
         test_action_with_infer_action: bool = False,
         decode_video: bool = True,
-    ) -> dict[str, Any]:
+    ) -> JointBatchResult:
         del action, negative_prompt, text_cfg_scale, test_action_with_infer_action
         self.eval()
 
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[1] != 3:
-            raise ValueError(
-                f"`input_image` must have shape [B,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
-            )
+        validate_batch_inputs(input_image, prompt, context, context_mask)
         batch_size, _, height, width = input_image.shape
         checked_h, checked_w, checked_t = self._check_resize_height_width(
             height, width, num_video_frames
@@ -364,9 +328,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         if proprio is not None:
             if self.state_dim is None:
                 raise ValueError("`proprio` was provided but `state_dim=None` so state encoding is disabled.")
-            if proprio.ndim == 1:
-                proprio = proprio.unsqueeze(0)
-            elif proprio.ndim != 2 or proprio.shape[0] != batch_size:
+            if proprio.ndim != 2 or proprio.shape[0] != batch_size:
                 raise ValueError(f"`proprio` must be [B,D], got shape {tuple(proprio.shape)}")
             if proprio.shape[1] != self.state_dim:
                 raise ValueError(f"`proprio` last dim must be {self.state_dim}, got {proprio.shape[1]}")
@@ -387,38 +349,20 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
         first_frame_latents = self._encode_input_image_latents_tensor(input_image=input_image)
         latents_video[:, :, 0:1] = first_frame_latents.clone()
-        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
+        fuse_flag = bool(self.video_expert.fuse_vae_embedding_in_latents)
 
-        use_prompt = prompt is not None
-        use_context = context is not None or context_mask is not None
-        if use_prompt and use_context:
-            raise ValueError("`prompt` and `context/context_mask` are mutually exclusive.")
-        if not use_prompt and not use_context:
-            raise ValueError("Either `prompt` or both `context/context_mask` must be provided.")
-        if use_prompt:
+        if prompt is not None:
             context, context_mask = self.encode_prompt(prompt)
         else:
-            if context is None or context_mask is None:
-                raise ValueError("`context` and `context_mask` must be both provided together.")
-            if context.ndim == 2:
-                context = context.unsqueeze(0)
-            if context_mask.ndim == 1:
-                context_mask = context_mask.unsqueeze(0)
-            if context.ndim != 3 or context_mask.ndim != 2:
-                raise ValueError(
-                    f"`context/context_mask` must be [B,L,D]/[B,L], got "
-                    f"{tuple(context.shape)} and {tuple(context_mask.shape)}"
-                )
             context = context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
             context_mask = context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True)
-        if context.shape[0] != batch_size or context_mask.shape[0] != batch_size:
-            raise ValueError("Context batch size must match input_image batch size.")
         if proprio is not None:
             context, context_mask = self._append_state_to_context(
                 context=context,
                 context_mask=context_mask,
                 state=proprio,
             )
+        context_mask = prepare_key_padding_mask(context_mask)
         video_context, action_context, video_cross_kv_cache, action_cross_kv_cache = (
             self._prepare_inference_cross_attention(context)
         )
@@ -451,6 +395,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
             (latents_video.shape[0],), dtype=latents_video.dtype, device=self.device
         )
         video_pre_cond = self.video_expert.pre_dit(
+            prepare_rotary_factors=False,
             x=latents_video,
             timestep=timestep_video_cond,
             context=video_context,
@@ -516,7 +461,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
     @torch.inference_mode()
     def infer_action_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         action_horizon: int,
         num_video_frames: int,
@@ -529,7 +474,7 @@ class EasyWAMMoTIDM(EasyWAMMoTJoint):
         sigma_shift: Optional[float] = None,
         seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
         rand_device: str = "cpu",
-    ) -> dict[str, Any]:
+    ) -> ActionBatchResult:
         out = self.infer_joint_batch(
             prompt=prompt,
             input_image=input_image,

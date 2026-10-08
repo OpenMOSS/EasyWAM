@@ -17,6 +17,8 @@ from ...component.attention import (
     run_attention,
 )
 
+from model.helpers.rope import apply_prepared_rope, prepare_rope, rope_apply
+from model.helpers.static_cache import cache_static_method
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -45,19 +47,6 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
     freqs = torch.outer(torch.arange(end, device=freqs.device), freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
-
-
-def rope_apply(x, freqs, num_heads):
-    xh = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
-    x1, x2 = xh.reshape(*xh.shape[:-1], -1, 2).unbind(-1)
-    freqs = freqs.to(device=x.device)
-    cos = freqs.real.to(dtype=xh.dtype)
-    sin = freqs.imag.to(dtype=xh.dtype)
-    out = torch.stack(
-        (x1 * cos - x2 * sin, x1 * sin + x2 * cos),
-        dim=-1,
-    )
-    return out.flatten(-2).flatten(2)
 
 
 def create_group_causal_attn_mask(
@@ -132,8 +121,9 @@ class WanSelfAttention(nn.Module):
         q = self.norm_q(self.q(x))
         k = self.norm_k(self.k(x))
         v = self.v(x)
-        q = rope_apply(q, freqs, self.num_heads)
-        k = rope_apply(k, freqs, self.num_heads)
+        rope = prepare_rope(freqs, q.device, q.dtype)
+        q = apply_prepared_rope(q, rope, self.num_heads)
+        k = apply_prepared_rope(k, rope, self.num_heads)
         x = run_attention(
             q=q,
             k=k,
@@ -209,6 +199,8 @@ class WanGateModule(nn.Module):
         return x + gate * residual
 
 class WanDiTBlock(nn.Module):
+    uses_mixed_attention_api = False
+
     def __init__(
         self,
         hidden_dim: int,
@@ -247,17 +239,9 @@ class WanDiTBlock(nn.Module):
         self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
         context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ):
-        if isinstance(context_mask, torch.Tensor) and context_mask.dim() == 3:
-            context_mask = context_mask.unsqueeze(1)
-        has_seq = len(t_mod.shape) == 4
-        chunk_dim = 2 if has_seq else 1
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-            self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=chunk_dim)
-        if has_seq:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-                shift_msa.squeeze(2), scale_msa.squeeze(2), gate_msa.squeeze(2),
-                shift_mlp.squeeze(2), scale_mlp.squeeze(2), gate_mlp.squeeze(2),
-            )
+            self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod
+        ).unbind(dim=2)
         input_x = modulate(self.norm1(x), shift_msa, scale_msa)
         x = self.gate(x, gate_msa, self.self_attn(input_x, freqs, self_attn_mask=self_attn_mask))
         x = x + self.cross_attn(
@@ -298,12 +282,11 @@ class WanHead(nn.Module):
         self.modulation = nn.Parameter(torch.randn(1, 2, dim) / dim**0.5)
 
     def condition_tokens(self, x: torch.Tensor, t_mod: torch.Tensor) -> torch.Tensor:
-        if len(t_mod.shape) == 3:
-            shift, scale = (self.modulation.unsqueeze(0).to(dtype=t_mod.dtype, device=t_mod.device) + t_mod.unsqueeze(2)).chunk(2, dim=2)
-            return self.norm(x) * (1 + scale.squeeze(2)) + shift.squeeze(2)
-        else:
-            shift, scale = (self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(2, dim=1)
-            return self.norm(x) * (1 + scale) + shift
+        shift, scale = (
+            self.modulation.unsqueeze(0).to(dtype=t_mod.dtype, device=t_mod.device)
+            + t_mod.unsqueeze(2)
+        ).unbind(dim=2)
+        return self.norm(x) * (1 + scale) + shift
 
     def forward(self, x, t_mod):
         return self.head(self.condition_tokens(x, t_mod))
@@ -311,6 +294,7 @@ class WanHead(nn.Module):
 
 class WanVideoDiT(torch.nn.Module):
     block_protocol = BLOCK_PROTOCOL_MAIN
+    backbone_name = "wan22"
 
     def __init__(
         self,
@@ -340,6 +324,7 @@ class WanVideoDiT(torch.nn.Module):
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.context_dim = hidden_dim
         self.in_dim = in_dim
         self.freq_dim = freq_dim
         self.patch_size = patch_size
@@ -468,6 +453,7 @@ class WanVideoDiT(torch.nn.Module):
             timestep = timestep.expand(batch_size)
         return x, timestep, context_mask
 
+    @cache_static_method("video_attention_mask_mode")
     def build_video_to_video_mask(
         self,
         video_seq_len: int,
@@ -504,6 +490,7 @@ class WanVideoDiT(torch.nn.Module):
 
         raise ValueError(f"Unsupported video attention mask mode: {self.video_attention_mask_mode}")
 
+    @cache_static_method("video_attention_mask_mode")
     def build_structured_video_attention_mask(
         self,
         video_seq_len: int,
@@ -538,6 +525,19 @@ class WanVideoDiT(torch.nn.Module):
             device=device,
         )
 
+    @cache_static_method("freqs")
+    def _video_freqs(self, f, h, w, device):
+        return torch.cat([
+            self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
+            self.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
+            self.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1),
+        ], dim=-1).reshape(f * h * w, 1, -1).to(device)
+
+    @cache_static_method("freqs")
+    def _prepare_video_rope(self, f, h, w, device, dtype):
+        freqs = self._video_freqs(f, h, w, device)
+        return freqs, prepare_rope(freqs, device, dtype)
+
     def pre_dit(
         self,
         x: torch.Tensor,
@@ -549,6 +549,7 @@ class WanVideoDiT(torch.nn.Module):
         context_is_projected: bool = False,
         cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
         freqs_override: Optional[torch.Tensor] = None,
+        prepare_rotary_factors: bool = True,
     ) -> Dict[str, Any]:
         x, timestep, context_mask = self._validate_forward_inputs(
             x=x,
@@ -571,9 +572,6 @@ class WanVideoDiT(torch.nn.Module):
         tokens_per_frame = (x.shape[3] // patch_h) * (x.shape[4] // patch_w)
 
         if self.seperated_timestep and fuse_vae_embedding_in_latents:
-            if not hasattr(self, "patch_size") or len(self.patch_size) < 3:
-                raise ValueError(f"Invalid dit.patch_size: {getattr(self, 'patch_size', None)}")
-            
             token_timesteps = torch.ones(
                 (batch_size, x.shape[2], tokens_per_frame),
                 dtype=timestep.dtype,
@@ -586,8 +584,6 @@ class WanVideoDiT(torch.nn.Module):
             t_mod = self.time_projection(t).unflatten(2, (6, self.hidden_dim))
         else:
             raise NotImplementedError("Only support seperated_timestep with fuse_vae_embedding_in_latents for now.")
-            t = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, timestep))
-            t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
         x = self.patchify(x, control_camera_latents_input=control_camera_latents_input)
         f, h, w = x.shape[2:]
 
@@ -596,13 +592,14 @@ class WanVideoDiT(torch.nn.Module):
 
         freqs = freqs_override
         if freqs is None:
-            freqs = torch.cat([
-                self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
-                self.freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
-                self.freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1)
-            ], dim=-1).reshape(f * h * w, 1, -1).to(x_tokens.device)
+            if prepare_rotary_factors:
+                freqs, rope = self._prepare_video_rope(f, h, w, x_tokens.device, x_tokens.dtype)
+            else:
+                freqs = self._video_freqs(f, h, w, x_tokens.device)
+        elif prepare_rotary_factors:
+            rope = prepare_rope(freqs, x_tokens.device, x_tokens.dtype)
 
-        return {
+        pre_state = {
             "tokens": x_tokens,
             "freqs": freqs,
             "t": t,
@@ -616,12 +613,27 @@ class WanVideoDiT(torch.nn.Module):
                 "batch_size": batch_size,
             },
         }
+        if prepare_rotary_factors:
+            pre_state["rope"] = rope
+        return pre_state
 
     def post_dit(self, x_tokens: torch.Tensor, pre_state: Dict[str, Any]) -> torch.Tensor:
         f, h, w = pre_state["meta"]["grid_size"]
         x = self.head(x_tokens, pre_state["t"])
         x = self.unpatchify(x, (f, h, w))
         return x
+
+    def _combine_unified_rope(self, video_freqs, action_len, state_len, device, dtype):
+        parts = [video_freqs, self.freqs_aux[:action_len].view(action_len, 1, -1).to(device)]
+        if state_len:
+            parts.append(self.freqs_aux[:state_len].view(state_len, 1, -1).to(device))
+        freqs = torch.cat(parts, dim=0)
+        return freqs, prepare_rope(freqs, device, dtype)
+
+    @cache_static_method("freqs", "freqs_aux")
+    def _prepare_unified_rope(self, f, h, w, action_len, state_len, device, dtype):
+        freqs = self._video_freqs(f, h, w, device)
+        return self._combine_unified_rope(freqs, action_len, state_len, device, dtype)
 
     def pre_unified_dit(
         self,
@@ -647,6 +659,7 @@ class WanVideoDiT(torch.nn.Module):
             context_is_projected=context_is_projected,
             cross_kv_cache=cross_kv_cache,
             freqs_override=freqs_override,
+            prepare_rotary_factors=False,
         )
         video_len = video["tokens"].shape[1]
         action_len = action_tokens.shape[1]
@@ -677,29 +690,30 @@ class WanVideoDiT(torch.nn.Module):
         token_parts = [video["tokens"], action_tokens]
         time_parts = [video["t"], action_t]
         modulation_parts = [video["t_mod"], action_t_mod]
-        frequency_parts = [
-            video["freqs"],
-            self.freqs_aux[:action_len].view(action_len, 1, -1).to(action_tokens.device),
-        ]
+
         if state_position == "sequence":
             state_t, state_t_mod = _aux_time(timestep_state, state_len)
             token_parts.append(state_tokens)
             time_parts.append(state_t)
             modulation_parts.append(state_t_mod)
-            frequency_parts.append(
-                self.freqs_aux[:state_len].view(state_len, 1, -1).to(state_tokens.device)
-            )
+
         tokens = torch.cat(token_parts, dim=1)
         video["tokens"] = tokens
         video["t"] = torch.cat(time_parts, dim=1)
         video["t_mod"] = torch.cat(modulation_parts, dim=1)
-        video["freqs"] = torch.cat(frequency_parts, dim=0)
+        rope_state_len = state_len if state_position == "sequence" else 0
+        if freqs_override is None:
+            video["freqs"], video["rope"] = self._prepare_unified_rope(
+                *video["meta"]["grid_size"], action_len, rope_state_len, tokens.device, tokens.dtype
+            )
+        else:
+            video["freqs"], video["rope"] = self._combine_unified_rope(
+                video["freqs"], action_len, rope_state_len, tokens.device, tokens.dtype
+            )
 
         if state_position == "context":
             video["context"] = torch.cat([video["context"], state_tokens], dim=1)
             if video["context_mask"] is not None:
-                if not isinstance(video["context_mask"], KeyPaddingMask):
-                    raise TypeError("Expected a key-padding mask before appending state context.")
                 state_mask = torch.ones(
                     state_tokens.shape[:2], dtype=torch.bool, device=state_tokens.device
                 )
@@ -757,7 +771,7 @@ class WanVideoDiT(torch.nn.Module):
             tokens,
             pre_state["context"],
             pre_state["t_mod"],
-            pre_state["freqs"],
+            pre_state.get("rope", pre_state["freqs"]),
             context_mask=pre_state["context_mask"],
             self_attn_mask=self_attn_mask,
             context_kv=(
@@ -785,7 +799,7 @@ class WanVideoDiT(torch.nn.Module):
         x_tokens = pre_state["tokens"]
         context_emb = pre_state["context"]
         t_mod = pre_state["t_mod"]
-        freqs = pre_state["freqs"]
+        freqs = pre_state.get("rope", pre_state["freqs"])
         context_attn_mask = pre_state["context_mask"]
         self_attn_mask = self.build_structured_video_attention_mask(
             video_seq_len=x_tokens.shape[1],

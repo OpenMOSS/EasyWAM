@@ -7,13 +7,14 @@ from einops import rearrange
 
 from ..backbone.protocol import BLOCK_PROTOCOL_MAIN
 
+from model.helpers.rope import apply_prepared_rope, prepare_rope, rope_apply
 from utils.logging_config import get_logger
 
 from ..helpers.gradient import gradient_checkpoint_forward
 from .attention import (
     KeyPaddingMask,
     StructuredAttentionMask,
-    elide_fully_valid_attention_mask,
+    prepare_key_padding_mask,
     require_attention_backend,
     run_attention,
 )
@@ -40,19 +41,6 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
     freqs = torch.outer(torch.arange(end, device=freqs.device), freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
-
-
-def rope_apply(x, freqs, num_heads):
-    xh = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
-    x1, x2 = xh.reshape(*xh.shape[:-1], -1, 2).unbind(-1)
-    freqs = freqs.to(device=x.device)
-    cos = freqs.real.to(dtype=xh.dtype)
-    sin = freqs.imag.to(dtype=xh.dtype)
-    out = torch.stack(
-        (x1 * cos - x2 * sin, x1 * sin + x2 * cos),
-        dim=-1,
-    )
-    return out.flatten(-2).flatten(2)
 
 
 class ActionSelfAttention(nn.Module):
@@ -87,8 +75,9 @@ class ActionSelfAttention(nn.Module):
         q = self.norm_q(self.q(x))
         k = self.norm_k(self.k(x))
         v = self.v(x)
-        q = rope_apply(q, freqs, self.num_heads)
-        k = rope_apply(k, freqs, self.num_heads)
+        rope = prepare_rope(freqs, q.device, q.dtype)
+        q = apply_prepared_rope(q, rope, self.num_heads)
+        k = apply_prepared_rope(k, rope, self.num_heads)
         x = run_attention(
             q=q,
             k=k,
@@ -164,6 +153,8 @@ class ActionGateModule(nn.Module):
         return x + gate * residual
 
 class ActionDiTBlock(nn.Module):
+    uses_mixed_attention_api = False
+
     def __init__(
         self,
         hidden_dim: int,
@@ -202,17 +193,9 @@ class ActionDiTBlock(nn.Module):
         self_attn_mask: Optional[torch.Tensor | StructuredAttentionMask] = None,
         context_kv: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
     ):
-        if isinstance(context_mask, torch.Tensor) and context_mask.dim() == 3:
-            context_mask = context_mask.unsqueeze(1)
-        has_seq = len(t_mod.shape) == 4
-        chunk_dim = 2 if has_seq else 1
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-            self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=chunk_dim)
-        if has_seq:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-                shift_msa.squeeze(2), scale_msa.squeeze(2), gate_msa.squeeze(2),
-                shift_mlp.squeeze(2), scale_mlp.squeeze(2), gate_mlp.squeeze(2),
-            )
+            self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod
+        ).unbind(dim=2)
         input_x = modulate(self.norm1(x), shift_msa, scale_msa)
         x = self.gate(x, gate_msa, self.self_attn(input_x, freqs, self_attn_mask=self_attn_mask))
         x = x + self.cross_attn(
@@ -530,6 +513,7 @@ class ActionDiT(nn.Module):
         context_mask: Optional[torch.Tensor] = None,
         context_is_projected: bool = False,
         cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        prepare_rotary_factors: bool = True,
     ) -> Dict[str, Any]:
         if action_tokens.ndim != 3:
             raise ValueError(
@@ -575,19 +559,14 @@ class ActionDiT(nn.Module):
             )
 
         t = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, timestep))
-        t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
+        t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim)).unsqueeze(1)
 
         tokens = self.action_encoder(action_tokens)
         context_emb = context if context_is_projected else self.project_context(context)
-        context_mask = elide_fully_valid_attention_mask(context_mask)
-        context_attn_mask = (
-            None
-            if context_mask is None
-            else KeyPaddingMask.from_tensor(context_mask)
-        )
+        context_attn_mask = prepare_key_padding_mask(context_mask)
         freqs = self.freqs[:seq_len].view(seq_len, 1, -1).to(tokens.device)
 
-        return {
+        pre_state = {
             "tokens": tokens,
             "freqs": freqs,
             "t": t,
@@ -600,6 +579,9 @@ class ActionDiT(nn.Module):
                 "seq_len": seq_len,
             },
         }
+        if prepare_rotary_factors:
+            pre_state["rope"] = prepare_rope(freqs, tokens.device, tokens.dtype)
+        return pre_state
 
     def post_dit(self, tokens: torch.Tensor, pre_state: Dict[str, Any]) -> torch.Tensor:
         action_len = int(pre_state.get("meta", {}).get("action_len", tokens.shape[1]))
@@ -637,9 +619,11 @@ class ActionDiT(nn.Module):
         pre_state["freqs"] = self.freqs[:total_len].view(total_len, 1, -1).to(
             action_tokens.device
         )
+        if "rope" in pre_state:
+            pre_state["rope"] = prepare_rope(pre_state["freqs"], action_tokens.device, action_tokens.dtype)
         pre_state["t_mod"] = torch.cat(
             [
-                action_t_mod[:, None].expand(-1, action_len, -1, -1),
+                action_t_mod.expand(-1, action_len, -1, -1),
                 state_t_mod[:, None].expand(-1, state_len, -1, -1),
             ],
             dim=1,
@@ -665,7 +649,7 @@ class ActionDiT(nn.Module):
         x = pre_state["tokens"]
         context = pre_state["context"]
         t_mod = pre_state["t_mod"]
-        freqs = pre_state["freqs"]
+        freqs = pre_state.get("rope", pre_state["freqs"])
         context_mask = pre_state["context_mask"]
 
         cross_kv_cache = pre_state.get("cross_kv_cache")

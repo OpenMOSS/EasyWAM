@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from model.helpers.static_cache import cache_static_method
 from utils.logging_config import get_logger
 
 from .component.action_dit import (
@@ -18,15 +19,22 @@ from .component.attention import (
     StructuredAttentionMask,
     build_structured_attention_mask,
     elide_fully_valid_attention_mask,
+    prepare_key_padding_mask,
 )
 from .backbone.wan22 import load_wan22_ti2v_5b_components
 from .schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
 from .schedulers.scheduler_flow_unipc import FlowUniPCScheduler
 from .helpers.batching import (
+    ActionInferenceResult,
+    JointInferenceResult,
+    ActionBatchResult,
+    JointBatchResult,
     decode_video_batch,
     encode_image_batch,
     randn_per_sample,
-    validate_single_inference_image,
+    batch_single_tensor,
+    batch_single_state,
+    validate_batch_inputs,
 )
 
 logger = get_logger(__name__)
@@ -57,14 +65,21 @@ class EasyWAMUnified(nn.Module):
         video_scheduler_config: Optional[dict[str, Any]] = None,
     ):
         super().__init__()
-        self.backbone_name = getattr(video_dit, "backbone_name", "wan22")
+        self.inference_cross_kv_reuse = False
+        self.backbone_name = video_dit.backbone_name
+        if not hasattr(video_dit, "pre_unified_dit") or not hasattr(
+            video_dit, "post_unified_dit"
+        ):
+            raise TypeError(
+                f"Backbone {type(video_dit).__name__} does not implement the Unified staged API."
+            )
         self.action_dim = int(action_dim)
         self.state_dim = int(state_dim)
         self.state_position = normalize_state_position(state_position)
         self.projector_hidden_dim = int(projector_hidden_dim)
 
         self.hidden_dim = int(video_dit.hidden_dim)
-        self.context_dim = int(getattr(video_dit, "text_dim", self.hidden_dim))
+        self.context_dim = int(video_dit.context_dim)
         self.freq_dim = int(video_dit.freq_dim)
         self.num_heads = int(video_dit.num_heads)
         self.attn_head_dim = int(video_dit.attn_head_dim)
@@ -206,6 +221,10 @@ class EasyWAMUnified(nn.Module):
             device=device,
         )
 
+    @cache_static_method()
+    def _cached_single_chunk_mask(self, **kwargs):
+        return self._build_single_chunk_mask(**kwargs)
+
     def _forward_dit(
         self,
         x: torch.Tensor,
@@ -218,6 +237,7 @@ class EasyWAMUnified(nn.Module):
         fuse_vae_embedding_in_latents: bool = True,
         projected_context: Optional[torch.Tensor] = None,
         cross_kv_cache: Optional[tuple[tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        prepared_state_tokens: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         del fuse_vae_embedding_in_latents
         if x.ndim != 5:
@@ -226,37 +246,21 @@ class EasyWAMUnified(nn.Module):
             raise ValueError(
                 f"`action` must be [B,T,{self.action_dim}], got {tuple(action.shape)}"
             )
-        if state.ndim == 2:
-            state = state.unsqueeze(1)
         if state.ndim != 3 or state.shape[2] != self.state_dim:
             raise ValueError(f"`state` must be [B,S,{self.state_dim}], got {tuple(state.shape)}")
         if context.ndim != 3:
             raise ValueError(f"`context` must be [B,L,D], got {tuple(context.shape)}")
 
         batch_size = x.shape[0]
-        if timestep_video.ndim == 0:
-            timestep_video = timestep_video.reshape(1)
-        if timestep_action.ndim == 0:
-            timestep_action = timestep_action.reshape(1)
-        if timestep_video.shape[0] == 1 and batch_size > 1:
-            timestep_video = timestep_video.expand(batch_size)
-        if timestep_action.shape[0] == 1 and batch_size > 1:
-            timestep_action = timestep_action.expand(batch_size)
-        if timestep_video.shape[0] != batch_size or timestep_action.shape[0] != batch_size:
+        if timestep_video.shape != (batch_size,) or timestep_action.shape != (batch_size,):
             raise ValueError("Video/action timestep batch size must match input batch size.")
         if context_mask is not None:
             context_mask = context_mask.to(device=x.device, dtype=torch.bool)
 
         action_tokens = self.dit["action_encoder"](action)
-        state_tokens = self.dit["state_encoder"](
-            state.to(device=x.device, dtype=x.dtype)
-        )
-        if not hasattr(self.video_dit, "pre_unified_dit") or not hasattr(
-            self.video_dit, "post_unified_dit"
-        ):
-            raise TypeError(
-                f"Backbone {type(self.video_dit).__name__} does not implement the Unified staged API."
-            )
+        state_tokens = prepared_state_tokens
+        if state_tokens is None:
+            state_tokens = self.dit["state_encoder"](state.to(device=x.device, dtype=x.dtype))
         pre = self.video_dit.pre_unified_dit(
             x=x,
             timestep_video=timestep_video.to(device=x.device, dtype=x.dtype),
@@ -273,7 +277,7 @@ class EasyWAMUnified(nn.Module):
         tokens = pre["tokens"]
         video_len = int(pre["meta"]["video_len"])
         tokens_per_frame = int(pre["meta"]["tokens_per_frame"])
-        attention_mask = self._build_single_chunk_mask(
+        attention_mask = self._cached_single_chunk_mask(
             clean_video_len=tokens_per_frame,
             future_video_len=video_len - tokens_per_frame,
             action_len=action_tokens.shape[1],
@@ -627,20 +631,8 @@ class EasyWAMUnified(nn.Module):
         context: Optional[torch.Tensor],
         context_mask: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        use_prompt = prompt is not None
-        use_context = context is not None or context_mask is not None
-        if use_prompt and use_context:
-            raise ValueError("`prompt` and `context/context_mask` are mutually exclusive.")
-        if not use_prompt and not use_context:
-            raise ValueError("Either `prompt` or both `context/context_mask` must be provided.")
-        if use_prompt:
+        if prompt is not None:
             return self.encode_prompt(prompt)
-        if context is None or context_mask is None:
-            raise ValueError("`context` and `context_mask` must be both provided together.")
-        if context.ndim == 2:
-            context = context.unsqueeze(0)
-        if context_mask.ndim == 1:
-            context_mask = context_mask.unsqueeze(0)
         return (
             context.to(device=self.device, dtype=self.torch_dtype, non_blocking=True),
             context_mask.to(device=self.device, dtype=torch.bool, non_blocking=True),
@@ -649,7 +641,7 @@ class EasyWAMUnified(nn.Module):
     @torch.inference_mode()
     def infer_joint_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         num_video_frames: int,
         action_horizon: int,
@@ -665,24 +657,16 @@ class EasyWAMUnified(nn.Module):
         rand_device: str = "cpu",
         decode_video: bool = True,
         **kwargs,
-    ) -> dict[str, Any]:
+    ) -> JointBatchResult:
+        validate_batch_inputs(input_image, prompt, context, context_mask)
         del action, negative_prompt, text_cfg_scale, kwargs
         self.eval()
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[1] != 3:
-            raise ValueError(f"`input_image` must be [B,3,H,W] or [3,H,W], got {tuple(input_image.shape)}")
         batch_size = int(input_image.shape[0])
         if proprio is None:
             raise ValueError("EasyWAM-Unified inference requires `proprio` as state.")
-        if proprio.ndim == 1:
-            proprio = proprio.view(1, 1, -1)
-        elif proprio.ndim == 2:
-            if proprio.shape[0] == batch_size:
-                proprio = proprio.unsqueeze(1)
-            elif batch_size == 1:
-                proprio = proprio.unsqueeze(0)
-        if proprio.ndim != 3 or proprio.shape[0] != batch_size:
+        if proprio.ndim == 2:
+            proprio = proprio.unsqueeze(1)
+        if proprio.ndim != 3 or proprio.shape[0] != batch_size or proprio.shape[1] == 0 or proprio.shape[-1] != self.state_dim:
             raise ValueError(f"`proprio` must be [B,D] or [B,T,D], got {tuple(proprio.shape)}")
 
         _, _, height, width = input_image.shape
@@ -711,15 +695,15 @@ class EasyWAMUnified(nn.Module):
         latents_video[:, :, 0:1] = first_frame_latents
         state = proprio[:, 0:1].to(device=self.device, dtype=self.torch_dtype)
         context, context_mask = self._prepare_context(prompt, context, context_mask)
-        if context.shape[0] != batch_size or context_mask.shape[0] != batch_size:
-            raise ValueError("Context batch size must match input_image batch size.")
         projected_context = self.video_dit.project_context(context)
         cross_kv_cache = None
-        if bool(getattr(self, "inference_cross_kv_reuse", False)):
+        if self.inference_cross_kv_reuse:
             cross_kv_cache = self.video_dit.build_cross_attention_kv_cache(
                 projected_context
             )
 
+        context_mask = prepare_key_padding_mask(context_mask)
+        prepared_state_tokens = self.dit["state_encoder"](state)
         infer_timesteps, infer_deltas = self.scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
             device=self.device,
@@ -741,6 +725,7 @@ class EasyWAMUnified(nn.Module):
                 context_mask=context_mask,
                 projected_context=projected_context,
                 cross_kv_cache=cross_kv_cache,
+                prepared_state_tokens=prepared_state_tokens,
             )
             pred_video[:, :, 0:1] = 0
             if isinstance(self.scheduler, FlowUniPCScheduler):
@@ -765,7 +750,7 @@ class EasyWAMUnified(nn.Module):
     @torch.inference_mode()
     def infer_action_batch(
         self,
-        prompt: Optional[Union[str, Sequence[str]]],
+        prompt: Optional[Sequence[str]],
         input_image: torch.Tensor,
         action_horizon: int,
         proprio: Optional[torch.Tensor] = None,
@@ -773,7 +758,7 @@ class EasyWAMUnified(nn.Module):
         context_mask: Optional[torch.Tensor] = None,
         num_video_frames: int = 5,
         **kwargs,
-    ) -> dict[str, Any]:
+    ) -> ActionBatchResult:
         kwargs.pop("decode_video", None)
         out = self.infer_joint_batch(
             prompt=prompt,
@@ -789,18 +774,79 @@ class EasyWAMUnified(nn.Module):
         return {"action": out["action"]}
 
     @torch.inference_mode()
-    def infer_joint(self, *args, **kwargs) -> dict[str, Any]:
-        validate_single_inference_image(args, kwargs)
-        result = self.infer_joint_batch(*args, **kwargs)
+    def infer_joint(
+        self,
+        prompt: Optional[str],
+        input_image: torch.Tensor,
+        num_video_frames: int,
+        action_horizon: int,
+        action: Optional[torch.Tensor] = None,
+        proprio: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
+        context_mask: Optional[torch.Tensor] = None,
+        negative_prompt: Optional[str] = None,
+        text_cfg_scale: float = 1.0,
+        num_inference_steps: int = 20,
+        sigma_shift: Optional[float] = None,
+        seed: Optional[int] = None,
+        rand_device: str = "cpu",
+        decode_video: bool = True,
+        **kwargs,
+    ) -> JointInferenceResult:
+        input_image = batch_single_tensor(input_image, 3, "input_image")
+        proprio = batch_single_state(proprio, history=True)
+        context = batch_single_tensor(context, 2, "context")
+        context_mask = batch_single_tensor(context_mask, 1, "context_mask")
+        action = batch_single_tensor(action, 2, "action")
+        result = self.infer_joint_batch(
+            prompt=[prompt] if prompt is not None else None,
+            input_image=input_image,
+            num_video_frames=num_video_frames,
+            action_horizon=action_horizon,
+            action=action,
+            proprio=proprio,
+            context=context,
+            context_mask=context_mask,
+            negative_prompt=negative_prompt,
+            text_cfg_scale=text_cfg_scale,
+            num_inference_steps=num_inference_steps,
+            sigma_shift=sigma_shift,
+            seed=seed,
+            rand_device=rand_device,
+            decode_video=decode_video,
+            **kwargs,
+        )
         result["action"] = result["action"][0]
-        if "video" in result and result["video"] and isinstance(result["video"][0], list):
+        if "video" in result:
             result["video"] = result["video"][0]
         return result
 
     @torch.inference_mode()
-    def infer_action(self, *args, **kwargs) -> dict[str, Any]:
-        validate_single_inference_image(args, kwargs)
-        result = self.infer_action_batch(*args, **kwargs)
+    def infer_action(
+        self,
+        prompt: Optional[str],
+        input_image: torch.Tensor,
+        action_horizon: int,
+        proprio: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
+        context_mask: Optional[torch.Tensor] = None,
+        num_video_frames: int = 5,
+        **kwargs,
+    ) -> ActionInferenceResult:
+        input_image = batch_single_tensor(input_image, 3, "input_image")
+        proprio = batch_single_state(proprio, history=True)
+        context = batch_single_tensor(context, 2, "context")
+        context_mask = batch_single_tensor(context_mask, 1, "context_mask")
+        result = self.infer_action_batch(
+            prompt=[prompt] if prompt is not None else None,
+            input_image=input_image,
+            action_horizon=action_horizon,
+            proprio=proprio,
+            context=context,
+            context_mask=context_mask,
+            num_video_frames=num_video_frames,
+            **kwargs,
+        )
         return {"action": result["action"][0]}
 
     @torch.inference_mode()

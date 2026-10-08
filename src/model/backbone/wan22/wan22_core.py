@@ -7,6 +7,7 @@ from typing import Any, Optional, Sequence, Union
 
 from .loader import load_wan22_ti2v_5b_components
 from ...schedulers.scheduler_continuous import ContinuousFlowMatchScheduler
+from ...helpers.batching import encode_image_batch
 from .wan_video_dit import WanVideoDiT
 
 
@@ -110,18 +111,8 @@ class Wan22Core(torch.nn.Module):
         z = self.vae.encode(video_tensor, device=self.device)
         return z
 
-    def _encode_input_image_latents_tensor(self, input_image: torch.Tensor):
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
-            raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
-            )
-        image = input_image.to(device=self.device)[0].unsqueeze(1)
-        z = self.vae.encode([image], device=self.device)
-        if isinstance(z, list):
-            z = z[0].unsqueeze(0)
-        return z
+    def _encode_input_image_latents_tensor(self, input_image: torch.Tensor) -> torch.Tensor:
+        return encode_image_batch(self.vae, input_image, self.device)
 
     def _decode_latents(self, latents):
         video_tensor = self.vae.decode(latents, device=self.device)

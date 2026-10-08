@@ -21,8 +21,7 @@ def _rope_apply(x: torch.Tensor, freqs: torch.Tensor, num_heads: int) -> torch.T
     x = x.view(b, s, num_heads, -1)
     x_complex = torch.view_as_complex(x.float().reshape(b, s, num_heads, -1, 2))
     freqs = freqs.to(device=x.device)
-    if freqs.ndim == 3:
-        freqs = freqs.squeeze(1)
+    freqs = freqs.squeeze(1)
     out = torch.view_as_real(x_complex * freqs[None, :, None]).flatten(3)
     return out.to(x.dtype).reshape(b, s, -1)
 
@@ -42,7 +41,7 @@ class MoT(nn.Module):
         self.expert_order = list(self.mixtures.keys())
 
         first_expert = self.mixtures[self.expert_order[0]]
-        self.block_protocol = str(getattr(first_expert, "block_protocol", BLOCK_PROTOCOL_MAIN))
+        self.block_protocol = str(first_expert.block_protocol)
         if self.block_protocol not in SUPPORTED_BLOCK_PROTOCOLS:
             raise ValueError(f"Unsupported MoT block protocol: {self.block_protocol!r}")
         self.num_layers = len(first_expert.blocks)
@@ -52,7 +51,7 @@ class MoT(nn.Module):
 
         for name in self.expert_order[1:]:
             expert = self.mixtures[name]
-            expert_protocol = str(getattr(expert, "block_protocol", BLOCK_PROTOCOL_MAIN))
+            expert_protocol = str(expert.block_protocol)
             if expert_protocol != self.block_protocol:
                 raise ValueError(
                     f"All experts must use the same block protocol; got {self.block_protocol!r} "
@@ -80,13 +79,13 @@ class MoT(nn.Module):
         self.double_layers = 0
         self.single_layers = 0
         if self.block_protocol == BLOCK_PROTOCOL_FLUX2:
-            self.double_layers = int(getattr(first_expert, "double_layers"))
-            self.single_layers = int(getattr(first_expert, "single_layers"))
+            self.double_layers = int(first_expert.double_layers)
+            self.single_layers = int(first_expert.single_layers)
             for name in self.expert_order[1:]:
                 expert = self.mixtures[name]
-                if int(getattr(expert, "double_layers")) != self.double_layers:
+                if int(expert.double_layers) != self.double_layers:
                     raise ValueError("All FLUX.2 experts must have the same double-stage depth.")
-                if int(getattr(expert, "single_layers")) != self.single_layers:
+                if int(expert.single_layers) != self.single_layers:
                     raise ValueError("All FLUX.2 experts must have the same single-stage depth.")
         
         logger.info(
@@ -105,20 +104,10 @@ class MoT(nn.Module):
 
     @staticmethod
     def _split_modulation(block, t_mod: torch.Tensor):
-        has_seq = len(t_mod.shape) == 4
-        chunk_dim = 2 if has_seq else 1
-
         base_mod = block.modulation.to(dtype=t_mod.dtype, device=t_mod.device)
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (base_mod + t_mod).chunk(6, dim=chunk_dim)
-        if has_seq:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-                shift_msa.squeeze(2),
-                scale_msa.squeeze(2),
-                gate_msa.squeeze(2),
-                shift_mlp.squeeze(2),
-                scale_mlp.squeeze(2),
-                gate_mlp.squeeze(2),
-            )
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+            base_mod + t_mod
+        ).unbind(dim=2)
         return shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp
 
     def _mixed_attention(
@@ -172,8 +161,6 @@ class MoT(nn.Module):
             if context is not None:
                 context_mask = context_payload.get("mask")
                 context_kv = context_payload.get("kv")
-                if context_mask is not None and context_mask.dim() == 3:
-                    context_mask = context_mask.unsqueeze(1)
                 x = x + block.cross_attn(
                     block.norm3(x),
                     context,
@@ -201,7 +188,7 @@ class MoT(nn.Module):
         torch.Tensor,
         torch.Tensor,
     ]:
-        if hasattr(block, "prepare_mixed_attention"):
+        if block.uses_mixed_attention_api:
             q, k, v, state = block.prepare_mixed_attention(
                 x,
                 t_mod["embedding"],
@@ -243,7 +230,7 @@ class MoT(nn.Module):
         mixed_slice: torch.Tensor,
         context_payload: Optional[dict],
     ) -> torch.Tensor:
-        if hasattr(block, "finish_mixed_attention"):
+        if block.uses_mixed_attention_api:
             context = None if context_payload is None else context_payload.get("context")
             context_mask = None if context_payload is None else context_payload.get("mask")
             context_kv = None if context_payload is None else context_payload.get("kv")
@@ -467,7 +454,7 @@ class MoT(nn.Module):
 
         tokens_all = {k: v for k, v in embeds_all.items()}
         use_gradient_checkpointing = any(
-            bool(getattr(expert, "use_gradient_checkpointing", False))
+            expert.use_gradient_checkpointing
             for expert in self.mixtures.values()
         )
 
@@ -740,13 +727,7 @@ class MoT(nn.Module):
         total_seq_len = int(video_seq_len) + action_seq_len
 
         def _action_rows(mask: torch.Tensor) -> torch.Tensor:
-            if mask.ndim == 2:
-                return mask[video_seq_len:total_seq_len, :total_seq_len]
-            if mask.ndim == 3:
-                return mask[:, video_seq_len:total_seq_len, :total_seq_len]
-            if mask.ndim == 4:
-                return mask[:, :, video_seq_len:total_seq_len, :total_seq_len]
-            raise ValueError(f"Unsupported FLUX.2 attention mask rank: {mask.ndim}")
+            return mask[:, video_seq_len:total_seq_len, :total_seq_len]
 
         double_mask = _action_rows(attention_mask["double_joint"])
         for layer_idx, cache in enumerate(video_kv_cache["double"]):

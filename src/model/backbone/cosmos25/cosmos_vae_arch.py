@@ -493,7 +493,7 @@ class CosmosTokenizerNetwork(nn.Module):
         x_recon = self.decode(z)
         return x_recon, mu, log_var
 
-    def encode(self, x, scale):
+    def encode(self, x: torch.Tensor, scale: tuple[torch.Tensor, torch.Tensor] | list[torch.Tensor]):
         self.clear_cache()
         t = x.shape[2]
         iter_ = 1 + (t - 1) // 4
@@ -510,24 +510,18 @@ class CosmosTokenizerNetwork(nn.Module):
                                     feat_idx=self._enc_conv_idx)
                 out = torch.cat([out, out_], 2)
         mu, log_var = self.conv1(out).chunk(2, dim=1)
-        if isinstance(scale[0], torch.Tensor):
-            scale = [s.to(dtype=mu.dtype, device=mu.device) for s in scale]
-            mu = (mu - scale[0].view(1, self.z_dim, 1, 1, 1)) * scale[1].view(
-                1, self.z_dim, 1, 1, 1)
-        else:
-            scale = scale.to(dtype=mu.dtype, device=mu.device)
-            mu = (mu - scale[0]) * scale[1]
+        mean, inv_std = scale
+        mean = mean.to(dtype=mu.dtype, device=mu.device)
+        inv_std = inv_std.to(dtype=mu.dtype, device=mu.device)
+        mu = (mu - mean.view(1, self.z_dim, 1, 1, 1)) * inv_std.view(1, self.z_dim, 1, 1, 1)
         return mu
 
-    def decode(self, z, scale):
+    def decode(self, z: torch.Tensor, scale: tuple[torch.Tensor, torch.Tensor] | list[torch.Tensor]):
         self.clear_cache()
-        if isinstance(scale[0], torch.Tensor):
-            scale = [s.to(dtype=z.dtype, device=z.device) for s in scale]
-            z = z / scale[1].view(1, self.z_dim, 1, 1, 1) + scale[0].view(
-                1, self.z_dim, 1, 1, 1)
-        else:
-            scale = scale.to(dtype=z.dtype, device=z.device)
-            z = z / scale[1] + scale[0]
+        mean, inv_std = scale
+        mean = mean.to(dtype=z.dtype, device=z.device)
+        inv_std = inv_std.to(dtype=z.dtype, device=z.device)
+        z = z / inv_std.view(1, self.z_dim, 1, 1, 1) + mean.view(1, self.z_dim, 1, 1, 1)
         iter_ = z.shape[2]
         x = self.conv2(z)
         for i in range(iter_):

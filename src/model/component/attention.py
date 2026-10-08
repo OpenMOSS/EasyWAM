@@ -86,22 +86,42 @@ class KeyPaddingMask:
         return KeyPaddingMask(valid, indices, cu_seqlens, self.max_seqlen)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class StructuredAttentionMask:
-    dense: torch.Tensor
+    _dense: Optional[torch.Tensor]
     segments: tuple[AttentionSegment, ...]
+    _shape: torch.Size
+    _device: torch.device
+    _dtype: torch.dtype
+
+    def __init__(self, dense, segments, *, shape=None, device=None, dtype=torch.bool):
+        object.__setattr__(self, "_dense", dense)
+        object.__setattr__(self, "segments", segments)
+        object.__setattr__(self, "_shape", dense.shape if dense is not None else torch.Size(shape))
+        object.__setattr__(self, "_device", dense.device if dense is not None else torch.device(device))
+        object.__setattr__(self, "_dtype", dense.dtype if dense is not None else dtype)
+
+    @property
+    def dense(self) -> torch.Tensor:
+        if self._dense is None:
+            dense = torch.zeros(self._shape, dtype=self._dtype, device=self._device)
+            for segment in self.segments:
+                for start, end in segment.key_ranges:
+                    dense[segment.query_start:segment.query_end, start:end] = True
+            object.__setattr__(self, "_dense", dense)
+        return self._dense
 
     @property
     def ndim(self) -> int:
-        return self.dense.ndim
+        return len(self._shape)
 
     @property
     def shape(self) -> torch.Size:
-        return self.dense.shape
+        return self._shape
 
     @property
     def is_fully_valid(self) -> bool:
-        key_len = self.dense.shape[1]
+        key_len = self.shape[1]
         cursor = 0
         for segment in self.segments:
             if (
@@ -111,13 +131,24 @@ class StructuredAttentionMask:
             ):
                 return False
             cursor = segment.query_end
-        return cursor == self.dense.shape[0]
+        return cursor == self.shape[0]
 
     def to(self, *args, **kwargs) -> "StructuredAttentionMask":
-        dense = self.dense.to(*args, **kwargs)
-        if dense is self.dense:
+        if self._dense is not None:
+            dense = self._dense.to(*args, **kwargs)
+            return self if dense is self._dense else StructuredAttentionMask(dense, self.segments)
+        if (
+            not args
+            and kwargs.keys() <= {"device", "dtype", "non_blocking"}
+            and isinstance(kwargs.get("non_blocking", False), bool)
+        ):
+            device, dtype = kwargs.get("device"), kwargs.get("dtype")
+            if (device is None or torch.device(device) == self._device) and (dtype is None or dtype == self._dtype):
+                return self
+        target = torch.empty(0, device=self._device, dtype=self._dtype).to(*args, **kwargs)
+        if target.device == self._device and target.dtype == self._dtype and not kwargs.get("copy", False):
             return self
-        return StructuredAttentionMask(dense, self.segments)
+        return StructuredAttentionMask(None, self.segments, shape=self.shape, device=target.device, dtype=target.dtype)
 
     def slice(
         self,
@@ -127,16 +158,16 @@ class StructuredAttentionMask:
         key_end: Optional[int] = None,
     ) -> "StructuredAttentionMask":
         if key_end is None:
-            key_end = self.dense.shape[1]
-        if not (0 <= query_start <= query_end <= self.dense.shape[0]):
+            key_end = self.shape[1]
+        if not (0 <= query_start <= query_end <= self.shape[0]):
             raise ValueError("Invalid structured attention query slice.")
-        if not (0 <= key_start <= key_end <= self.dense.shape[1]):
+        if not (0 <= key_start <= key_end <= self.shape[1]):
             raise ValueError("Invalid structured attention key slice.")
         if (
             query_start == 0
-            and query_end == self.dense.shape[0]
+            and query_end == self.shape[0]
             and key_start == 0
-            and key_end == self.dense.shape[1]
+            and key_end == self.shape[1]
         ):
             return self
 
@@ -160,8 +191,11 @@ class StructuredAttentionMask:
                 )
             )
         return StructuredAttentionMask(
-            dense=self.dense[query_start:query_end, key_start:key_end],
+            dense=(None if self._dense is None else self._dense[query_start:query_end, key_start:key_end]),
             segments=tuple(segments),
+            shape=(query_end - query_start, key_end - key_start),
+            device=self._device,
+            dtype=self._dtype,
         )
 
 
@@ -201,11 +235,12 @@ def build_structured_attention_mask(
         raise ValueError("Attention segments must cover every query row.")
 
     normalized_segments = tuple(normalized_segments)
-    dense = torch.zeros((query_len, key_len), dtype=torch.bool, device=device)
-    for segment in normalized_segments:
-        for key_start, key_end in segment.key_ranges:
-            dense[segment.query_start : segment.query_end, key_start:key_end] = True
-    return StructuredAttentionMask(dense=dense, segments=normalized_segments)
+    mask = StructuredAttentionMask(
+        dense=None, segments=normalized_segments, shape=(query_len, key_len), device=device
+    )
+    if torch.compiler.is_compiling():
+        mask.dense
+    return mask
 
 
 def dense_attention_mask(
@@ -235,6 +270,11 @@ def elide_fully_valid_attention_mask(
     ):
         return None
     return mask
+
+
+def prepare_key_padding_mask(mask):
+    mask = elide_fully_valid_attention_mask(mask)
+    return KeyPaddingMask.from_tensor(mask) if isinstance(mask, torch.Tensor) else mask
 
 
 def _load_flash_kernel(backend: str) -> Callable:

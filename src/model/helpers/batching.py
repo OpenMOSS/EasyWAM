@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TypedDict
 
 import torch
 from PIL import Image
+
+
+class ActionInferenceResult(TypedDict):
+    action: torch.Tensor
+
+
+class JointInferenceResult(ActionInferenceResult, total=False):
+    video: list[Image.Image]
+
+
+class ActionBatchResult(TypedDict):
+    action: torch.Tensor
+
+
+class JointBatchResult(ActionBatchResult, total=False):
+    video: list[list[Image.Image]]
 
 
 def normalize_seeds(
@@ -20,12 +37,74 @@ def normalize_seeds(
     return values
 
 
-def validate_single_inference_image(args, kwargs) -> None:
-    image = kwargs.get("input_image")
-    if image is None and len(args) > 1:
-        image = args[1]
-    if isinstance(image, torch.Tensor) and image.ndim == 4 and image.shape[0] != 1:
-        raise ValueError(f"Single-sample inference requires batch size 1, got {image.shape[0]}.")
+def batch_single_tensor(
+    value: torch.Tensor | None, sample_ndim: int, name: str
+) -> torch.Tensor | None:
+    if value is None:
+        return None
+    if not isinstance(value, torch.Tensor):
+        raise TypeError(f"{name} must be a torch.Tensor.")
+    if value.ndim == sample_ndim:
+        return value.unsqueeze(0)
+    if value.ndim != sample_ndim + 1 or value.shape[0] != 1:
+        raise ValueError(
+            f"Single-sample {name} requires rank {sample_ndim} or a batch of size 1, "
+            f"got {tuple(value.shape)}."
+        )
+    return value
+
+
+def batch_single_state(
+    state: torch.Tensor | None, *, history: bool
+) -> torch.Tensor | None:
+    if state is None:
+        return None
+    if not isinstance(state, torch.Tensor):
+        raise TypeError("proprio must be a torch.Tensor.")
+    if history and state.ndim == 1:
+        state = state.unsqueeze(0)
+    return batch_single_tensor(state, 2 if history else 1, "proprio")
+
+
+def validate_batch_inputs(
+    input_image: torch.Tensor,
+    prompt: Sequence[str] | None,
+    context: torch.Tensor | None,
+    context_mask: torch.Tensor | None,
+) -> int:
+    if not isinstance(input_image, torch.Tensor):
+        raise TypeError("input_image must be a torch.Tensor.")
+    if input_image.ndim != 4 or input_image.shape[1] != 3:
+        raise ValueError(f"input_image must be [B,3,H,W], got {tuple(input_image.shape)}.")
+    if not input_image.is_floating_point() or input_image.shape[0] == 0:
+        raise ValueError(
+            "input_image must contain a nonempty batch of normalized floating-point RGB images."
+        )
+    if prompt is None:
+        if context is None or context_mask is None:
+            raise ValueError("Either prompt or both context/context_mask must be provided.")
+    elif context is not None or context_mask is not None:
+        raise ValueError("prompt and context/context_mask are mutually exclusive.")
+    batch_size = input_image.shape[0]
+    if prompt is not None and (isinstance(prompt, str) or len(prompt) != batch_size):
+        raise ValueError(f"Batch prompt must contain {batch_size} strings.")
+    if prompt is not None and any(not isinstance(value, str) for value in prompt):
+        raise TypeError("Batch prompt values must be strings.")
+    if context is not None and (
+        not isinstance(context, torch.Tensor) or not context.is_floating_point()
+    ):
+        raise TypeError("context must be a floating-point torch.Tensor.")
+    if context_mask is not None and (
+        not isinstance(context_mask, torch.Tensor) or context_mask.dtype != torch.bool
+    ):
+        raise TypeError("context_mask must be a bool torch.Tensor.")
+    if context is not None and (context.ndim != 3 or context.shape[0] != batch_size):
+        raise ValueError(f"context must be [B,L,D] with B={batch_size}, got {tuple(context.shape)}.")
+    if context_mask is not None and (context_mask.ndim != 2 or context_mask.shape[0] != batch_size):
+        raise ValueError(f"context_mask must be [B,L] with B={batch_size}, got {tuple(context_mask.shape)}.")
+    if context is not None and context_mask is not None and context.shape[:2] != context_mask.shape:
+        raise ValueError("context_mask must match context batch and sequence dimensions.")
+    return batch_size
 
 
 def randn_per_sample(
@@ -53,23 +132,12 @@ def randn_per_sample(
 
 
 def encode_image_batch(vae, input_image: torch.Tensor, device: torch.device) -> torch.Tensor:
-    if input_image.ndim == 3:
-        input_image = input_image.unsqueeze(0)
-    if input_image.ndim != 4 or input_image.shape[1] != 3:
-        raise ValueError(f"`input_image` must be [B,3,H,W], got {tuple(input_image.shape)}")
-    videos = [image.unsqueeze(1) for image in input_image.to(device=device)]
-    latents = vae.encode(videos, device=device)
-    if isinstance(latents, list):
-        latents = torch.stack(latents, dim=0)
-    return latents
+    videos = input_image.to(device=device).unsqueeze(2)
+    return vae.encode(videos, device=device)
 
 
 def decode_video_batch(vae, latents: torch.Tensor, device: torch.device) -> list[list[Image.Image]]:
     decoded = vae.decode(latents, device=device)
-    if isinstance(decoded, list):
-        decoded = torch.stack(decoded, dim=0)
-    if decoded.ndim == 4:
-        decoded = decoded.unsqueeze(0)
     if decoded.ndim != 5:
         raise ValueError(f"Decoded video must be [B,C,T,H,W], got {tuple(decoded.shape)}")
     decoded = ((decoded.detach().float().clamp(-1, 1) + 1.0) * 127.5).to(torch.uint8).cpu()

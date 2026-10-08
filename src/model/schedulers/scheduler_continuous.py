@@ -41,8 +41,6 @@ class ContinuousFlowMatchScheduler:
         y = torch.exp(-2.0 * ((t - (steps / 2.0)) / steps) ** 2)
         y_shifted = y - self._y_min
         weight = y_shifted / (self._weight_norm_const + self.eps)
-        if weight.numel() == 1:
-            return weight.reshape(())
         return weight
 
     def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
