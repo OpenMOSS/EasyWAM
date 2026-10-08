@@ -48,6 +48,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         max_padding_retry: int = 3,
         concat_multi_camera: str = "horizontal",
         override_instruction: Optional[str] = None,
+        mixed_precision: Optional[str] = None,
     ):
         if num_frames <= 1:
             raise ValueError(f"`num_frames` must be greater than 1, got {num_frames}.")
@@ -92,6 +93,9 @@ class RobotVideoDataset(torch.utils.data.Dataset):
             else Path(text_embedding_cache_dir).expanduser()
         )
         self.text_encoder_id = str(text_encoder_id)
+        self.text_embedding_dtype = (
+            None if mixed_precision is None else pytorch_utils.mixed_precision_to_dtype(mixed_precision)
+        )
         self.context_len = context_len
         self.skip_padding_as_possible = skip_padding_as_possible
         self.max_padding_retry = max_padding_retry
@@ -133,8 +137,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
                     stats_output = os.path.join(work_dir, "dataset_stats.json")
                     shared_resource(("saved_stats", stats_output, str(pretrained_norm_stats)), lambda: save_dataset_stats_to_json(dataset_stats, stats_output))
 
-            if hasattr(processor, "include_gt_action"):
-                processor.include_gt_action = False
+            processor.include_gt_action = False
             processor.set_normalizer_from_stats(dataset_stats)
             self.lerobot_dataset.set_processor(processor)
         
@@ -163,14 +166,7 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         image_is_pad = sample["image_is_pad"]
 
         images = sample["pixel_values"]
-        if isinstance(images, (list, tuple)):
-            cameras = list(images)
-        elif images.ndim == 5:
-            cameras = list(images.unbind(0))
-        elif images.ndim == 4:
-            cameras = [images]
-        else:
-            raise ValueError(f"Expected camera images with 4 or 5 dimensions, got {images.shape}")
+        cameras = self.lerobot_dataset.processor.camera_views(images)
         expected_video_frames = len(self.video_sample_indices)
         if any(camera.shape[0] != expected_video_frames for camera in cameras):
             raise ValueError(f"Sparse video frame count mismatch: expected {expected_video_frames}.")
@@ -244,9 +240,10 @@ class RobotVideoDataset(torch.utils.data.Dataset):
         if self.text_embedding_cache_dir is None:
             raise ValueError("`text_embedding_cache_dir` is not set.")
         hashed = prompt_hash(prompt)
+        dtype = self.text_embedding_dtype
         if self.text_encoder_id == "qwen3_flux2":
-            cache_path = self.text_embedding_cache_dir / (
-                f"{hashed}.qwen3_flux2_len{int(self.context_len)}.pt"
+            cache_path = self.text_embedding_cache_dir / text_embedding_cache_filename(
+                hashed, self.context_len, self.text_encoder_id, is_hash=True, dtype=dtype
             )
             if not cache_path.is_file():
                 raise FileNotFoundError(
@@ -265,18 +262,24 @@ class RobotVideoDataset(torch.utils.data.Dataset):
                     f"FLUX.2 Qwen3 cache length must be {self.context_len}, got "
                     f"{context.shape[0]}/{context_mask.shape[0]}."
                 )
+            if context.dtype not in {torch.float32, torch.float16, torch.bfloat16}:
+                raise TypeError(f"Unsupported text embedding dtype: {context.dtype}.")
+            if dtype is not None and context.dtype != dtype:
+                raise TypeError(f"Text embedding dtype mismatch: expected {dtype}, got {context.dtype}.")
             return context, context_mask
         cache_path = self.text_embedding_cache_dir / text_embedding_cache_filename(
             hashed,
             self.context_len,
             self.text_encoder_id,
             is_hash=True,
+            dtype=dtype,
         )
         payload = load_text_embedding_cache(
             cache_path,
             self.context_len,
             self.text_encoder_id,
             hashed,
+            expected_dtype=dtype,
         )
         context = payload["context"]
         context_mask = payload["mask"].bool()

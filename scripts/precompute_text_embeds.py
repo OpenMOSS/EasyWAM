@@ -20,6 +20,7 @@ from data.lerobot.text_embedding_cache import (
     prompt_hash,
     text_embedding_cache_filename,
 )
+from utils.pytorch_utils import mixed_precision_to_dtype
 from utils.config_resolvers import register_default_resolvers
 from utils.logging_config import get_logger, setup_logging
 
@@ -187,12 +188,19 @@ def _atomic_torch_save(payload: dict[str, Any], output_path: Path, *, ensure_par
     os.replace(tmp_path, output_path)
 
 
-def _cache_filename(prompt_digest: str, context_len: int, encoder_id: str) -> str:
-    if encoder_id == "qwen3_flux2":
-        return f"{prompt_digest}.qwen3_flux2_len{context_len}.pt"
+def _cache_filename(prompt_digest: str, context_len: int, encoder_id: str, dtype: torch.dtype | None = None) -> str:
     return text_embedding_cache_filename(
-        prompt_digest, context_len, encoder_id, is_hash=True
+        prompt_digest, context_len, encoder_id, is_hash=True, dtype=dtype
     )
+
+def _iter_embedding_rows(context: torch.Tensor, mask: torch.Tensor, *, dtype: torch.dtype | None = None):
+    context = context.detach().to(device="cpu", dtype=dtype)
+    mask = mask.detach().to(device="cpu", dtype=torch.bool)
+    for i in range(context.shape[0]):
+        yield (
+            context[i].clone(memory_format=torch.contiguous_format),
+            mask[i].clone(memory_format=torch.contiguous_format),
+        )
 
 
 def _cache_payload(
@@ -257,7 +265,7 @@ def main(cfg: DictConfig):
         device = f"cuda:{local_rank}" if is_distributed else "cuda"
     else:
         device = "cpu"
-    torch_dtype = torch.bfloat16
+    torch_dtype = mixed_precision_to_dtype(cfg.mixed_precision)
     backbone_cfg = model_cfg.get("backbone")
     if backbone_cfg is None:
         raise ValueError("`cfg.model.backbone` is required.")
@@ -295,7 +303,7 @@ def main(cfg: DictConfig):
         prompts_to_encode: list[str] = []
         for prompt in local_prompts:
             hashed = prompt_hash(prompt)
-            filename = _cache_filename(hashed, context_len, enc_id)
+            filename = _cache_filename(hashed, context_len, enc_id, torch_dtype)
             if all((cache_dir / filename).is_file() for cache_dir in cache_dirs):
                 fully_cached_local += 1
                 for cache_dir in cache_dirs:
@@ -433,22 +441,21 @@ def main(cfg: DictConfig):
                     token_mask = mask
                 over_length_prompts += int(token_mask.all(dim=1).sum().item())
 
-                for i, prompt in enumerate(batch_prompts):
+                for prompt, (context_i, mask_i) in zip(batch_prompts, _iter_embedding_rows(context, mask, dtype=torch_dtype)):
                     hashed = prompt_hash(prompt)
-                    context_i = context[i].detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
-                    mask_i = mask[i].detach().to(device="cpu", dtype=torch.bool).contiguous()
                     context_i[~mask_i] = 0
                     payload = _cache_payload(
                         context_i, mask_i, context_len, enc_id, hashed
                     )
-                    filename = _cache_filename(hashed, context_len, enc_id)
+                    filename = _cache_filename(hashed, context_len, enc_id, torch_dtype)
                     for cache_dir in cache_dirs:
                         cache_path = cache_dir / filename
                         key = str(cache_dir)
-                        if cache_path.exists() and not overwrite:
+                        exists = cache_path.exists()
+                        if exists and not overwrite:
                             stats[key]["skip"] += 1
                             continue
-                        if cache_path.exists():
+                        if exists:
                             stats[key]["overwrite"] += 1
                         else:
                             stats[key]["new"] += 1

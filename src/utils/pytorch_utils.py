@@ -8,6 +8,27 @@ import torch.distributed as dist
 import numpy as np
 
 
+def normalize_mixed_precision(mixed_precision: str) -> str:
+    if not isinstance(mixed_precision, str):
+        raise ValueError(f"`mixed_precision` must be str, got {type(mixed_precision)}")
+    key = mixed_precision.strip().lower()
+    if key not in {"no", "fp16", "bf16"}:
+        raise ValueError(
+            f"Unsupported mixed_precision: {mixed_precision}. "
+            "Expected one of: ['no', 'fp16', 'bf16']."
+        )
+    return key
+
+
+def mixed_precision_to_dtype(mixed_precision: str) -> torch.dtype:
+    precision = normalize_mixed_precision(mixed_precision)
+    if precision == "no":
+        return torch.float32
+    if precision == "fp16":
+        return torch.float16
+    return torch.bfloat16
+
+
 def _resolve_global_rank() -> int:
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         return int(torch.distributed.get_rank())

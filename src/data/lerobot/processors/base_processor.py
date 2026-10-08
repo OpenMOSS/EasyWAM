@@ -9,6 +9,9 @@ from utils.pytorch_utils import dict_apply
 
 
 class BaseProcessor(ABC):
+    def camera_views(self, pixel_values: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return (pixel_values,)
+
     def __init__(
         self,
         shape_meta: Dict[str, Any],

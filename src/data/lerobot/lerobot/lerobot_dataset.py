@@ -233,6 +233,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             lambda: LeRobotDatasetMetadata(self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync),
             refresh=force_cache_sync,
         )
+        self._configure_row_format()
         self._selected_episode_ids = (
             list(self.episodes) if self.episodes is not None else list(self.meta.episodes)
         )
@@ -436,8 +437,30 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return query_indices, padding
 
     @staticmethod
-    def _as_tensor(values):
-        return values if isinstance(values, torch.Tensor) else torch.stack(values)
+    def _tensor_column(values: torch.Tensor) -> torch.Tensor:
+        return values
+
+    @staticmethod
+    def _list_indices(indices: list[int]) -> list[int]:
+        return indices
+
+    @staticmethod
+    def _take_tensor_rows(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+        return values[indices]
+
+    @staticmethod
+    def _take_list_rows(values: list[torch.Tensor], indices: list[int]) -> torch.Tensor:
+        return torch.stack([values[index] for index in indices])
+
+    def _configure_row_format(self) -> None:
+        if self.meta.image_keys:
+            self._as_tensor = torch.stack
+            self._gather_indices = self._list_indices
+            self._take_rows = self._take_list_rows
+        else:
+            self._as_tensor = self._tensor_column
+            self._gather_indices = partial(torch.tensor, dtype=torch.long)
+            self._take_rows = self._take_tensor_rows
 
     def _get_query_timestamps(self, current_ts, query_indices=None):
         result, fetched = {}, {}
@@ -479,14 +502,13 @@ class LeRobotDataset(torch.utils.data.Dataset):
         for key, indices in query_indices.items():
             window = tuple(indices)
             if window not in gathers:
-                gathers[window] = torch.tensor([positions[i] for i in indices], dtype=torch.long)
+                gathers[window] = self._gather_indices([positions[i] for i in indices])
             if key in self.meta.video_keys:
                 if window not in timestamp_windows:
-                    timestamp_windows[window] = self._as_tensor(batch["timestamp"])[gathers[window]].tolist()
+                    timestamp_windows[window] = self._take_rows(batch["timestamp"], gathers[window]).tolist()
                 timestamps[key] = timestamp_windows[window]
             elif not ("images" in key and not self.during_training):
-                values = batch[key]
-                result[key] = values[gathers[window]] if isinstance(values, torch.Tensor) else self._as_tensor([values[positions[i]] for i in indices])
+                result[key] = self._take_rows(batch[key], gathers[window])
         return row, result, timestamps
 
     def get_episode_data(self, episode_id: int) -> dict:

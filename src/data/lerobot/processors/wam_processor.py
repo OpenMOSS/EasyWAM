@@ -12,6 +12,11 @@ from .base_processor import BaseProcessor
 logger = get_logger(__name__)
 
 class WAMProcessor(BaseProcessor):
+    def camera_views(
+        self, pixel_values: torch.Tensor | list[torch.Tensor]
+    ) -> tuple[torch.Tensor, ...] | list[torch.Tensor]:
+        return pixel_values.unbind(0) if self.stack_images else pixel_values
+
     def __init__(
         self,
         shape_meta: Dict[str, Any],
@@ -50,8 +55,15 @@ class WAMProcessor(BaseProcessor):
         self.drop_high_level_prob = drop_high_level_prob
         self.use_zh_instruction = use_zh_instruction
 
-        self.train_transforms = train_transforms
-        self.val_transforms = val_transforms
+        image_keys = [meta["key"] for meta in shape_meta["images"]]
+        self.train_transforms = (
+            dict(train_transforms) if isinstance(train_transforms, Mapping)
+            else dict.fromkeys(image_keys, train_transforms)
+        )
+        self.val_transforms = (
+            dict(val_transforms) if isinstance(val_transforms, Mapping)
+            else dict.fromkeys(image_keys, val_transforms)
+        )
 
         self._is_train = None
 
@@ -116,7 +128,7 @@ class WAMProcessor(BaseProcessor):
             stats=dataset_stats,
         )
 
-    def augment_instruction(self, data: Dict[str, str] | List[str]) -> List[str]:
+    def augment_instruction(self, data: Dict[str, str]) -> str:
         """Choose the instruction language and optional high-level task."""
         if "coarse_task" in data:
             high_level_instruction = data["coarse_task"]
@@ -189,8 +201,7 @@ class WAMProcessor(BaseProcessor):
             assert image.ndim == 4, f"Expected 4 dimensions (num_image_steps, C, H, W), got shape {image.shape}"
             
             transforms = self.train_transforms if self.is_train else self.val_transforms
-            current_transforms = transforms[key] if isinstance(transforms, Mapping) else transforms
-            for trans in current_transforms:
+            for trans in transforms[key]:
                 image = trans(image)
             
             meta_shape = [num_image_steps] + shape

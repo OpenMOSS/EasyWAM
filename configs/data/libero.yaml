@@ -64,3 +64,4 @@ train:
   text_embedding_cache_dir: ./data/text_embeds_cache/libero/${model.backbone.name}
   context_len: ${model.backbone.tokenizer_max_len}
   text_encoder_id: ${model.backbone.text_encoder_id}
+  mixed_precision: ${mixed_precision}

@@ -9,6 +9,10 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 
 from utils.logging_config import get_logger, setup_logging
+from utils.pytorch_utils import (
+    mixed_precision_to_dtype as _mixed_precision_to_model_dtype,
+    normalize_mixed_precision as _normalize_mixed_precision,
+)
 from data.lerobot.resources import reuse_during_construction
 
 logger = get_logger(__name__)
@@ -35,27 +39,6 @@ def _resolve_skip_dit_load_from_pretrain(
         )
         return False
     return skip_pretrained
-
-
-def _normalize_mixed_precision(mixed_precision: str) -> str:
-    if not isinstance(mixed_precision, str):
-        raise ValueError(f"`mixed_precision` must be str, got {type(mixed_precision)}")
-    key = mixed_precision.strip().lower()
-    if key not in {"no", "fp16", "bf16"}:
-        raise ValueError(
-            f"Unsupported mixed_precision: {mixed_precision}. "
-            "Expected one of: ['no', 'fp16', 'bf16']."
-        )
-    return key
-
-
-def _mixed_precision_to_model_dtype(mixed_precision: str) -> torch.dtype:
-    precision = _normalize_mixed_precision(mixed_precision)
-    if precision == "no":
-        return torch.float32
-    if precision == "fp16":
-        return torch.float16
-    return torch.bfloat16
 
 
 def create_wan22_model(

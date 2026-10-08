@@ -149,25 +149,23 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
     def _get_action(self, meta, lerobot_sample) -> torch.Tensor:
         key, lerobot_key, raw_shape = meta["key"], meta["lerobot_key"], meta["raw_shape"]
         action: torch.Tensor = lerobot_sample[lerobot_key]
-        if action.ndim == 1:
-            action = action.unsqueeze(-1)
+        if raw_shape == 1:
+            action = action.reshape(action.shape[0], 1)
         assert action.shape[-1] == raw_shape, f"Action '{key}' shape {action.shape[-1]} mismatch with meta {raw_shape}."
         return action
 
     def _get_state(self, meta, lerobot_sample) -> torch.Tensor:
         key, lerobot_key, raw_shape = meta["key"], meta["lerobot_key"], meta["raw_shape"]
         state: torch.Tensor = lerobot_sample[lerobot_key]
-        if state.ndim == 1:
-            state = state.unsqueeze(-1)
+        if raw_shape == 1:
+            state = state.reshape(state.shape[0], 1)
         assert state.shape[-1] == raw_shape, f"State '{key}' shape {state.shape[-1]} mismatch with meta {raw_shape}."
         return state
     
     def _get_image(self, meta, lerobot_sample) -> torch.Tensor:
         image: torch.Tensor = lerobot_sample[meta["lerobot_key"]]
-        if image.ndim == 3:
-            image = image.unsqueeze(0)        
-        if image.dtype != torch.uint8:
-            image = (image * 255).to(torch.uint8)
+        if image.ndim != 4 or image.dtype != torch.uint8:
+            raise ValueError("LeRobot images must be uint8 [T,C,H,W].")
         return image
     
     def _split_lerobot_sample(self, lerobot_sample) -> Dict[str, Any]:

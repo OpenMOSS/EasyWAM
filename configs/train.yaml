@@ -33,7 +33,7 @@ eval_save_video: false
 
 # training
 gradient_accumulation_steps: 1
-mixed_precision: "bf16" # one of: [no, fp16, bf16]
+mixed_precision: "bf16"
 seed: 42
 max_grad_norm: 1.0
 weight_decay: 0.0
