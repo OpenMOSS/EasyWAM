@@ -8,6 +8,7 @@ Published metrics across backbones are collected in the [benchmark results](../.
 
 | Benchmark | Evaluation scope | Guide |
 | --- | --- | --- |
+| VLABench | Fixed official tracks 1/2/3/4/6 | [Setup and evaluation](vlabench.md) |
 | LIBERO | Standard four-suite evaluation | [Setup and evaluation](libero.md) |
 | LIBERO-Pro | Official five-dimension generalization evaluation | [Setup and evaluation](libero_pro.md) |
 | LIBERO-Plus | Robustness evaluation with LIBERO checkpoints | [Setup and evaluation](libero_plus.md) |

@@ -75,6 +75,7 @@ EasyWAM is a unified research codebase designed to make World Action Model devel
 | RoboTwin | ✅ | Full-parameter and LoRA | Clean and randomized evaluation |
 | RoboDojo | ✅ | Full-parameter and LoRA | Official 42-task simulation evaluation |
 | RoboCasa365 | ✅ | Full-parameter and LoRA | Official 50-task evaluation |
+| VLABench | ✅ | Full-parameter and LoRA | Official tracks 1/2/3/4/6 evaluation |
 
 ## 🏆 Benchmark Results
 

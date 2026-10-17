@@ -8,6 +8,7 @@
 
 | Benchmark | 评测范围 | 文档 |
 | --- | --- | --- |
+| VLABench | 官方固定 track 1/2/3/4/6 | [准备与评测](vlabench_zh.md) |
 | LIBERO | 标准四 suite 评测 | [准备与评测](libero_zh.md) |
 | LIBERO-Pro | 官方五维泛化评测 | [准备与评测](libero_pro_zh.md) |
 | LIBERO-Plus | 使用 LIBERO checkpoint 的鲁棒性评测 | [准备与评测](libero_plus_zh.md) |

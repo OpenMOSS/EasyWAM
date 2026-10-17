@@ -75,6 +75,7 @@ EasyWAM 是一个统一的 World Action Model 研究代码库，旨在让模型�
 | RoboTwin | ✅ | 全参数训练和 LoRA | Clean 和 randomized 评测 |
 | RoboDojo | ✅ | 全参数训练和 LoRA | 官方 42-task 仿真评测 |
 | RoboCasa365 | ✅ | 全参数训练和 LoRA | 官方 50-task 评测 |
+| VLABench | ✅ | 全参数训练和 LoRA | 官方 Track 1/2/3/4/6 评测 |
 
 ## 🏆 Benchmark 结果
 
