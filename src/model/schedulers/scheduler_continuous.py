@@ -3,9 +3,13 @@ import torch
 
 class ContinuousFlowMatchScheduler:
 
-    def __init__(self, num_train_timesteps: int = 1000, shift: float = 5.0, eps: float = 1e-10):
+    def __init__(
+        self, num_train_timesteps: int = 1000, shift: float = 5.0, eps: float = 1e-10
+    ):
         if num_train_timesteps <= 0:
-            raise ValueError(f"`num_train_timesteps` must be positive, got {num_train_timesteps}")
+            raise ValueError(
+                f"`num_train_timesteps` must be positive, got {num_train_timesteps}"
+            )
         if shift <= 0:
             raise ValueError(f"`shift` must be positive, got {shift}")
         self.num_train_timesteps = int(num_train_timesteps)
@@ -27,7 +31,9 @@ class ContinuousFlowMatchScheduler:
         norm_const = float(y_shifted_grid.mean().item())
         return y_min, norm_const
 
-    def sample_training_t(self, batch_size: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def sample_training_t(
+        self, batch_size: int, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         if batch_size <= 0:
             raise ValueError(f"`batch_size` must be positive, got {batch_size}")
         u = torch.rand((batch_size,), device=device, dtype=torch.float32)
@@ -43,7 +49,12 @@ class ContinuousFlowMatchScheduler:
         weight = y_shifted / (self._weight_norm_const + self.eps)
         return weight
 
-    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
+    def add_noise(
+        self,
+        original_samples: torch.Tensor,
+        noise: torch.Tensor,
+        timestep: torch.Tensor,
+    ) -> torch.Tensor:
         sigma = (timestep / float(self.num_train_timesteps)).to(
             original_samples.device, dtype=original_samples.dtype
         )
@@ -53,7 +64,9 @@ class ContinuousFlowMatchScheduler:
         return (1 - sigma) * original_samples + sigma * noise
 
     @staticmethod
-    def training_target(sample: torch.Tensor, noise: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
+    def training_target(
+        sample: torch.Tensor, noise: torch.Tensor, timestep: torch.Tensor
+    ) -> torch.Tensor:
         del timestep
         return noise - sample
 
@@ -65,19 +78,29 @@ class ContinuousFlowMatchScheduler:
         shift_override: float | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if num_inference_steps <= 0:
-            raise ValueError(f"`num_inference_steps` must be positive, got {num_inference_steps}")
+            raise ValueError(
+                f"`num_inference_steps` must be positive, got {num_inference_steps}"
+            )
         shift = self.shift if shift_override is None else float(shift_override)
         if shift <= 0:
             raise ValueError(f"`shift` must be positive, got {shift}")
 
-        u_steps = torch.linspace(1.0, 0.0, num_inference_steps + 1, device=device, dtype=torch.float32)
+        u_steps = torch.linspace(
+            1.0, 0.0, num_inference_steps + 1, device=device, dtype=torch.float32
+        )
         sigma_steps = self._phi(u_steps, shift)
         timesteps = sigma_steps[:-1] * float(self.num_train_timesteps)
         deltas = sigma_steps[1:] - sigma_steps[:-1]
         return timesteps.to(dtype=dtype), deltas.to(dtype=dtype)
 
     @staticmethod
-    def step(model_output: torch.Tensor, delta: torch.Tensor, sample: torch.Tensor) -> torch.Tensor:
+    def step(
+        model_output: torch.Tensor,
+        delta: torch.Tensor,
+        sample: torch.Tensor,
+        stream_id: str | None = None,
+    ) -> torch.Tensor:
+        del stream_id
         delta = delta.to(sample.device, dtype=sample.dtype)
         if delta.ndim == 0:
             return sample + model_output * delta

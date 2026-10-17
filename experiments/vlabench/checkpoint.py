@@ -1,7 +1,6 @@
 """Require a complete trained policy before starting a benchmark server.
 
-Keep the shared model loaders' legacy compatibility outside this evaluation
-boundary. Validate on CPU before loading or merging any checkpoint weights.
+Validate parameter coverage on CPU before loading or merging checkpoint weights.
 """
 from collections.abc import Mapping
 
@@ -67,11 +66,6 @@ def validate_evaluation_checkpoint(model, payload):
             raise ValueError("Evaluation checkpoint requires matching complete LoRA roots")
         _check_state(_lora_state(model), payload.get("trainable_state"), "trainable_state")
     elif hasattr(model, "mot"):
-        if "proprio_encoder" in payload:
-            if model.backbone_name != "flux2":
-                raise ValueError("Legacy proprio_encoder is only supported for FLUX.2")
-            from model.backbone.flux2.checkpoint import convert_imagewam_flux2_checkpoint_payload
-            payload, _ = convert_imagewam_flux2_checkpoint_payload(payload)
         _check_state(_standard_state(model.mot), payload.get("mot"), "mot")
         if getattr(model, "state_encoder", None) is not None:
             _check_state(model.state_encoder.state_dict(), payload.get("state_encoder"), "state_encoder")

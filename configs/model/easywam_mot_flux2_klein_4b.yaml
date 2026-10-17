@@ -11,10 +11,17 @@ action_dit_pretrained_path: ${model.backbone.action_dit_pretrained_path}
 skip_dit_load_from_pretrain: false
 
 action_dit_config:
+  preset: staged
+  cross_attention: false
+  text_dim: ${model.backbone.text_dim}
+  num_heads: ${model.backbone.num_heads}
+  attn_head_dim: ${model.backbone.attn_head_dim}
+  num_layers_double: ${model.backbone.num_layers_double}
+  num_layers_single: ${model.backbone.num_layers_single}
   action_dim: ${data.train.processor.action_output_dim}
   hidden_dim: 1024
   mlp_ratio: 4.0
-  max_action_horizon: 64
+  max_action_horizon: 1024
   attention_backend: ${model.backbone.attention_backend}
   use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}
 

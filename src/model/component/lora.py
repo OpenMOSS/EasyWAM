@@ -61,23 +61,49 @@ def inject_video_dit_lora(video_dit: nn.Module, config: Any) -> LoraConfig:
     if not target_modules:
         raise ValueError("Video DiT LoRA `target_modules` cannot be empty.")
 
+    block_prefixes = getattr(video_dit, "lora_block_prefixes", ("blocks.",))
+    explicit_targets = None
+    if hasattr(video_dit, "lora_block_prefixes"):
+        explicit_targets = [
+            name
+            for name, module in video_dit.named_modules()
+            if isinstance(module, nn.Linear)
+            and any(name.startswith(prefix) for prefix in block_prefixes)
+            and any(
+                name == target
+                or name.startswith(target + ".")
+                or name.endswith("." + target)
+                for target in target_modules
+            )
+        ]
+        if not explicit_targets:
+            raise ValueError("No linear block modules match the requested LoRA targets")
+        lora_config.target_modules = set(explicit_targets)
+
     inject_adapter_in_model(
         lora_config,
         video_dit,
         adapter_name=LORA_ADAPTER_NAME,
     )
     injected = list(iter_lora_layers(video_dit))
-    invalid = [name for name, _ in injected if not name.startswith("blocks.")]
+    invalid = [
+        name
+        for name, _ in injected
+        if not any(name.startswith(prefix) for prefix in block_prefixes)
+    ]
     if invalid:
         raise RuntimeError(
-            "LoRA was injected outside `video_dit.blocks`: "
-            f"{invalid[:8]}"
+            "LoRA was injected outside the visual transformer blocks: " f"{invalid[:8]}"
         )
 
     blocks = getattr(video_dit, "blocks", None)
     if blocks is None:
         raise AttributeError("Video DiT must expose a `blocks` module list.")
-    expected_count = len(blocks) * len(target_modules)
+    expected_count = (
+        len(explicit_targets)
+        if explicit_targets is not None
+        else len(blocks) * len(target_modules)
+    )
     if len(injected) != expected_count:
         raise RuntimeError(
             "Unexpected number of Video DiT LoRA layers: "
@@ -131,7 +157,9 @@ def lora_model_checkpoint_state(model: nn.Module) -> dict[str, Any]:
         if parameter.requires_grad
     }
     if not trainable_parameters:
-        raise RuntimeError("Cannot save LoRA checkpoint: model has no trainable parameters.")
+        raise RuntimeError(
+            "Cannot save LoRA checkpoint: model has no trainable parameters."
+        )
     full_state = model.state_dict()
     missing = set(trainable_parameters).difference(full_state)
     if missing:
@@ -171,7 +199,7 @@ def build_lora_checkpoint_payload(
         "format": LORA_CHECKPOINT_FORMAT,
         "step": step,
         "torch_dtype": str(model.torch_dtype),
-        "backbone_name": getattr(model, "backbone_name", "wan22"),
+        "backbone_name": model.backbone_name,
         **lora_model_checkpoint_state(model),
     }
     model_variant = getattr(model, "model_variant", None)
@@ -250,9 +278,7 @@ def merge_and_unload_video_dit_lora(video_dit: nn.Module) -> None:
 def _reset_lora_delta(module: nn.Module) -> None:
     for _, layer in iter_lora_layers(module):
         if LORA_ADAPTER_NAME not in layer.lora_B:
-            raise RuntimeError(
-                f"LoRA layer is missing adapter `{LORA_ADAPTER_NAME}`."
-            )
+            raise RuntimeError(f"LoRA layer is missing adapter `{LORA_ADAPTER_NAME}`.")
         lora_b = layer.lora_B[LORA_ADAPTER_NAME]
         nn.init.zeros_(lora_b.weight)
 
@@ -278,11 +304,7 @@ def load_standard_state_dict(
 
     incompatible = module.load_state_dict(translated, strict=False)
     unexpected = list(incompatible.unexpected_keys)
-    missing_non_lora = [
-        key
-        for key in incompatible.missing_keys
-        if ".lora_" not in key
-    ]
+    missing_non_lora = [key for key in incompatible.missing_keys if ".lora_" not in key]
     if unexpected or missing_non_lora:
         raise RuntimeError(
             "Failed to load standard checkpoint into LoRA model: "

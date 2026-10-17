@@ -10,7 +10,7 @@ from torch.utils.checkpoint import checkpoint
 
 from model.helpers.static_cache import cache_static_method
 
-from ..protocol import BLOCK_PROTOCOL_MAIN
+from ..protocol import BLOCK_PROTOCOL_STANDARD
 from ...component.attention import (
     AttentionSegment,
     KeyPaddingMask,
@@ -40,17 +40,24 @@ class CosmosTimestepEmbedding(nn.Module):
 
 
 class CosmosPatchEmbed(nn.Module):
-    def __init__(self, in_channels: int, hidden_size: int, patch_size: tuple[int, int, int]):
+    def __init__(
+        self, in_channels: int, hidden_size: int, patch_size: tuple[int, int, int]
+    ):
         super().__init__()
         self.patch_size = patch_size
         patch_volume = math.prod(patch_size)
-        self.proj = nn.Sequential(nn.Identity(), nn.Linear(in_channels * patch_volume, hidden_size, bias=False))
+        self.proj = nn.Sequential(
+            nn.Identity(),
+            nn.Linear(in_channels * patch_volume, hidden_size, bias=False),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         pt, ph, pw = self.patch_size
         b, c, t, h, w = x.shape
         if t % pt or h % ph or w % pw:
-            raise ValueError(f"Input {(t, h, w)} must be divisible by patch size {self.patch_size}.")
+            raise ValueError(
+                f"Input {(t, h, w)} must be divisible by patch size {self.patch_size}."
+            )
         x = x.reshape(b, c, t // pt, pt, h // ph, ph, w // pw, pw)
         x = x.permute(0, 2, 4, 6, 1, 3, 5, 7).reshape(b, t // pt, h // ph, w // pw, -1)
         return self.proj(x)
@@ -62,16 +69,24 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 class CosmosVideoRope3D(nn.Module):
-    def __init__(self, head_dim: int = 128, rope_scale: tuple[float, float, float] = (1.0, 3.0, 3.0)):
+    def __init__(
+        self,
+        head_dim: int = 128,
+        rope_scale: tuple[float, float, float] = (1.0, 3.0, 3.0),
+    ):
         super().__init__()
         if head_dim != 128:
-            raise ValueError("Cosmos-Predict2.5-2B uses a 128-dimensional attention head.")
+            raise ValueError(
+                "Cosmos-Predict2.5-2B uses a 128-dimensional attention head."
+            )
         self.head_dim = head_dim
         dim_t, dim_h, dim_w = 44, 42, 42
         self.theta_t = 10000.0 * rope_scale[0] ** (dim_t / (dim_t - 2))
         self.theta_h = 10000.0 * rope_scale[1] ** (dim_h / (dim_h - 2))
         self.theta_w = 10000.0 * rope_scale[2] ** (dim_w / (dim_w - 2))
-        self.register_buffer("seq", torch.arange(head_dim, dtype=torch.float32), persistent=True)
+        self.register_buffer(
+            "seq", torch.arange(head_dim, dtype=torch.float32), persistent=True
+        )
         self.register_buffer(
             "dim_spatial_range",
             torch.arange(0, dim_h, 2, dtype=torch.float32) / dim_h,
@@ -94,18 +109,42 @@ class CosmosVideoRope3D(nn.Module):
         frequencies = theta ** (-dimension_range.to(device=device, dtype=torch.float32))
         return positions[:, None] * frequencies[None, :]
 
-    @cache_static_method("theta_t", "theta_h", "theta_w", "seq", "dim_spatial_range", "dim_temporal_range")
-    def forward(self, t: int, h: int, w: int, device: torch.device, dtype: torch.dtype = torch.float32) -> tuple[torch.Tensor, torch.Tensor]:
-        angles_t = self._axis_angles(t, self.dim_temporal_range, self.theta_t, device)[:, None, None, :].expand(t, h, w, -1)
-        angles_h = self._axis_angles(h, self.dim_spatial_range, self.theta_h, device)[None, :, None, :].expand(t, h, w, -1)
-        angles_w = self._axis_angles(w, self.dim_spatial_range, self.theta_w, device)[None, None, :, :].expand(t, h, w, -1)
-        half_angles = torch.cat((angles_t, angles_h, angles_w), dim=-1).reshape(t * h * w, 64)
+    @cache_static_method(
+        "theta_t",
+        "theta_h",
+        "theta_w",
+        "seq",
+        "dim_spatial_range",
+        "dim_temporal_range",
+    )
+    def forward(
+        self,
+        t: int,
+        h: int,
+        w: int,
+        device: torch.device,
+        dtype: torch.dtype = torch.float32,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        angles_t = self._axis_angles(t, self.dim_temporal_range, self.theta_t, device)[
+            :, None, None, :
+        ].expand(t, h, w, -1)
+        angles_h = self._axis_angles(h, self.dim_spatial_range, self.theta_h, device)[
+            None, :, None, :
+        ].expand(t, h, w, -1)
+        angles_w = self._axis_angles(w, self.dim_spatial_range, self.theta_w, device)[
+            None, None, :, :
+        ].expand(t, h, w, -1)
+        half_angles = torch.cat((angles_t, angles_h, angles_w), dim=-1).reshape(
+            t * h * w, 64
+        )
         angles = torch.cat((half_angles, half_angles), dim=-1)
         return angles.cos().to(dtype=dtype), angles.sin().to(dtype=dtype)
 
 
 class CosmosAttention(nn.Module):
-    def __init__(self, query_dim: int, context_dim: Optional[int], num_heads: int, backend: str):
+    def __init__(
+        self, query_dim: int, context_dim: Optional[int], num_heads: int, backend: str
+    ):
         super().__init__()
         self.is_selfattn = context_dim is None
         context_dim = query_dim if context_dim is None else context_dim
@@ -155,7 +194,9 @@ class CosmosAttention(nn.Module):
             k = self.apply_rope(k, rope)
         if isinstance(attention_mask, torch.Tensor) and attention_mask.ndim == 2:
             attention_mask = attention_mask[:, None, None, :]
-        result = run_attention(q, k, v, self.num_heads, attention_mask=attention_mask, backend=self.backend)
+        result = run_attention(
+            q, k, v, self.num_heads, attention_mask=attention_mask, backend=self.backend
+        )
         return self.output_proj(result)
 
     def project_kv(self, source: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -187,13 +228,27 @@ def _adaln_layer(hidden_size: int, rank: int) -> nn.Sequential:
 class CosmosTransformerBlock(nn.Module):
     uses_mixed_attention_api = True
 
-    def __init__(self, hidden_size: int, context_dim: int, num_heads: int, intermediate_size: int, rank: int, backend: str):
+    def __init__(
+        self,
+        hidden_size: int,
+        context_dim: int,
+        num_heads: int,
+        intermediate_size: int,
+        rank: int,
+        backend: str,
+    ):
         super().__init__()
-        self.layer_norm_self_attn = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.layer_norm_self_attn = nn.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6
+        )
         self.self_attn = CosmosAttention(hidden_size, None, num_heads, backend)
-        self.layer_norm_cross_attn = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.layer_norm_cross_attn = nn.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6
+        )
         self.cross_attn = CosmosAttention(hidden_size, context_dim, num_heads, backend)
-        self.layer_norm_mlp = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.layer_norm_mlp = nn.LayerNorm(
+            hidden_size, elementwise_affine=False, eps=1e-6
+        )
         self.mlp = CosmosFeedForward(hidden_size, intermediate_size)
         self.adaln_modulation_self_attn = _adaln_layer(hidden_size, rank)
         self.adaln_modulation_cross_attn = _adaln_layer(hidden_size, rank)
@@ -231,8 +286,12 @@ class CosmosTransformerBlock(nn.Module):
                 "modulation_indices must be [S] and aligned with tokens, got "
                 f"{tuple(indices.shape)} for S={x.shape[1]}."
             )
-        if indices.numel() and (indices.min() < 0 or indices.max() >= modulation.shape[1]):
-            raise ValueError("modulation_indices contains an out-of-range timestep index.")
+        if indices.numel() and (
+            indices.min() < 0 or indices.max() >= modulation.shape[1]
+        ):
+            raise ValueError(
+                "modulation_indices contains an out-of-range timestep index."
+            )
         return x, lambda value: value.index_select(1, indices)
 
     def prepare_mixed_attention(
@@ -264,14 +323,19 @@ class CosmosTransformerBlock(nn.Module):
         v = attn.v_proj(normalized)
         q = attn.apply_rope(q, rope)
         k = attn.apply_rope(k, rope)
-        return q, k, v, {
-            "x": x_layout,
-            "flat_shape": x.shape,
-            "align_modulation": align_modulation,
-            "self_mod": self_mod,
-            "t": timestep_embedding,
-            "adaln": adaln_lora,
-        }
+        return (
+            q,
+            k,
+            v,
+            {
+                "x": x_layout,
+                "flat_shape": x.shape,
+                "align_modulation": align_modulation,
+                "self_mod": self_mod,
+                "t": timestep_embedding,
+                "adaln": adaln_lora,
+            },
+        )
 
     def finish_mixed_attention(
         self,
@@ -339,7 +403,10 @@ class CosmosTransformerBlock(nn.Module):
             x, timestep_embedding, adaln_lora, rope, modulation_indices
         )
         attended = run_attention(
-            q, k, v, self.self_attn.num_heads,
+            q,
+            k,
+            v,
+            self.self_attn.num_heads,
             attention_mask=self_attn_mask,
             backend=self.self_attn.backend,
         )
@@ -358,19 +425,33 @@ class CosmosTransformerBlock(nn.Module):
     ) -> torch.Tensor:
         b, t, h, w, d = x.shape
         tokens = self.forward_tokens(
-            x.reshape(b, t * h * w, d), timestep_embedding, context, adaln_lora,
-            rope, context_mask,
+            x.reshape(b, t * h * w, d),
+            timestep_embedding,
+            context,
+            adaln_lora,
+            rope,
+            context_mask,
         )
         return tokens.reshape(b, t, h, w, d)
 
 
 class CosmosFinalLayer(nn.Module):
-    def __init__(self, hidden_size: int, out_channels: int, patch_size: tuple[int, int, int], rank: int):
+    def __init__(
+        self,
+        hidden_size: int,
+        out_channels: int,
+        patch_size: tuple[int, int, int],
+        rank: int,
+    ):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, out_channels * math.prod(patch_size), bias=False)
+        self.linear = nn.Linear(
+            hidden_size, out_channels * math.prod(patch_size), bias=False
+        )
         self.adaln_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, rank, bias=False), nn.Linear(rank, 2 * hidden_size, bias=False)
+            nn.SiLU(),
+            nn.Linear(hidden_size, rank, bias=False),
+            nn.Linear(rank, 2 * hidden_size, bias=False),
         )
 
     def condition_tokens(
@@ -379,13 +460,17 @@ class CosmosFinalLayer(nn.Module):
         embedding: torch.Tensor,
         adaln_lora: torch.Tensor,
     ) -> torch.Tensor:
-        shift, scale = (self.adaln_modulation(embedding) + adaln_lora[..., : 2 * x.shape[-1]]).chunk(2, -1)
+        shift, scale = (
+            self.adaln_modulation(embedding) + adaln_lora[..., : 2 * x.shape[-1]]
+        ).chunk(2, -1)
         for _ in range(x.ndim - embedding.ndim):
             shift = shift.unsqueeze(2)
             scale = scale.unsqueeze(2)
         return self.layer_norm(x) * (1 + scale) + shift
 
-    def forward(self, x: torch.Tensor, embedding: torch.Tensor, adaln_lora: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, embedding: torch.Tensor, adaln_lora: torch.Tensor
+    ) -> torch.Tensor:
         return self.linear(self.condition_tokens(x, embedding, adaln_lora))
 
 
@@ -409,21 +494,40 @@ class Cosmos25DiTConfig:
 
 class Cosmos25VideoDiT(nn.Module):
 
-    block_protocol = BLOCK_PROTOCOL_MAIN
+    scheduler_family = "flow_unipc"
+
+    block_protocol = BLOCK_PROTOCOL_STANDARD
 
     def __init__(self, config: Cosmos25DiTConfig = Cosmos25DiTConfig()):
         super().__init__()
         self.config = config
-        self.x_embedder = CosmosPatchEmbed(config.in_channels, config.hidden_size, config.patch_size)
+        self.x_embedder = CosmosPatchEmbed(
+            config.in_channels, config.hidden_size, config.patch_size
+        )
         self.pos_embedder = CosmosVideoRope3D(config.hidden_size // config.num_heads)
-        self.t_embedder = nn.Sequential(nn.Identity(), CosmosTimestepEmbedding(config.hidden_size, config.adaln_lora_dim))
-        self.blocks = nn.ModuleList([
-            CosmosTransformerBlock(
-                config.hidden_size, config.context_dim, config.num_heads, config.intermediate_size,
-                config.adaln_lora_dim, config.attention_backend,
-            ) for _ in range(config.num_layers)
-        ])
-        self.final_layer = CosmosFinalLayer(config.hidden_size, config.out_channels, config.patch_size, config.adaln_lora_dim)
+        self.t_embedder = nn.Sequential(
+            nn.Identity(),
+            CosmosTimestepEmbedding(config.hidden_size, config.adaln_lora_dim),
+        )
+        self.blocks = nn.ModuleList(
+            [
+                CosmosTransformerBlock(
+                    config.hidden_size,
+                    config.context_dim,
+                    config.num_heads,
+                    config.intermediate_size,
+                    config.adaln_lora_dim,
+                    config.attention_backend,
+                )
+                for _ in range(config.num_layers)
+            ]
+        )
+        self.final_layer = CosmosFinalLayer(
+            config.hidden_size,
+            config.out_channels,
+            config.patch_size,
+            config.adaln_lora_dim,
+        )
         self.t_embedding_norm = nn.RMSNorm(config.hidden_size, eps=1e-6)
         self.crossattn_proj = nn.Sequential(
             nn.Linear(config.reason_context_dim, config.context_dim, bias=True),
@@ -446,7 +550,9 @@ class Cosmos25VideoDiT(nn.Module):
             )
         self.video_attention_mask_mode = str(config.video_attention_mask_mode)
         if self.video_attention_mask_mode not in {
-            "bidirectional", "first_frame_causal", "per_frame_causal"
+            "bidirectional",
+            "first_frame_causal",
+            "per_frame_causal",
         }:
             raise ValueError(
                 "video_attention_mask_mode must be 'bidirectional', "
@@ -462,7 +568,9 @@ class Cosmos25VideoDiT(nn.Module):
                 "Cosmos context must be raw Reason1 features or preprojected features; "
                 f"got width {context.shape[-1]}."
             )
-        return self.crossattn_proj(context.to(dtype=self.crossattn_proj[0].weight.dtype))
+        return self.crossattn_proj(
+            context.to(dtype=self.crossattn_proj[0].weight.dtype)
+        )
 
     def project_context(self, context: torch.Tensor) -> torch.Tensor:
         return self.project_text_context(context)
@@ -477,7 +585,11 @@ class Cosmos25VideoDiT(nn.Module):
     @staticmethod
     def _timestep_features(timesteps: torch.Tensor, dim: int) -> torch.Tensor:
         half = dim // 2
-        exponent = -math.log(10000.0) * torch.arange(half, device=timesteps.device, dtype=torch.float32) / half
+        exponent = (
+            -math.log(10000.0)
+            * torch.arange(half, device=timesteps.device, dtype=torch.float32)
+            / half
+        )
         phases = timesteps.float().reshape(-1, 1) * exponent.exp()[None]
         embedding = torch.cat((phases.cos(), phases.sin()), dim=-1)
         return embedding.reshape(timesteps.shape[0], timesteps.shape[1], dim)
@@ -486,7 +598,9 @@ class Cosmos25VideoDiT(nn.Module):
         pt, ph, pw = self.config.patch_size
         b, t, h, w, _ = x.shape
         x = x.reshape(b, t, h, w, ph, pw, pt, self.config.out_channels)
-        return x.permute(0, 7, 1, 6, 2, 4, 3, 5).reshape(b, self.config.out_channels, t * pt, h * ph, w * pw)
+        return x.permute(0, 7, 1, 6, 2, 4, 3, 5).reshape(
+            b, self.config.out_channels, t * pt, h * ph, w * pw
+        )
 
     def build_structured_video_attention_mask(
         self,
@@ -502,16 +616,22 @@ class Cosmos25VideoDiT(nn.Module):
             first = min(video_tokens_per_frame, video_seq_len)
             segments.append(AttentionSegment(0, first, ((0, first),)))
             if first < video_seq_len:
-                segments.append(AttentionSegment(first, video_seq_len, ((0, video_seq_len),)))
+                segments.append(
+                    AttentionSegment(first, video_seq_len, ((0, video_seq_len),))
+                )
         elif mode == "per_frame_causal":
             if video_seq_len % video_tokens_per_frame:
-                raise ValueError("video_seq_len must be divisible by video_tokens_per_frame")
+                raise ValueError(
+                    "video_seq_len must be divisible by video_tokens_per_frame"
+                )
             for start in range(0, video_seq_len, video_tokens_per_frame):
                 end = start + video_tokens_per_frame
                 segments.append(AttentionSegment(start, end, ((0, end),)))
         else:
             raise ValueError(f"Unsupported video attention mask mode: {mode}")
-        return build_structured_attention_mask(video_seq_len, video_seq_len, segments, device)
+        return build_structured_attention_mask(
+            video_seq_len, video_seq_len, segments, device
+        )
 
     def pre_dit(
         self,
@@ -531,8 +651,12 @@ class Cosmos25VideoDiT(nn.Module):
         if timestep.ndim == 1:
             timestep = timestep[:, None].expand(b, frames).clone()
         elif timestep.shape != (b, frames):
-            raise ValueError(f"timestep must be [B] or [B,T], got {tuple(timestep.shape)}")
-        condition_mask = torch.zeros((b, 1, frames, height, width), device=x.device, dtype=x.dtype)
+            raise ValueError(
+                f"timestep must be [B] or [B,T], got {tuple(timestep.shape)}"
+            )
+        condition_mask = torch.zeros(
+            (b, 1, frames, height, width), device=x.device, dtype=x.dtype
+        )
         if fuse_vae_embedding_in_latents:
             condition_mask[:, :, :1] = 1
             timestep[:, 0] = self.config.conditional_frame_timestep
@@ -546,7 +670,9 @@ class Cosmos25VideoDiT(nn.Module):
         context_mask = elide_fully_valid_attention_mask(context_mask)
         if isinstance(context_mask, torch.Tensor):
             context_mask = KeyPaddingMask.from_tensor(context_mask)
-        features = self._timestep_features(timestep, self.config.hidden_size).to(tokens.dtype)
+        features = self._timestep_features(timestep, self.config.hidden_size).to(
+            tokens.dtype
+        )
         frame_t, frame_adaln = self.t_embedder[1](features)
         frame_t = self.t_embedding_norm(frame_t)
         rope = freqs_override
@@ -560,8 +686,12 @@ class Cosmos25VideoDiT(nn.Module):
             "context": context,
             "context_mask": context_mask,
             "cross_kv_cache": cross_kv_cache,
-            "meta": {"grid_size": (tf, ph, pw), "tokens_per_frame": ph * pw, "batch_size": b,
-                     "frame_adaln": frame_adaln},
+            "meta": {
+                "grid_size": (tf, ph, pw),
+                "tokens_per_frame": ph * pw,
+                "batch_size": b,
+                "frame_adaln": frame_adaln,
+            },
         }
 
     def forward_block(
@@ -573,8 +703,13 @@ class Cosmos25VideoDiT(nn.Module):
     ) -> torch.Tensor:
         mod = pre_state["t_mod"]
         return self.blocks[layer_index].forward_tokens(
-            tokens, mod["embedding"], pre_state["context"], mod["adaln_lora"],
-            pre_state["freqs"], pre_state["context_mask"], self_attn_mask,
+            tokens,
+            mod["embedding"],
+            pre_state["context"],
+            mod["adaln_lora"],
+            pre_state["freqs"],
+            pre_state["context_mask"],
+            self_attn_mask,
             mod.get("token_to_timestep"),
             context_kv=(
                 None
@@ -593,7 +728,9 @@ class Cosmos25VideoDiT(nn.Module):
         )
         return self._unpatchify(output)
 
-    def _aux_rope(self, length: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    def _aux_rope(
+        self, length: int, device: torch.device
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         temporal = self.pos_embedder._axis_angles(
             length,
             self.pos_embedder.dim_temporal_range,
@@ -615,8 +752,12 @@ class Cosmos25VideoDiT(nn.Module):
         return torch.cat(cos_parts).to(dtype), torch.cat(sin_parts).to(dtype)
 
     @cache_static_method(
-        "pos_embedder.theta_t", "pos_embedder.theta_h", "pos_embedder.theta_w",
-        "pos_embedder.seq", "pos_embedder.dim_spatial_range", "pos_embedder.dim_temporal_range",
+        "pos_embedder.theta_t",
+        "pos_embedder.theta_h",
+        "pos_embedder.theta_w",
+        "pos_embedder.seq",
+        "pos_embedder.dim_spatial_range",
+        "pos_embedder.dim_temporal_range",
     )
     def _prepare_unified_rope(self, f, h, w, action_len, state_len, device, dtype):
         rope = self.pos_embedder(f, h, w, device, dtype)
@@ -664,7 +805,9 @@ class Cosmos25VideoDiT(nn.Module):
         if state_position == "sequence":
             auxiliary_inputs.append((state_tokens, timestep_state))
         for aux, timestep in auxiliary_inputs:
-            features = self._timestep_features(timestep[:, None], self.config.hidden_size).to(tokens.dtype)
+            features = self._timestep_features(
+                timestep[:, None], self.config.hidden_size
+            ).to(tokens.dtype)
             emb, adaln = self.t_embedder[1](features)
             emb = self.t_embedding_norm(emb)
             embeddings.append(emb)
@@ -690,7 +833,9 @@ class Cosmos25VideoDiT(nn.Module):
                 )
             if video["cross_kv_cache"] is not None:
                 if len(video["cross_kv_cache"]) != len(self.blocks):
-                    raise ValueError("Cross-attention KV cache does not cover every transformer layer.")
+                    raise ValueError(
+                        "Cross-attention KV cache does not cover every transformer layer."
+                    )
                 state_kv_cache = tuple(
                     block.cross_attn.project_kv(state_tokens) for block in self.blocks
                 )
@@ -712,11 +857,19 @@ class Cosmos25VideoDiT(nn.Module):
         rope_state_len = state_tokens.shape[1] if state_position == "sequence" else 0
         if freqs_override is None:
             video["freqs"] = self._prepare_unified_rope(
-                *video["meta"]["grid_size"], action_tokens.shape[1], rope_state_len, tokens.device, tokens.dtype
+                *video["meta"]["grid_size"],
+                action_tokens.shape[1],
+                rope_state_len,
+                tokens.device,
+                tokens.dtype,
             )
         else:
             video["freqs"] = self._combine_unified_rope(
-                video["freqs"], action_tokens.shape[1], rope_state_len, tokens.device, tokens.dtype
+                video["freqs"],
+                action_tokens.shape[1],
+                rope_state_len,
+                tokens.device,
+                tokens.dtype,
             )
         video["context"] = combined_context
         video["meta"].update(
@@ -731,13 +884,17 @@ class Cosmos25VideoDiT(nn.Module):
         )
         return video
 
-    def post_unified_dit(self, tokens: torch.Tensor, pre_state: dict) -> dict[str, torch.Tensor]:
+    def post_unified_dit(
+        self, tokens: torch.Tensor, pre_state: dict
+    ) -> dict[str, torch.Tensor]:
         video_len = int(pre_state["meta"]["video_len"])
         action_len = int(pre_state["meta"]["action_len"])
         action_index = int(pre_state["meta"]["action_modulation_index"])
-        action_tokens = tokens[:, video_len:video_len + action_len]
-        embedding = pre_state["t_mod"]["embedding"][:, action_index:action_index + 1]
-        adaln_lora = pre_state["t_mod"]["adaln_lora"][:, action_index:action_index + 1]
+        action_tokens = tokens[:, video_len : video_len + action_len]
+        embedding = pre_state["t_mod"]["embedding"][:, action_index : action_index + 1]
+        adaln_lora = pre_state["t_mod"]["adaln_lora"][
+            :, action_index : action_index + 1
+        ]
         embedding = embedding.expand(-1, action_len, -1)
         adaln_lora = adaln_lora.expand(-1, action_len, -1)
         return {
@@ -759,7 +916,9 @@ class Cosmos25VideoDiT(nn.Module):
         if condition_mask is not None or padding_mask is not None:
             b, _, t, h, w = x.shape
             if padding_mask is None:
-                padding_mask = torch.zeros((b, 1, t, h, w), device=x.device, dtype=x.dtype)
+                padding_mask = torch.zeros(
+                    (b, 1, t, h, w), device=x.device, dtype=x.dtype
+                )
             elif padding_mask.ndim == 3:
                 padding_mask = padding_mask[:, None, None].expand(-1, -1, t, -1, -1)
             elif padding_mask.ndim == 4 and padding_mask.shape[1] == 1:
@@ -780,27 +939,34 @@ class Cosmos25VideoDiT(nn.Module):
                     f"condition_mask must be {(b, 1, t, h, w)}, got "
                     f"{tuple(condition_mask.shape)}."
                 )
-            hidden = self.x_embedder(torch.cat((x, condition_mask, padding_mask.to(x.dtype)), dim=1))
+            hidden = self.x_embedder(
+                torch.cat((x, condition_mask, padding_mask.to(x.dtype)), dim=1)
+            )
             if timestep.ndim == 1:
                 timestep = timestep[:, None].expand(b, t)
             projected = self.crossattn_proj(context.to(dtype=hidden.dtype))
-            features = self._timestep_features(timestep, self.config.hidden_size).to(hidden.dtype)
+            features = self._timestep_features(timestep, self.config.hidden_size).to(
+                hidden.dtype
+            )
             embedding, adaln = self.t_embedder[1](features)
             embedding = self.t_embedding_norm(embedding)
-            rope = self.pos_embedder(hidden.shape[1], hidden.shape[2], hidden.shape[3], hidden.device)
+            rope = self.pos_embedder(
+                hidden.shape[1], hidden.shape[2], hidden.shape[3], hidden.device
+            )
             for block in self.blocks:
                 if self.use_gradient_checkpointing and torch.is_grad_enabled():
+
                     def _block_forward(value, current_block=block):
                         return current_block(
                             value, embedding, projected, adaln, rope, None
                         )
 
-                    hidden = checkpoint(
-                        _block_forward, hidden, use_reentrant=False
-                    )
+                    hidden = checkpoint(_block_forward, hidden, use_reentrant=False)
                 else:
                     hidden = block(hidden, embedding, projected, adaln, rope, None)
-            return self._unpatchify(self.final_layer(hidden.to(projected.dtype), embedding, adaln))
+            return self._unpatchify(
+                self.final_layer(hidden.to(projected.dtype), embedding, adaln)
+            )
         pre = self.pre_dit(x, timestep, context, context_mask, False)
         tokens = pre["tokens"]
         mask = None
@@ -810,12 +976,27 @@ class Cosmos25VideoDiT(nn.Module):
             )
         for index in range(len(self.blocks)):
             if self.use_gradient_checkpointing and torch.is_grad_enabled():
+
                 def _block_forward(value, layer_index=index):
                     return self.forward_block(layer_index, value, pre, mask)
 
-                tokens = checkpoint(
-                    _block_forward, tokens, use_reentrant=False
-                )
+                tokens = checkpoint(_block_forward, tokens, use_reentrant=False)
             else:
                 tokens = self.forward_block(index, tokens, pre, mask)
         return self.post_dit(tokens, pre)
+
+    def apply_training_constraints(self):
+        self.crossattn_proj.requires_grad_(False)
+
+    @staticmethod
+    def merge_prepared_conditioning(first, second):
+        return {
+            "freqs": tuple(
+                torch.cat([a, b], dim=0)
+                for a, b in zip(first["freqs"], second["freqs"])
+            ),
+            "t_mod": {
+                key: torch.cat([first["t_mod"][key], second["t_mod"][key]], dim=1)
+                for key in ("embedding", "adaln_lora")
+            },
+        }

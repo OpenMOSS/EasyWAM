@@ -1,0 +1,15 @@
+defaults:
+  - backbone: flux2_klein_4b
+  - _self_
+
+_target_: runtime.create_easywam_unified
+attention_backend: ${model.backbone.attention_backend}
+action_dim: ${data.train.processor.action_output_dim}
+state_dim: ${data.train.processor.proprio_output_dim}
+state_position: sequence
+projector_hidden_dim: 64
+skip_dit_load_from_pretrain: false
+video_scheduler: ${model.backbone.video_scheduler}
+loss:
+  lambda_video: 0.5
+  lambda_action: 1.0

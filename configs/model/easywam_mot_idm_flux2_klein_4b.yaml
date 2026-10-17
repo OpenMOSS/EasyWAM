@@ -1,0 +1,6 @@
+defaults:
+  - easywam_mot_flux2_klein_4b
+  - _self_
+
+_target_: runtime.create_easywam_mot_idm
+video_cond_noise_prob: 0.5

@@ -1,0 +1,4 @@
+defaults:
+  - easywam_hidden_flux2_klein_4b
+  - lora: video_dit
+  - _self_

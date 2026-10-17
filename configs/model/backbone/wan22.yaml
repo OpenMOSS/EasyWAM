@@ -36,6 +36,7 @@ dit_config:
   use_gradient_checkpointing: ${model.backbone.use_gradient_checkpointing}
 
 video_scheduler:
+  family: continuous_flow
   train_shift: 5.0
   infer_shift: 5.0
   num_train_timesteps: 1000

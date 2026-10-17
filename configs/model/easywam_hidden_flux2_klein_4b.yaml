@@ -1,0 +1,10 @@
+defaults:
+  - easywam_mot_flux2_klein_4b
+  - _self_
+
+_target_: runtime.create_easywam_hidden
+action_dim: ${data.train.processor.action_output_dim}
+video_hidden_layer: ${model.backbone.video_hidden_layer}
+detach_video_hidden: true
+action_dit_config:
+  cross_attention: true

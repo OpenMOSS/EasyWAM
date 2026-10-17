@@ -23,9 +23,8 @@ learning_rate: 1.0e-4
 max_steps: 30000
 log_every: 100
 save_every: 3000
-# FLUX.2 trains one endpoint image. Closed-loop evaluation uses its cached
-# text/reference-image prefix and action-only denoising path.
-eval_every: 0
+# Training evaluation compares the current frame and predicted endpoint.
+eval_every: 1000
 eval_num_inference_steps: 10
 gradient_accumulation_steps: 1
 weight_decay: 1.0e-2

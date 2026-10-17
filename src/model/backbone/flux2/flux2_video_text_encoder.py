@@ -17,6 +17,24 @@ class Flux2Qwen3TextEncoder(nn.Module):
         hidden_size = int(model.config.hidden_size)
         self.dim = hidden_size * len(self.output_layers)
 
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_path: str,
+        torch_dtype: torch.dtype = torch.bfloat16,
+        output_layers=(9, 18, 27),
+        max_length: int = 512,
+    ) -> "Flux2Qwen3TextEncoder":
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+        ).eval().requires_grad_(False)
+        return cls(model, tokenizer, output_layers=output_layers, max_length=max_length)
+
     @torch.no_grad()
     def forward(self, prompts: str | Sequence[str]) -> tuple[torch.Tensor, torch.Tensor]:
         if isinstance(prompts, str):

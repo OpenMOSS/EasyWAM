@@ -8,6 +8,7 @@ from utils.logging_config import get_logger
 
 from .component.attention import AttentionSegment, StructuredAttentionMask, build_structured_attention_mask
 from .easywam_mot import EasyWAMMoT
+from .helpers import endpoint
 from .helpers.batching import (
     ActionInferenceResult,
     JointInferenceResult,
@@ -91,6 +92,8 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         test_action_with_infer_action: bool = False,
         decode_video: bool = True,
     ) -> JointBatchResult:
+        if endpoint.enabled(self):
+            return endpoint.infer(self, action_only=False, **{k: v for k, v in locals().items() if k != "self"})
         if test_action_with_infer_action:
             logger.warning("Joint batch inference always jointly denoises video and action.")
         return super().infer_joint_batch(
@@ -119,6 +122,8 @@ class EasyWAMMoTJoint(EasyWAMMoT):
         seed: Optional[Union[int, Sequence[Optional[int]]]] = None,
         rand_device: str = "cpu",
     ) -> ActionBatchResult:
+        if endpoint.enabled(self):
+            return endpoint.infer(self, action_only=True, **{k: v for k, v in locals().items() if k != "self"})
         out = self.infer_joint_batch(
             prompt=prompt, input_image=input_image, num_video_frames=num_video_frames,
             action_horizon=action_horizon, proprio=proprio, context=context,

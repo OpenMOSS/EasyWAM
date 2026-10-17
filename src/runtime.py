@@ -41,75 +41,9 @@ def _resolve_skip_dit_load_from_pretrain(
     return skip_pretrained
 
 
-def create_wan22_model(
-    model_id: str,
-    tokenizer_model_id: str,
-    dit_config,
-    tokenizer_max_len: int = 512,
-    train_shift: float = 5.0,
-    infer_shift: float = 5.0,
-    num_train_timesteps: int = 1000,
-    model_dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
-):
-    from model.backbone.wan22 import Wan22Core
-
-    if isinstance(dit_config, DictConfig):
-        dit_config = OmegaConf.to_container(dit_config, resolve=True)
-    if not isinstance(dit_config, dict):
-        raise ValueError(f"`dit_config` must resolve to a dict, got {type(dit_config)}")
-
-    return Wan22Core.from_wan22_pretrained(
-        device=device,
-        torch_dtype=model_dtype,
-        model_id=model_id,
-        tokenizer_model_id=tokenizer_model_id,
-        tokenizer_max_len=int(tokenizer_max_len),
-        dit_config=dit_config,
-        train_shift=float(train_shift),
-        infer_shift=float(infer_shift),
-        num_train_timesteps=int(num_train_timesteps),
-    )
-
-
-def create_cosmos25_model(
-    model_id: str = "./checkpoints/Cosmos-Predict2.5-2B",
-    reason_model_id: str = "./checkpoints/Cosmos-Reason1-7B",
-    tokenizer_max_len: int = 128,
-    load_text_encoder: bool = True,
-    attention_backend: str = "sdpa",
-    use_gradient_checkpointing: bool = False,
-    train_shift: float = 5.0,
-    infer_shift: float = 5.0,
-    num_train_timesteps: int = 1000,
-    model_dtype: torch.dtype = torch.bfloat16,
-    device: str = "cuda",
-):
-    from model.backbone.cosmos25 import Cosmos25Core
-
-    return Cosmos25Core.from_cosmos25_pretrained(
-        model_id=model_id,
-        reason_model_id=reason_model_id,
-        device=device,
-        torch_dtype=model_dtype,
-        load_text_encoder=bool(load_text_encoder),
-        tokenizer_max_len=int(tokenizer_max_len),
-        attention_backend=str(attention_backend),
-        use_gradient_checkpointing=bool(use_gradient_checkpointing),
-        train_shift=float(train_shift),
-        infer_shift=float(infer_shift),
-        num_train_timesteps=int(num_train_timesteps),
-    )
-
-
 def _create_easywam_mot(
     model_cls,
-    model_id: str | None = None,
-    tokenizer_model_id: str | None = None,
-    video_dit_config=None,
     backbone=None,
-    tokenizer_max_len: int = 512,
-    load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
     state_dim: int | None = None,
     state_position: str = "context",
@@ -128,102 +62,53 @@ def _create_easywam_mot(
     model_init_kwargs = {}
     if video_cond_noise_prob is not None:
         model_init_kwargs["video_cond_noise_prob"] = float(video_cond_noise_prob)
-    if backbone is not None:
-        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
-        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
-        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
-        model = model_cls.from_backbone_pretrained(
-            backbone=backbone,
-            device=device,
-            torch_dtype=model_dtype,
-            state_dim=state_dim,
-            state_position=state_position,
-            projector_hidden_dim=projector_hidden_dim,
-            action_dit_config=action_dit_config,
-            action_dit_pretrained_path=action_dit_pretrained_path,
-            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
-            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
-            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
-            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
-            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
-            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
-            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
-            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
-            **model_init_kwargs,
-        )
-        return _apply_video_dit_lora(model, lora)
-
-    if isinstance(video_dit_config, DictConfig):
-        video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
-    if not isinstance(video_dit_config, dict):
-        raise ValueError(f"`video_dit_config` must resolve to a dict, got {type(video_dit_config)}")
-    video_dit_config = dict(video_dit_config)
-    video_dit_config["attention_backend"] = str(attention_backend)
-
-    if isinstance(action_dit_config, DictConfig):
-        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True)
-    if action_dit_config is None:
-        action_dit_config = {}
-    if not isinstance(action_dit_config, dict):
-        raise ValueError(f"`action_dit_config` must resolve to a dict, got {type(action_dit_config)}")
-    action_dit_config = dict(action_dit_config)
-    action_dit_config["attention_backend"] = str(attention_backend)
-
-    if isinstance(video_scheduler, DictConfig):
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True)
-    if video_scheduler is None:
-        video_scheduler = {}
-    if not isinstance(video_scheduler, dict):
-        raise ValueError(f"`video_scheduler` must be dict-like, got {type(video_scheduler)}")
-
-    if isinstance(action_scheduler, DictConfig):
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True)
-    if action_scheduler is None:
-        raise ValueError("`action_scheduler` is required for EasyWAM-MoT.")
-    if not isinstance(action_scheduler, dict):
-        raise ValueError(f"`action_scheduler` must be dict-like, got {type(action_scheduler)}")
-    required_action_scheduler_keys = {"train_shift", "infer_shift", "num_train_timesteps"}
-    missing_keys = required_action_scheduler_keys - set(action_scheduler.keys())
-    if missing_keys:
-        raise ValueError(
-            f"`action_scheduler` missing required keys: {sorted(missing_keys)}. "
-            "Expected keys: train_shift, infer_shift, num_train_timesteps."
-        )
-
-    if isinstance(loss, DictConfig):
-        loss = OmegaConf.to_container(loss, resolve=True)
-    if loss is None:
-        loss = {}
-    if not isinstance(loss, dict):
-        raise ValueError(f"`loss` must be dict-like, got {type(loss)}")
-    skip_dit_load_from_pretrain = _resolve_skip_dit_load_from_pretrain(
-        skip_dit_load_from_pretrain,
-        lora,
+    if backbone is None:
+        raise ValueError("`backbone` configuration is required.")
+    backbone = (
+        OmegaConf.to_container(backbone, resolve=True)
+        if isinstance(backbone, DictConfig)
+        else dict(backbone)
     )
-
-    model = model_cls.from_wan22_pretrained(
+    action_dit_config = (
+        OmegaConf.to_container(action_dit_config, resolve=True)
+        if isinstance(action_dit_config, DictConfig)
+        else dict(action_dit_config)
+    )
+    video_scheduler = (
+        OmegaConf.to_container(video_scheduler, resolve=True)
+        if isinstance(video_scheduler, DictConfig)
+        else dict(video_scheduler or {})
+    )
+    action_scheduler = (
+        OmegaConf.to_container(action_scheduler, resolve=True)
+        if isinstance(action_scheduler, DictConfig)
+        else dict(action_scheduler or {})
+    )
+    loss = (
+        OmegaConf.to_container(loss, resolve=True)
+        if isinstance(loss, DictConfig)
+        else dict(loss or {})
+    )
+    model = model_cls.from_backbone_pretrained(
+        backbone=backbone,
         device=device,
         torch_dtype=model_dtype,
-        model_id=model_id,
-        tokenizer_model_id=tokenizer_model_id,
-        tokenizer_max_len=int(tokenizer_max_len),
-        load_text_encoder=bool(load_text_encoder),
-        state_dim=(None if state_dim is None else int(state_dim)),
+        state_dim=state_dim,
         state_position=state_position,
-        projector_hidden_dim=int(projector_hidden_dim),
-        video_dit_config=video_dit_config,
+        projector_hidden_dim=projector_hidden_dim,
         action_dit_config=action_dit_config,
         action_dit_pretrained_path=action_dit_pretrained_path,
-        skip_dit_load_from_pretrain=bool(skip_dit_load_from_pretrain),
+        skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(
+            skip_dit_load_from_pretrain, lora
+        ),
         video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
         video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
         video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-        action_train_shift=float(action_scheduler["train_shift"]),
-        action_infer_shift=float(action_scheduler["infer_shift"]),
-        action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
+        action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
+        action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
+        action_num_train_timesteps=int(
+            action_scheduler.get("num_train_timesteps", 1000)
+        ),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
         loss_lambda_action=float(loss.get("lambda_action", 1.0)),
         **model_init_kwargs,
@@ -250,15 +135,10 @@ def create_easywam_mot_idm(*args, **kwargs):
 
 
 def create_easywam_unified(
-    model_id: str | None = None,
-    tokenizer_model_id: str | None = None,
-    video_dit_config=None,
     backbone=None,
     action_dim: int | None = None,
     state_dim: int | None = None,
     state_position: str = "context",
-    tokenizer_max_len: int = 512,
-    load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
     projector_hidden_dim: int = 64,
     action_dit_pretrained_path: str | None = None,
@@ -271,66 +151,34 @@ def create_easywam_unified(
 ):
     from model.easywam_unified import EasyWAMUnified
 
-    if backbone is not None:
-        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
-        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
-        model = EasyWAMUnified.from_backbone_pretrained(
-            backbone=backbone,
-            action_dim=int(action_dim),
-            state_dim=int(state_dim),
-            state_position=state_position,
-            projector_hidden_dim=projector_hidden_dim,
-            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
-            device=device,
-            torch_dtype=model_dtype,
-            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
-            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
-            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
-            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
-            video_scheduler_config=video_scheduler,
-        )
-        return _apply_video_dit_lora(model, lora)
-
-    if isinstance(video_dit_config, DictConfig):
-        video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
-    if not isinstance(video_dit_config, dict):
-        raise ValueError(f"`video_dit_config` must resolve to a dict, got {type(video_dit_config)}")
-    video_dit_config = dict(video_dit_config)
-    video_dit_config["attention_backend"] = str(attention_backend)
-
-    if isinstance(video_scheduler, DictConfig):
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True)
-    if video_scheduler is None:
-        video_scheduler = {}
-    if not isinstance(video_scheduler, dict):
-        raise ValueError(f"`video_scheduler` must be dict-like, got {type(video_scheduler)}")
-
-    if isinstance(loss, DictConfig):
-        loss = OmegaConf.to_container(loss, resolve=True)
-    if loss is None:
-        loss = {}
-    if not isinstance(loss, dict):
-        raise ValueError(f"`loss` must be dict-like, got {type(loss)}")
-    skip_dit_load_from_pretrain = _resolve_skip_dit_load_from_pretrain(
-        skip_dit_load_from_pretrain,
-        lora,
+    if backbone is None:
+        raise ValueError("`backbone` configuration is required.")
+    backbone = (
+        OmegaConf.to_container(backbone, resolve=True)
+        if isinstance(backbone, DictConfig)
+        else dict(backbone)
     )
-
-    model = EasyWAMUnified.from_wan22_pretrained(
-        device=device,
-        torch_dtype=model_dtype,
-        model_id=model_id,
-        tokenizer_model_id=tokenizer_model_id,
-        tokenizer_max_len=int(tokenizer_max_len),
-        load_text_encoder=bool(load_text_encoder),
-        video_dit_config=video_dit_config,
+    video_scheduler = (
+        OmegaConf.to_container(video_scheduler, resolve=True)
+        if isinstance(video_scheduler, DictConfig)
+        else dict(video_scheduler or {})
+    )
+    loss = (
+        OmegaConf.to_container(loss, resolve=True)
+        if isinstance(loss, DictConfig)
+        else dict(loss or {})
+    )
+    model = EasyWAMUnified.from_backbone_pretrained(
+        backbone=backbone,
         action_dim=int(action_dim),
         state_dim=int(state_dim),
         state_position=state_position,
-        projector_hidden_dim=int(projector_hidden_dim),
-        skip_dit_load_from_pretrain=bool(skip_dit_load_from_pretrain),
+        projector_hidden_dim=projector_hidden_dim,
+        skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(
+            skip_dit_load_from_pretrain, lora
+        ),
+        device=device,
+        torch_dtype=model_dtype,
         video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
         video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
         video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
@@ -342,16 +190,11 @@ def create_easywam_unified(
 
 
 def create_easywam_hidden(
-    model_id: str | None = None,
-    tokenizer_model_id: str | None = None,
-    video_dit_config=None,
     action_dit_config=None,
     backbone=None,
     action_dim: int | None = None,
     state_dim: int | None = None,
     state_position: str = "context",
-    tokenizer_max_len: int = 512,
-    load_text_encoder: bool = True,
     attention_backend: str = "sdpa",
     projector_hidden_dim: int = 64,
     video_hidden_layer: int = 17,
@@ -367,115 +210,56 @@ def create_easywam_hidden(
 ):
     from model.easywam_hidden import EasyWAMHidden
 
-    if backbone is not None:
-        backbone = OmegaConf.to_container(backbone, resolve=True) if isinstance(backbone, DictConfig) else dict(backbone)
-        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True) if isinstance(action_dit_config, DictConfig) else dict(action_dit_config)
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True) if isinstance(video_scheduler, DictConfig) else dict(video_scheduler or {})
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True) if isinstance(action_scheduler, DictConfig) else dict(action_scheduler or {})
-        loss = OmegaConf.to_container(loss, resolve=True) if isinstance(loss, DictConfig) else dict(loss or {})
-        model = EasyWAMHidden.from_backbone_pretrained(
-            backbone=backbone,
-            action_dit_config=action_dit_config,
-            action_dit_pretrained_path=action_dit_pretrained_path,
-            action_dim=int(action_dim),
-            state_dim=int(state_dim),
-            state_position=state_position,
-            projector_hidden_dim=projector_hidden_dim,
-            video_hidden_layer=int(video_hidden_layer),
-            detach_video_hidden=detach_video_hidden,
-            skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(skip_dit_load_from_pretrain, lora),
-            device=device,
-            torch_dtype=model_dtype,
-            video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
-            video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
-            video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-            action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
-            action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
-            action_num_train_timesteps=int(action_scheduler.get("num_train_timesteps", 1000)),
-            loss_lambda_video=float(loss.get("lambda_video", 1.0)),
-            loss_lambda_action=float(loss.get("lambda_action", 1.0)),
-        )
-        return _apply_video_dit_lora(model, lora)
-
-    if isinstance(video_dit_config, DictConfig):
-        video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
-    if not isinstance(video_dit_config, dict):
-        raise ValueError(
-            f"`video_dit_config` must resolve to a dict, got {type(video_dit_config)}"
-        )
-    video_dit_config = dict(video_dit_config)
-    video_dit_config["attention_backend"] = str(attention_backend)
-
-    if isinstance(action_dit_config, DictConfig):
-        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True)
-    if not isinstance(action_dit_config, dict):
-        raise ValueError(
-            f"`action_dit_config` must resolve to a dict, got {type(action_dit_config)}"
-        )
-    action_dit_config = dict(action_dit_config)
-    action_dit_config["attention_backend"] = str(attention_backend)
-
-    if isinstance(video_scheduler, DictConfig):
-        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True)
-    if video_scheduler is None:
-        video_scheduler = {}
-    if not isinstance(video_scheduler, dict):
-        raise ValueError(f"`video_scheduler` must be dict-like, got {type(video_scheduler)}")
-
-    if isinstance(action_scheduler, DictConfig):
-        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True)
-    if action_scheduler is None:
-        raise ValueError("`action_scheduler` is required for EasyWAM-Hidden.")
-    if not isinstance(action_scheduler, dict):
-        raise ValueError(
-            f"`action_scheduler` must be dict-like, got {type(action_scheduler)}"
-        )
-    required_action_scheduler_keys = {
-        "train_shift",
-        "infer_shift",
-        "num_train_timesteps",
-    }
-    missing_keys = required_action_scheduler_keys - set(action_scheduler)
-    if missing_keys:
-        raise ValueError(
-            f"`action_scheduler` missing required keys: {sorted(missing_keys)}. "
-            "Expected keys: train_shift, infer_shift, num_train_timesteps."
-        )
-
-    if isinstance(loss, DictConfig):
-        loss = OmegaConf.to_container(loss, resolve=True)
-    if loss is None:
-        loss = {}
-    if not isinstance(loss, dict):
-        raise ValueError(f"`loss` must be dict-like, got {type(loss)}")
-    skip_dit_load_from_pretrain = _resolve_skip_dit_load_from_pretrain(
-        skip_dit_load_from_pretrain,
-        lora,
+    if backbone is None:
+        raise ValueError("`backbone` configuration is required.")
+    backbone = (
+        OmegaConf.to_container(backbone, resolve=True)
+        if isinstance(backbone, DictConfig)
+        else dict(backbone)
     )
-
-    model = EasyWAMHidden.from_wan22_pretrained(
-        device=device,
-        torch_dtype=model_dtype,
-        model_id=model_id,
-        tokenizer_model_id=tokenizer_model_id,
-        tokenizer_max_len=int(tokenizer_max_len),
-        load_text_encoder=bool(load_text_encoder),
-        video_dit_config=video_dit_config,
+    action_dit_config = (
+        OmegaConf.to_container(action_dit_config, resolve=True)
+        if isinstance(action_dit_config, DictConfig)
+        else dict(action_dit_config)
+    )
+    video_scheduler = (
+        OmegaConf.to_container(video_scheduler, resolve=True)
+        if isinstance(video_scheduler, DictConfig)
+        else dict(video_scheduler or {})
+    )
+    action_scheduler = (
+        OmegaConf.to_container(action_scheduler, resolve=True)
+        if isinstance(action_scheduler, DictConfig)
+        else dict(action_scheduler or {})
+    )
+    loss = (
+        OmegaConf.to_container(loss, resolve=True)
+        if isinstance(loss, DictConfig)
+        else dict(loss or {})
+    )
+    model = EasyWAMHidden.from_backbone_pretrained(
+        backbone=backbone,
         action_dit_config=action_dit_config,
         action_dit_pretrained_path=action_dit_pretrained_path,
         action_dim=int(action_dim),
         state_dim=int(state_dim),
         state_position=state_position,
-        projector_hidden_dim=int(projector_hidden_dim),
+        projector_hidden_dim=projector_hidden_dim,
         video_hidden_layer=int(video_hidden_layer),
-        detach_video_hidden=bool(detach_video_hidden),
-        skip_dit_load_from_pretrain=bool(skip_dit_load_from_pretrain),
+        detach_video_hidden=detach_video_hidden,
+        skip_dit_load_from_pretrain=_resolve_skip_dit_load_from_pretrain(
+            skip_dit_load_from_pretrain, lora
+        ),
+        device=device,
+        torch_dtype=model_dtype,
         video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
         video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
         video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
-        action_train_shift=float(action_scheduler["train_shift"]),
-        action_infer_shift=float(action_scheduler["infer_shift"]),
-        action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
+        action_train_shift=float(action_scheduler.get("train_shift", 5.0)),
+        action_infer_shift=float(action_scheduler.get("infer_shift", 5.0)),
+        action_num_train_timesteps=int(
+            action_scheduler.get("num_train_timesteps", 1000)
+        ),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
         loss_lambda_action=float(loss.get("lambda_action", 1.0)),
     )
@@ -494,7 +278,9 @@ def build_datasets(data_cfg: DictConfig):
         default_stats_path = os.path.join(misc.get_work_dir(), "dataset_stats.json")
         val_stats_path = data_cfg.val.get("pretrained_norm_stats")
         pretrained_norm_stats = val_stats_path or train_stats_path or default_stats_path
-        logger.info("Building val dataset with pretrained_norm_stats: %s", pretrained_norm_stats)
+        logger.info(
+            "Building val dataset with pretrained_norm_stats: %s", pretrained_norm_stats
+        )
         val_ds = instantiate(data_cfg.val, pretrained_norm_stats=pretrained_norm_stats)
     return train_ds, val_ds
 
@@ -521,8 +307,11 @@ def run_training(cfg: DictConfig):
             OmegaConf.save(config_payload, f)
 
     model_dtype = _mixed_precision_to_model_dtype(mixed_precision)
-    model = instantiate(cfg.model, model_dtype=model_dtype, device=str(accelerator.device))
+    model = instantiate(
+        cfg.model, model_dtype=model_dtype, device=str(accelerator.device)
+    )
     from model.helpers.inference import configure_model_execution
+
     model = configure_model_execution(
         model,
         vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
@@ -542,6 +331,7 @@ def run_training(cfg: DictConfig):
     finally:
         accelerator.end_training()
 
+
 def run_inference(cfg: DictConfig):
     import numpy as np
     from einops import repeat
@@ -553,8 +343,11 @@ def run_inference(cfg: DictConfig):
     mixed_precision = _normalize_mixed_precision(cfg.mixed_precision)
     model_dtype = _mixed_precision_to_model_dtype(mixed_precision)
 
-    model = instantiate(cfg.model, model_dtype=model_dtype, device=str(inference_cfg.device))
+    model = instantiate(
+        cfg.model, model_dtype=model_dtype, device=str(inference_cfg.device)
+    )
     from model.helpers.inference import configure_model_execution
+
     model = configure_model_execution(
         model,
         vae_micro_batch_size=cfg.get("vae_micro_batch_size", 1),
@@ -572,18 +365,22 @@ def run_inference(cfg: DictConfig):
     from model.helpers.inference import configure_inference_compile_from_config
 
     model = configure_inference_compile_from_config(model, inference_cfg)
-    
+
     def center_crop_resize(img: Image, width: int, height: int) -> Image.Image:
         src_w, src_h = img.size
         scale = max(width / src_w, height / src_h)
-        resized = img.resize((round(src_w * scale), round(src_h * scale)), resample=Image.BILINEAR)
+        resized = img.resize(
+            (round(src_w * scale), round(src_h * scale)), resample=Image.BILINEAR
+        )
         rw, rh = resized.size
         left = max((rw - width) // 2, 0)
         top = max((rh - height) // 2, 0)
         return resized.crop((left, top, left + width, top + height))
 
     input_image = Image.open(str(inference_cfg.input_image_path)).convert("RGB")
-    input_image = center_crop_resize(input_image, width=inference_cfg.width, height=inference_cfg.height)
+    input_image = center_crop_resize(
+        input_image, width=inference_cfg.width, height=inference_cfg.height
+    )
     arr = np.array(input_image, dtype=np.float32)
     x = torch.from_numpy(arr)
     x = x.to(device=model.device, dtype=model.torch_dtype)
@@ -599,7 +396,11 @@ def run_inference(cfg: DictConfig):
         "input_image": x,
         "num_frames": int(inference_cfg.num_frames),
         "num_inference_steps": int(inference_cfg.num_inference_steps),
-        "sigma_shift": None if inference_cfg.get("sigma_shift") is None else float(inference_cfg.sigma_shift),
+        "sigma_shift": (
+            None
+            if inference_cfg.get("sigma_shift") is None
+            else float(inference_cfg.sigma_shift)
+        ),
         "seed": int(inference_cfg.seed),
         "rand_device": str(inference_cfg.rand_device),
     }

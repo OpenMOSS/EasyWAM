@@ -18,6 +18,7 @@ video_hidden_layer: 16
 action_dit_pretrained_path: ./checkpoints/ActionDiT_CosmosPredict25_2B_alphascale_1024hdim.pt
 
 video_scheduler:
+  family: flow_unipc
   train_shift: 5.0
   infer_shift: 5.0
   num_train_timesteps: 1000

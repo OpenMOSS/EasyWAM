@@ -49,7 +49,7 @@ def _resolve_task_choice() -> str:
     choice = HydraConfig.get().runtime.choices.get("task")
     if choice is None or not str(choice).strip():
         raise ValueError(
-            "Hydra task choice is empty; pass task=libero_easywam_mot_wan22 "
+            "Hydra task choice is empty; select a task from configs/task/ with task=<task-name> "
             "or another LIBERO task."
         )
     return str(choice)

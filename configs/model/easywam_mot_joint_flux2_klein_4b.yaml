@@ -1,0 +1,5 @@
+defaults:
+  - easywam_mot_flux2_klein_4b
+  - _self_
+
+_target_: runtime.create_easywam_mot_joint

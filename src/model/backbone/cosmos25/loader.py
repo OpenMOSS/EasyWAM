@@ -7,9 +7,11 @@ from typing import Optional
 
 import torch
 
+from utils.logging_config import get_logger
+from ..contract import BackboneComponents, TextEncoderComponents, TextEncoding
+from .action_initialization import initialize_action
 from .cosmos_video_dit import Cosmos25DiTConfig, Cosmos25VideoDiT
 from .cosmos_video_text_encoder import Cosmos25TextEncoder
-from utils.logging_config import get_logger
 
 
 logger = get_logger(__name__)
@@ -73,8 +75,7 @@ def load_cosmos25_text_projection(
     bias = state["crossattn_proj.0.bias"]
     if tuple(weight.shape) != (1024, ORIGINAL_REASON_CONTEXT_DIM):
         raise RuntimeError(
-            "Unexpected Cosmos text projection shape: "
-            f"{tuple(weight.shape)}."
+            "Unexpected Cosmos text projection shape: " f"{tuple(weight.shape)}."
         )
     with torch.device("meta"):
         linear = torch.nn.Linear(ORIGINAL_REASON_CONTEXT_DIM, 1024, bias=True)
@@ -131,7 +132,9 @@ def load_cosmos25_components(
     dit_path = resolve_cosmos25_dit_path(root)
     vae_path = root / "tokenizer.pth"
     if not vae_path.is_file():
-        raise FileNotFoundError(f"Cosmos video tokenizer checkpoint not found: {vae_path}")
+        raise FileNotFoundError(
+            f"Cosmos video tokenizer checkpoint not found: {vae_path}"
+        )
     if skip_dit_load_from_pretrain:
         logger.info(
             "Skipping pretrained video DiT load (`skip_dit_load_from_pretrain=True`); "
@@ -149,7 +152,9 @@ def load_cosmos25_components(
     else:
         logger.info("Loading pretrained Cosmos video DiT from %s", dit_path)
         dit = load_cosmos25_dit(
-            dit_path, device=device, torch_dtype=torch_dtype,
+            dit_path,
+            device=device,
+            torch_dtype=torch_dtype,
             attention_backend=attention_backend,
             use_gradient_checkpointing=use_gradient_checkpointing,
             video_attention_mask_mode=video_attention_mask_mode,
@@ -161,7 +166,9 @@ def load_cosmos25_components(
     reason_path = None
     if load_text_encoder:
         reason_path = str(Path(reason_model_id))
-        logger.info("Loading Cosmos-Reason1 text encoder/tokenizer from %s", reason_path)
+        logger.info(
+            "Loading Cosmos-Reason1 text encoder/tokenizer from %s", reason_path
+        )
         text_encoder = Cosmos25TextEncoder.from_pretrained(
             reason_path, torch_dtype=torch_dtype, max_length=tokenizer_max_len
         ).to(device)
@@ -192,4 +199,73 @@ def load_cosmos25_components(
         vae_path=str(vae_path),
         text_encoder_path=reason_path,
         tokenizer_path=reason_path if load_text_encoder else None,
+    )
+
+
+def _dit_options(cfg):
+    return dict(
+        attention_backend=str(cfg.get("attention_backend", "sdpa")),
+        use_gradient_checkpointing=bool(cfg.get("use_gradient_checkpointing", False)),
+        video_attention_mask_mode=str(
+            cfg.get("video_attention_mask_mode", "bidirectional")
+        ),
+        conditional_frame_timestep=float(
+            cfg.get("video_scheduler", {}).get("conditional_frame_timestep", 0.0001)
+        ),
+    )
+
+
+def load_components(cfg, *, device, torch_dtype, skip_dit_load_from_pretrain=False):
+    loaded = load_cosmos25_components(
+        model_id=cfg["model_id"],
+        reason_model_id=cfg["reason_model_id"],
+        device=device,
+        torch_dtype=torch_dtype,
+        load_text_encoder=bool(cfg.get("load_text_encoder", False)),
+        tokenizer_max_len=int(cfg.get("tokenizer_max_len", 128)),
+        skip_dit_load_from_pretrain=skip_dit_load_from_pretrain,
+        **_dit_options(cfg),
+    )
+    return BackboneComponents(
+        name="cosmos25", text_dim=int(cfg["text_dim"]), **vars(loaded)
+    )
+
+
+def load_dit(cfg, *, device, torch_dtype, skip_dit_load_from_pretrain=False):
+    if skip_dit_load_from_pretrain:
+        return Cosmos25VideoDiT(Cosmos25DiTConfig(**_dit_options(cfg))).to(
+            device=device, dtype=torch_dtype
+        )
+    return load_cosmos25_dit(
+        resolve_cosmos25_dit_path(cfg["model_id"]),
+        device=device,
+        torch_dtype=torch_dtype,
+        **_dit_options(cfg),
+    )
+
+
+def load_text_encoder(cfg, *, device, torch_dtype, context_len):
+    model = (
+        Cosmos25TextEncoder.from_pretrained(
+            cfg["reason_model_id"],
+            torch_dtype=torch_dtype,
+            max_length=context_len,
+        )
+        .to(device)
+        .eval()
+    )
+    model.set_projector(
+        load_cosmos25_text_projection(
+            resolve_cosmos25_dit_path(cfg["model_id"]),
+            device=device,
+            torch_dtype=torch_dtype,
+        )
+    )
+
+    def encode(prompts):
+        context, mask, token_mask = model(prompts, return_token_mask=True)
+        return TextEncoding(context, mask.bool(), token_mask)
+
+    return TextEncoderComponents(
+        model, encode, 1, str(cfg["reason_model_id"]), str(cfg["reason_model_id"])
     )
