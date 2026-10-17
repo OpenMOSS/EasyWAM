@@ -1,4 +1,4 @@
-mode: full
+mode: clean
 resolved_mode: ${validate_choice:${data.mode},clean,random,full}
 dataset_dirs_by_mode:
   clean:
