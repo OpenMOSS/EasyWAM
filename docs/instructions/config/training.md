@@ -41,6 +41,8 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 
 Models sharing the same `text_encoder_id` and compatible context length can share a cache. Do not reuse embeddings across different encoders merely because the prompt text is identical.
 
+The backbone configuration supplies `text_encoder_id`. All encoders use the same cache schema: `[L,D]` `context`, boolean `[L]` `mask`, and metadata for format version, encoder identity, context length, and prompt hash. Filenames follow `<hash>.text_len<L>.<encoder_id>[dtype].pt`; BF16 uses no dtype suffix, FP16 uses `.fp16`, and FP32 uses `.fp32`.
+
 ## Training configuration
 
 | Setting | Default | Behavior |

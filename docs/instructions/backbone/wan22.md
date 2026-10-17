@@ -1,10 +1,10 @@
 # Wan2.2-TI2V-5B Backbone
 
-[Backbone index](README.md) | [Backbone configuration](../config/models.md) | [Back to project README](../../../README.md)
+[中文](wan22_zh.md) | [Backbone index](README.md) | [Model configuration](../config/models.md) | [Back to project README](../../../README.md)
 
-Wan2.2 is supported by EasyWAM-Unified, MoT, MoT-Joint, MoT-IDM, and Hidden, with both full-parameter and LoRA task recipes for LIBERO and RoboTwin. The default paths and runtime settings live in `configs/model/backbone/wan22.yaml`.
+Wan2.2 is supported by EasyWAM-Unified, MoT, MoT-Joint, MoT-IDM, and Hidden, with full-parameter and LoRA model configurations. The default paths and runtime settings live in `configs/model/backbone/wan22.yaml`.
 
-## Prepare the backbone
+## Prepare model weights
 
 Run from the project root after installing EasyWAM and the Hugging Face CLI:
 
@@ -15,6 +15,8 @@ huggingface-cli download Wan-AI/Wan2.2-TI2V-5B \
 ```
 
 This directory supplies the Video DiT, VAE, UMT5 encoder, and tokenizer. The default config expects the UMT5 files under `checkpoints/Wan2.2-TI2V-5B/google/umt5-xxl`.
+
+## Initialize ActionDiT
 
 MoT, MoT-Joint, MoT-IDM, and Hidden use a separate ActionDiT. Generate its interpolated initialization once:
 
@@ -54,7 +56,9 @@ NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
   task=libero_easywam_unified_wan22_lora
 ```
 
-Available architecture segments are `unified`, `mot`, `mot_joint`, `mot_idm`, and `hidden`. Training outputs are written below `runs/<task>/<run-id>/`.
+Available architecture segments are `unified`, `mot`, `mot_joint`, `mot_idm`, and `hidden`. Training outputs are written to `output_dir`, which defaults to `runs/train/<date>_<time>/`.
+
+The model uses the `standard` ActionDiT preset. Visual attention is controlled by `model.backbone.video_attention_mask_mode`: `first_frame_causal` (default), `per_frame_causal`, or `bidirectional`. In `per_frame_causal` mode, tokens within a frame interact bidirectionally and each frame sees itself and earlier frames.
 
 ## Evaluate
 
@@ -73,3 +77,7 @@ python experiments/robotwin/run_robotwin_manager.py \
 ```
 
 Evaluation loads the runtime text encoder automatically. Follow the [LIBERO evaluation guide](../benchmark/libero.md), [LIBERO-Plus guide](../benchmark/libero_plus.md), or [RoboTwin evaluation guide](../benchmark/robotwin.md) for simulator setup, normalization statistics, batching, and result layout.
+
+## Standalone visual training
+
+`Wan22Core` is exported by `model.backbone.wan22`. Load weights with `Wan22Core.from_wan22_pretrained(...)`, call `model(sample)` for visual loss, and use `infer`, `save_checkpoint`, and `load_checkpoint` for generation and restoration. Samples contain normalized `video` (`[B,3,T,H,W]`) and `prompt`; `T % 4 == 1` and both spatial dimensions must be multiples of 16. This Core encodes prompts at runtime and does not consume the policy text cache. Action and state fields are not used by the Core. VAE and text encoder parameters should be frozen when optimizing only `model.dit`.

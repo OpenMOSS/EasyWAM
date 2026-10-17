@@ -41,6 +41,8 @@ python scripts/precompute_text_embeds.py task=libero_easywam_mot_wan22
 
 使用相同 `text_encoder_id` 和兼容 context 长度的模型可以共享 cache。即使 prompt 文本相同，也不要跨不同 encoder 复用 embedding。
 
+`text_encoder_id` 由 backbone 配置提供。所有编码器使用相同缓存协议：`[L,D]` 的 `context`、布尔类型 `[L]` 的 `mask`，以及格式版本、编码器标识、上下文长度和 prompt 哈希等元数据。文件名为 `<hash>.text_len<L>.<encoder_id>[dtype].pt`；BF16 无精度后缀，FP16 使用 `.fp16`，FP32 使用 `.fp32`。
+
 ## 训练配置
 
 | 设置 | 默认值 | 行为 |

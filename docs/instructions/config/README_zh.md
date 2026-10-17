@@ -29,7 +29,7 @@ train.yaml
         └── lora=video_dit
 ```
 
-常规训练和评测应优先选择 task 配置。只有在创建新 recipe 时才建议直接覆盖 `data=` 或 `model=`，并需要确认 action/state 维度和 backbone 维度兼容。
+选择 task 获得数据集和训练默认值，再通过 `model=` 选择架构、backbone 或 LoRA 配置。检查组合后的模型维度，并使用匹配的文本特征。可复用的实验设置保存在 task 配置中。
 
 ## 编写 task 配置文件
 
@@ -56,7 +56,7 @@ weight_decay: 1e-2
 resume: null
 ```
 
-将 `_self_` 放在组覆盖之后，以便 task 中的训练参数覆盖默认值。RoboTwin、RoboCasa、RoboDojo 各保留五种 Wan2.2 架构：`mot`、`hidden`、`unified`、`mot_joint`、`mot_idm`；RoboCasa 和 RoboDojo 的训练参数与 RoboTwin 相同。LIBERO 保留更完整的 task 配置集合。其他数据集没有预写 `_lora` task 不代表不支持 LoRA：创建一个选择对应 `_lora` 模型的 task 即可。新增数据集时，先编写 `configs/data/<dataset>.yaml`，确认 action/state 维度与模型兼容，再创建 task 文件。预计算文本 embedding 或训练前，用 `python scripts/train.py --cfg job task=<task-name>` 检查组合结果。各字段含义见[训练配置](training_zh.md)。
+将 `_self_` 放在组覆盖之后，使 task 中的值覆盖默认值。通过配置组选择数据与模型，无需重复定义。新增数据集时，先编写 `configs/data/<dataset>.yaml` 并确认动作、状态维度，再创建 task。预计算文本特征或训练前，用 `python scripts/train.py --cfg job task=<task-name>` 检查组合结果。各训练字段含义见[训练配置](training_zh.md)。
 
 ## 查看和覆盖配置
 

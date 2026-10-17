@@ -2,45 +2,43 @@
 
 [中文](models_zh.md) | [Configuration index](README.md) | [Back to README](../../../README.md)
 
-Model recipes live in `configs/model/`. Their names follow `easywam_<architecture>_<backbone>[_lora]`. Task recipes select one of these models and provide the data dimensions referenced by the model config.
+Model configurations in `configs/model/` select an EasyWAM architecture, a visual backbone, and optional LoRA adapters. Task configurations combine a model with a dataset and training settings. Model names follow `easywam_<architecture>_<backbone>[_lora]`.
 
 ## Select an architecture
 
-| Architecture | Configuration-specific behavior | Architecture-specific settings |
+| Architecture | Behavior | Main settings |
 | --- | --- | --- |
-| EasyWAM-Unified | One Video DiT jointly represents video and action tokens. | `action_dim`, `state_dim`, `projector_hidden_dim` |
-| EasyWAM-MoT | Separate Video DiT and Action DiT experts interact through mixed self-attention. | `action_dit_config`, `action_dit_pretrained_path` |
-| EasyWAM-MoT-Joint | The two experts jointly denoise future video and action tokens. | Same structural settings as MoT |
-| EasyWAM-MoT-IDM | Adds a teacher-forced conditional-video branch for action prediction. | `video_cond_noise_prob` in `[0, 1]` |
-| EasyWAM-Hidden | Conditions Action DiT on an intermediate Video DiT hidden layer. | `video_hidden_layer`, `detach_video_hidden` |
+| Unified | A shared visual transformer jointly models visual and action tokens. | `action_dim`, `state_dim`, `projector_hidden_dim` |
+| MoT | Visual and action experts interact through mixed self-attention. | `action_dit_config`, `action_dit_pretrained_path` |
+| MoT-Joint | The two experts jointly denoise future observations and actions. | Same structural settings as MoT |
+| MoT-IDM | Uses a teacher-forced future observation to condition action training. | `video_cond_noise_prob` |
+| Hidden | Conditions ActionDiT on intermediate visual features. | `video_hidden_layer`, `detach_video_hidden`, `action_dit_config` |
 
-Use the corresponding task rather than editing `_target_` manually:
+Select an existing task, or override its model group while retaining the dataset and training settings:
 
 ```bash
-# MoT-Joint + Cosmos2.5 on LIBERO
 python scripts/train.py --cfg job task=libero_easywam_mot_joint_cosmos25
 
-# Hidden + Wan2.2 with LoRA on LIBERO
-python scripts/train.py --cfg job task=libero_easywam_hidden_wan22_lora
+python scripts/train.py --cfg job \
+  task=libero_easywam_mot_wan22 \
+  model=easywam_hidden_wan22_lora
 ```
 
-## Backbone support
+## Select a backbone
 
 | Backbone | Unified | MoT | MoT-Joint | MoT-IDM | Hidden |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | Wan2.2-TI2V-5B | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Cosmos-Predict2.5-2B | ✅ | ✅ | ✅ | ✅ | ✅ |
-| FLUX.2 Klein-4B | — | ✅ | — | — | — |
+| FLUX.2 Klein Base 4B | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-Backbone configs contain model/checkpoint paths, text dimensions, transformer dimensions, scheduler defaults, attention settings, and the list of LoRA target modules. Keep the action expert's layer count, number of heads, and head dimension aligned with the video expert; checked-in recipes derive these values from `model.backbone`.
+Backbone configurations define model paths, text and attention dimensions, scheduler defaults, and LoRA target modules. Model configurations select the appropriate transformer structure and derive its dimensions from the backbone. Weight downloads, text encoders, visual prediction targets, and backbone-specific constraints are described in the [backbone guides](../backbone/README.md).
 
-`model.backbone.load_text_encoder` is `false` for training because datasets load precomputed embeddings. Evaluation configs set it to `true` so policies can encode runtime task instructions.
-
-Preparation and usage are documented separately for [Wan2.2](../backbone/wan22.md), [Cosmos2.5](../backbone/cosmos25.md), and [FLUX.2 / ImageWAM](../backbone/flux2.md).
+Training normally uses cached text features with `model.backbone.load_text_encoder=false`. Text precomputation and benchmark evaluation enable the text encoder when runtime instructions need encoding.
 
 ## Data-derived dimensions
 
-Do not normally hard-code robot dimensions in a model recipe:
+Robot dimensions come from the data processor:
 
 ```yaml
 state_dim: ${data.train.processor.proprio_output_dim}
@@ -49,36 +47,59 @@ action_dit_config:
   action_dim: ${data.train.processor.action_output_dim}
 ```
 
-Unified and Hidden expose `action_dim` at the model level; MoT-family models place it under `action_dit_config`. When adding a dataset, update `shape_meta`, `action_output_dim`, and `proprio_output_dim` together, then inspect the composed config.
+Unified and Hidden also expose `action_dim` at the model level. When adding a dataset, keep `shape_meta`, `action_output_dim`, and `proprio_output_dim` consistent, then inspect the composed configuration with `--cfg job`.
 
-## Checkpoint initialization
+## Configure ActionDiT
+
+MoT-family and Hidden models use `model.action_dit_config` to configure their action expert. Unified projects actions into the shared transformer and has no separate ActionDiT.
+
+The `preset` field selects a default block structure: `standard` uses a stack of sequential transformer blocks; `staged` uses sequential blocks followed by parallel attention/FFN blocks. Explicit component settings override the preset defaults.
+
+| Option | Values | `standard` default | `staged` default |
+| --- | --- | --- | --- |
+| `cross_attention` | `true`, `false` | true | false |
+| `qkv_projection` | `separate`, `fused` | separate | fused |
+| `qkv_bias` | `true`, `false` | true | false |
+| `qk_norm` | `projection`, `head`, `none` | projection | head |
+| `ffn_activation` | `gelu`, `swiglu` | gelu | swiglu |
+| `encoder_type` | `mlp`, `linear` | mlp | linear |
+| `decoder_type` | `mlp`, `linear`, `time_modulated` | mlp | time_modulated |
+| `position_encoding` | `rope_1d`, `rope_nd` | rope_1d | rope_nd |
+| `time_embedding_type` | `standard`, `scaled` | standard | scaled |
+
+`num_layers` controls standard depth; `num_layers_double` and `num_layers_single` control the two staged depths. `hidden_dim` sets the action width, `ffn_dim` or `mlp_ratio` sets the FFN width, and `max_action_horizon` sets the maximum action sequence length. In staged parallel blocks, the fused QKV and FFN input share a projection, so `qkv_bias` also controls that FFN input bias. Standard blocks use one-dimensional RoPE.
+
+MoT-family experts need compatible block topology and attention dimensions. Hidden reads visual features through cross-attention and requires `cross_attention=true`. Use the selected model recipe as the starting point, and use initialization weights that match any structural changes.
+
+## Initialize and load weights
 
 | Setting | Meaning |
 | --- | --- |
-| Backbone path fields | Locate the pretrained Video DiT, VAE/tokenizer, and optional text encoder. |
-| `action_dit_pretrained_path` | Optional interpolated ActionDiT initialization used by the MoT family and Hidden recipes. |
-| `skip_dit_load_from_pretrain` | Skip loading pretrained DiT weights; evaluation sets this to `true` before loading the EasyWAM checkpoint. |
-| `ckpt` | Evaluation checkpoint path, defined by `configs/benchmark/sim_*.yaml`. |
-| `resume` | Training checkpoint/directory consumed by the trainer's resume workflow. |
+| Backbone path fields | Pretrained visual transformer, VAE, and text-encoder locations. |
+| `action_dit_pretrained_path` | Optional initialization for a separate ActionDiT; `null` uses random initialization. |
+| `skip_dit_load_from_pretrain` | Skip visual pretrained weights before loading an EasyWAM checkpoint. |
+| `ckpt` | Policy checkpoint used by benchmark evaluation. |
+| `resume` | Training checkpoint or directory used to restore training state. |
 
-Use `scripts/preprocess_action_dit_backbone.py` to build the ActionDiT initialization described in the [Wan2.2](../backbone/wan22.md) and [Cosmos2.5](../backbone/cosmos25.md) guides. EasyWAM-Unified does not use a separate ActionDiT checkpoint.
+`scripts/preprocess_action_dit_backbone.py` prepares ActionDiT initialization from visual transformer weights. The script reads the backbone selected by `--model-config`; optional `--backbone` checks that selection. Follow the selected backbone guide for the model configuration and output path. Unified does not require this step. When loading a policy checkpoint, use the matching architecture, state layout, and action structure.
 
 ## Full training and LoRA
 
-A `_lora` model recipe adds `configs/model/lora/video_dit.yaml`. The default adapter uses rank and alpha `128`, zero dropout, and backbone-specific target modules. Checked-in `_lora` task recipes are under LIBERO; for another dataset, write a task recipe selecting the appropriate `_lora` model. Do not attach the group to an already trained full-model checkpoint unless that checkpoint's loading contract expects adapters.
-
-Override LoRA parameters when composing the run:
+Select a full model recipe for full training, or its `_lora` counterpart for visual-backbone LoRA. LoRA configurations compose `configs/model/lora/video_dit.yaml`; the default rank and alpha are `128`, with zero dropout and backbone-specific target modules.
 
 ```bash
 NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
-  task=libero_easywam_mot_wan22_lora \
+  task=libero_easywam_mot_wan22 \
+  model=easywam_mot_wan22_lora \
   model.lora.r=64 \
   model.lora.lora_alpha=64
 ```
 
+Use the same task and model selection for text precomputation, training, and evaluation. The [training guide](training.md) covers optimizer settings, checkpointing, and resume.
+
 ## Loss weights and schedulers
 
-All architecture configs expose:
+The total objective is `lambda_video * loss_video + lambda_action * loss_action`. Both weights are configured under `model.loss`:
 
 ```yaml
 loss:
@@ -86,15 +107,17 @@ loss:
   lambda_action: 1.0
 ```
 
-The total objective is `lambda_video * loss_video + lambda_action * loss_action`. Set a weight to `0` only when intentionally disabling that objective; keep both explicit in new recipes. FLUX.2 MoT currently defaults `lambda_video` to `0.5`.
+Defaults come from the selected model recipe. Set a weight to `0` to disable that objective.
 
-`video_scheduler` is inherited from the backbone. Architectures with a separate ActionDiT also define `action_scheduler`. `train_shift` affects training noise/timestep sampling, `infer_shift` affects inference, and `num_train_timesteps` defines the scheduler discretization. Treat scheduler changes as model-behavior changes rather than generic speed tuning.
+`model.backbone.video_scheduler.family` selects `continuous_flow` or `flow_unipc`, with defaults supplied by the backbone. `video_scheduler` comes from the backbone; models with a separate action expert also define `action_scheduler`. `train_shift` controls training timestep sampling, `infer_shift` controls inference, and `num_train_timesteps` defines the timestep range.
 
-## Architecture-specific settings
+## Conditioning and attention
 
-- `state_position` accepts `context` or `sequence` and defaults to `context`. In `context` mode, state tokens join the text conditioning context. In `sequence` mode, state tokens are always placed after the action tokens and join Unified's main sequence or the ActionDiT sequence used by MoT-family and Hidden models. Select the same value when loading a checkpoint; new checkpoints record it and reject mismatches.
-- `video_cond_noise_prob` controls how often MoT-IDM adds noise to the teacher-forced conditional video during training. It must be between `0` and `1` and defaults to `0.5`.
-- `video_hidden_layer` is a zero-based Video DiT block index used by Hidden. The checked-in value comes from the backbone and must remain within its layer count.
-- `detach_video_hidden=true` prevents the action loss from backpropagating through Hidden's video feature path. Setting it to `false` couples action gradients into that path and changes training memory and optimization behavior.
-- `projector_hidden_dim` controls the small state/action projection MLPs; changing it makes checkpoint shapes incompatible.
-- `video_attention_mask_mode` accepts `first_frame_causal`, `per_frame_causal`, or `bidirectional`. In `per_frame_causal` mode, tokens within one video frame interact bidirectionally and each frame sees video tokens from that frame and all earlier frames. Checked-in Wan2.2 and Cosmos2.5 recipes use `first_frame_causal`; do not change it when resuming a checkpoint trained with another mode.
+| Setting | Usage |
+| --- | --- |
+| `state_position` | `context` adds state to the conditioning context; `sequence` places state after action tokens in the modeled sequence. Use the same layout when loading a checkpoint. |
+| `video_cond_noise_prob` | Probability of adding noise to the teacher-forced observation in MoT-IDM; range `[0, 1]`, default `0.5`. |
+| `video_hidden_layer` | Zero-based visual block index read by Hidden; defaults to the backbone setting. |
+| `detach_video_hidden` | `true` stops action-loss gradients through Hidden's visual features; `false` permits them. |
+| `projector_hidden_dim` | Hidden width of the state/action projection MLPs. |
+| `video_attention_mask_mode` | Visual attention layout where supported by the backbone; see its guide for available modes. |

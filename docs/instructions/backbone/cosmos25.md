@@ -1,10 +1,10 @@
 # Cosmos-Predict2.5-2B Backbone
 
-[Backbone index](README.md) | [Backbone configuration](../config/models.md) | [Back to project README](../../../README.md)
+[中文](cosmos25_zh.md) | [Backbone index](README.md) | [Model configuration](../config/models.md) | [Back to project README](../../../README.md)
 
-Cosmos2.5 is supported by EasyWAM-Unified, MoT, MoT-Joint, MoT-IDM, and Hidden, with both full-parameter and LoRA task recipes for LIBERO and RoboTwin. The default paths and runtime settings live in `configs/model/backbone/cosmos25.yaml`.
+Cosmos2.5 is supported by EasyWAM-Unified, MoT, MoT-Joint, MoT-IDM, and Hidden, with full-parameter and LoRA model configurations. The default paths and runtime settings live in `configs/model/backbone/cosmos25.yaml`.
 
-## Prepare the backbone
+## Prepare model weights
 
 The video model supplies the post-trained 2B DiT and its Wan2.1 tokenizer. Cosmos-Reason1-7B supplies the text encoder and tokenizer used for offline caching and runtime instructions:
 
@@ -18,6 +18,8 @@ huggingface-cli download nvidia/Cosmos-Predict2.5-2B \
 huggingface-cli download nvidia/Cosmos-Reason1-7B \
   --local-dir checkpoints/Cosmos-Reason1-7B
 ```
+
+## Initialize ActionDiT
 
 MoT, MoT-Joint, MoT-IDM, and Hidden use a separate ActionDiT. Generate its interpolated initialization once:
 
@@ -56,7 +58,9 @@ NPROC_PER_NODE=4 bash scripts/train_zero2.sh \
   task=libero_easywam_hidden_cosmos25_lora
 ```
 
-Available architecture segments are `unified`, `mot`, `mot_joint`, `mot_idm`, and `hidden`. Training outputs are written below `runs/<task>/<run-id>/`.
+Available architecture segments are `unified`, `mot`, `mot_joint`, `mot_idm`, and `hidden`. Training outputs are written to `output_dir`, which defaults to `runs/train/<date>_<time>/`.
+
+The model uses the `standard` ActionDiT preset. Visual attention is controlled by `model.backbone.video_attention_mask_mode`: `first_frame_causal` (default), `per_frame_causal`, or `bidirectional`. In `per_frame_causal` mode, tokens within a frame interact bidirectionally and each frame sees itself and earlier frames.
 
 ## Evaluate
 
@@ -70,3 +74,7 @@ python experiments/libero/run_libero_manager.py \
 ```
 
 Evaluation loads Cosmos-Reason1-7B automatically. Follow the [LIBERO evaluation guide](../benchmark/libero.md) or [LIBERO-Plus guide](../benchmark/libero_plus.md) for simulator setup, normalization statistics, batching, and result layout.
+
+## Standalone visual training
+
+`Cosmos25Core` is exported by `model.backbone.cosmos25`. Load weights with `Cosmos25Core.from_cosmos25_pretrained(...)`, call `model(sample)` for visual loss, and use `infer`, `save_checkpoint`, and `load_checkpoint` for generation and restoration. Samples contain normalized `video` (`[B,3,T,H,W]`) and either `prompt` or cached `context`/`context_mask`; omit `prompt` when passing cached features. Frame counts and image dimensions must satisfy the VAE constraints described above. Action and state fields are not required. VAE and text encoder parameters should be frozen when optimizing only `model.dit`.

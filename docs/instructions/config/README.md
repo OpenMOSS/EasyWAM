@@ -29,7 +29,7 @@ train.yaml
         └── lora=video_dit
 ```
 
-Use a task recipe for normal training and evaluation. Override `data=` or `model=` directly only when building a new recipe and after checking that action/state dimensions and backbone dimensions remain compatible.
+Select a task for dataset and training defaults, then use `model=` to choose an architecture, backbone, or LoRA configuration. Check the composed model dimensions and use matching text features. Save reusable experiment settings in a task recipe.
 
 ## Write a task recipe
 
@@ -56,7 +56,7 @@ weight_decay: 1e-2
 resume: null
 ```
 
-Keep `_self_` after the group overrides so task values take precedence. RoboTwin, RoboCasa, and RoboDojo each ship five Wan2.2 architectures: `mot`, `hidden`, `unified`, `mot_joint`, and `mot_idm`; RoboCasa and RoboDojo use the same training values as RoboTwin. LIBERO retains its broader set of task recipes. The absence of a prewritten `_lora` task for another dataset does not remove LoRA support: create a task selecting the matching `_lora` model. To add another dataset, first define its `configs/data/<dataset>.yaml` and verify the action/state dimensions against the selected model, then create the task file. Check the result with `python scripts/train.py --cfg job task=<task-name>` before precomputing text embeddings or training. See [training configuration](training.md) for the meaning of each field.
+Keep `_self_` after the group overrides so task values take precedence. Select the data and model groups rather than duplicating their definitions. For a new dataset, first define `configs/data/<dataset>.yaml` and verify its action/state dimensions, then create the task. Inspect the result with `python scripts/train.py --cfg job task=<task-name>` before precomputing text features or training. See [training configuration](training.md) for each training field.
 
 ## Inspect and override configuration
 
