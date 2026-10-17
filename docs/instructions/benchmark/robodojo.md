@@ -10,6 +10,8 @@ Clone the official simulator and its submodules, then prepare its Isaac Sim envi
 
 ```bash
 git clone --recurse-submodules https://github.com/RoboDojo-Benchmark/RoboDojo.git third_party/RoboDojo
+git -C third_party/RoboDojo checkout 08b7ee46034c3d0c8a389b2b7bfc138f4d55ee4d
+git -C third_party/RoboDojo submodule update --init --recursive
 (cd third_party/RoboDojo && bash scripts/install.sh)
 (cd third_party/RoboDojo && bash scripts/init_assets.sh)
 (cd third_party/RoboDojo && bash scripts/robodojo.sh doctor)

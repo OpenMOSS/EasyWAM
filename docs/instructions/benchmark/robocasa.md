@@ -12,6 +12,7 @@ Install robosuite master and the official RoboCasa checkout in the same Python e
 pip install "robosuite @ git+https://github.com/ARISE-Initiative/robosuite.git@master"
 
 git clone https://github.com/robocasa/robocasa.git third_party/robocasa
+git -C third_party/robocasa checkout 4f8a2980def75a55dff96b990745b83540425f09
 pip install gymnasium pygame h5py lxml hidapi "tianshou==0.4.10"
 pip install --no-deps -e third_party/robocasa
 

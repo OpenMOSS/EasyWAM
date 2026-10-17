@@ -13,8 +13,9 @@ LIBERO-Plus 是鲁棒性评测 benchmark。EasyWAM 直接评测在 LIBERO 上训
 ```bash
 sudo apt install libexpat1 libfontconfig1-dev libmagickwand-dev
 pip install wand scikit-image
-git clone https://github.com/sylvestf/LIBERO-plus.git <path/to/LIBERO-plus>
-pip install --no-deps -e <path/to/LIBERO-plus>
+git clone https://github.com/sylvestf/LIBERO-plus.git third_party/LIBERO-plus
+git -C third_party/LIBERO-plus checkout 4976dc30028e805ff8094b55501d532c48fec182
+pip install --no-deps -e third_party/LIBERO-plus
 ```
 
 从[官方 LIBERO-Plus 资源页面](https://huggingface.co/datasets/Sylvest/LIBERO-plus/tree/main)下载 `assets.zip`，并解压到 fork 的 `libero/libero/assets/` 目录。

@@ -4,10 +4,12 @@
 
 ## 安装
 
-从 GitHub 克隆当前 RoboTwin 仓库及其 XPolicyLab 子模块：
+从 GitHub 克隆 RoboTwin 仓库及其 XPolicyLab 子模块，并固定版本：
 
 ```bash
 git clone --recurse-submodules https://github.com/RoboTwin-Platform/RoboTwin.git third_party/RoboTwin
+git -C third_party/RoboTwin checkout 96c1feab536306b50c26af200044fcdf126e8904
+git -C third_party/RoboTwin submodule update --init --recursive
 ```
 
 使用 Python 3.10，并安装 EasyWAM 尚未提供的评测依赖：
@@ -18,6 +20,7 @@ pip install scipy==1.10.1 transforms3d==0.4.2 sapien==3.0.0b1 \
   "pydantic>=2.5" "websockets>=14.0" "msgpack>=1.0.8" "msgpack-numpy>=0.4.8"
 
 git clone https://github.com/NVlabs/curobo.git third_party/RoboTwin/envs/curobo
+git -C third_party/RoboTwin/envs/curobo checkout 78fd485fa82d9b9a063fb4985e371814587e666a
 pip install --no-build-isolation -e third_party/RoboTwin/envs/curobo
 ```
 

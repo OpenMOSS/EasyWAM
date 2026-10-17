@@ -11,6 +11,7 @@ LIBERO-Pro 使用在标准 LIBERO suite 上训练得到的 checkpoint，评测 O
 ```bash
 git clone https://github.com/Zxy-MLlab/LIBERO-PRO.git \
   third_party/LIBERO-PRO
+git -C third_party/LIBERO-PRO checkout eafdb809426b13153aa1e4c42d6601844217dfec
 ```
 
 LIBERO-Pro 与 LIBERO 使用相同的仿真依赖。在 EasyWAM 环境中安装评测所需的软件包：

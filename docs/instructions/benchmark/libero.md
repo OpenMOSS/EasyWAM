@@ -8,6 +8,7 @@ Install LIBERO in the same Python 3.10 environment as EasyWAM:
 
 ```bash
 git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git third_party/LIBERO
+git -C third_party/LIBERO checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
 
 # Only packages needed by LIBERO evaluation that are not declared by EasyWAM.
 pip install mujoco==3.3.2 easydict==1.9 \

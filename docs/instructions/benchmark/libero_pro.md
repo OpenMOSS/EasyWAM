@@ -11,6 +11,7 @@ Clone the official repository into EasyWAM's `third_party` directory:
 ```bash
 git clone https://github.com/Zxy-MLlab/LIBERO-PRO.git \
   third_party/LIBERO-PRO
+git -C third_party/LIBERO-PRO checkout eafdb809426b13153aa1e4c42d6601844217dfec
 ```
 
 LIBERO-Pro uses the same simulator dependencies as LIBERO. In the EasyWAM environment, install the packages needed by evaluation:

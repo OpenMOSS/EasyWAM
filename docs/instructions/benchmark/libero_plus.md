@@ -13,8 +13,9 @@ After installing EasyWAM, install the fork and its additional system/Python depe
 ```bash
 sudo apt install libexpat1 libfontconfig1-dev libmagickwand-dev
 pip install wand scikit-image
-git clone https://github.com/sylvestf/LIBERO-plus.git <path/to/LIBERO-plus>
-pip install --no-deps -e <path/to/LIBERO-plus>
+git clone https://github.com/sylvestf/LIBERO-plus.git third_party/LIBERO-plus
+git -C third_party/LIBERO-plus checkout 4976dc30028e805ff8094b55501d532c48fec182
+pip install --no-deps -e third_party/LIBERO-plus
 ```
 
 Download `assets.zip` from the [official LIBERO-Plus assets](https://huggingface.co/datasets/Sylvest/LIBERO-plus/tree/main) and extract it under the fork's `libero/libero/assets/` directory.
