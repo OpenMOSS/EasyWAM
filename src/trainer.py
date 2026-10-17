@@ -1008,6 +1008,17 @@ class EasyWAMTrainer:
                 checkpoint_saved_at_current_step = False
                 current_lr = float(self.optimizer.param_groups[0]["lr"])
                 progress_bar.update(1)
+                if self.accelerator.is_local_main_process:
+                    progress_bar.set_postfix(
+                        {
+                            "data_time": f"{data_time:.4f}",
+                            "forward_time": f"{forward_time:.4f}",
+                            "backward_time": f"{backward_time:.4f}",
+                            "loss": f"{loss.detach().float().item():.4f}",
+                            "grad_norm": f"{torch.as_tensor(grad_norm).detach().float().item():.4f}",
+                        },
+                        refresh=False,
+                    )
                 should_log = self.log_every > 0 and (
                     self.global_step % self.log_every == 0 or self.global_step == self.max_steps
                 )
@@ -1018,15 +1029,6 @@ class EasyWAMTrainer:
                         grad_norm, device=loss.device, dtype=torch.float32
                     ).reshape(1)
                     global_grad_norm = float(self.accelerator.gather(grad_norm_tensor).mean().item())
-                    if self.accelerator.is_local_main_process:
-                        progress_bar.set_postfix(
-                            {
-                                **{name: f"{value:.4f}" for name, value in timing_averages.items()},
-                                "loss": f"{loss_averages['loss']:.4f}",
-                                "grad_norm": f"{global_grad_norm:.4f}",
-                            },
-                            refresh=False,
-                        )
                 if should_log and self.accelerator.is_main_process:
                     description = (
                         "[train] epoch=%d step=%d/%d loss_avg=%.6f "
