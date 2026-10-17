@@ -6,6 +6,7 @@
 
 | 数据集 | 内容 | 文档 |
 | --- | --- | --- |
+| VLABench | 转换为现有 LeRobot v3 协议、文本缓存与训练 | [数据与训练](vlabench_zh.md) |
 | LIBERO | Hub 下载、数据目录、统计、文本缓存与训练 | [数据与训练](libero_zh.md) |
 | RoboTwin | Hub 下载、数据目录、统计、文本缓存与训练 | [数据与训练](robotwin_zh.md) |
 | RoboDojo | Hub 下载、数据目录、统计、文本缓存与训练 | [数据与训练](robodojo_zh.md) |

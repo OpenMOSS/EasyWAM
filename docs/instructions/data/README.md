@@ -6,6 +6,7 @@ This section covers dataset downloads, the expected LeRobot layout, text-embeddi
 
 | Dataset | Contents | Guide |
 | --- | --- | --- |
+| VLABench | Canonical LeRobot v3 conversion, text caching and training | [Data and training](vlabench.md) |
 | LIBERO | Hub download, dataset layout, statistics, text cache, and training | [Data and training](libero.md) |
 | RoboTwin | Hub download, dataset layout, statistics, text cache, and training | [Data and training](robotwin.md) |
 | RoboDojo | Hub download, dataset layout, statistics, text cache, and training | [Data and training](robodojo.md) |

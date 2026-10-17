@@ -1,0 +1,123 @@
+# LeRobot v3.0 dataset; 10-D absolute base-frame EEF.
+train:
+  _target_: data.lerobot.robot_video_dataset.RobotVideoDataset
+  dataset_dirs:
+  - ./data/vlabench-lerobot-v3.0
+  shape_meta:
+    images:
+    - key: image
+      raw_shape:
+      - 3
+      - 480
+      - 480
+      shape:
+      - 3
+      - 256
+      - 320
+    - key: wrist_image
+      raw_shape:
+      - 3
+      - 480
+      - 480
+      shape:
+      - 3
+      - 128
+      - 160
+    - key: second_image
+      raw_shape:
+      - 3
+      - 480
+      - 480
+      shape:
+      - 3
+      - 128
+      - 160
+    action:
+    - key: default
+      raw_shape: 10
+      shape: 10
+    state:
+    - key: default
+      raw_shape: 10
+      shape: 10
+  num_frames: 33
+  global_sample_stride: 1
+  action_video_freq_ratio: 4
+  video_size:
+  - 384
+  - 320
+  camera_key: null
+  val_set_proportion: 0.0
+  is_training_set: true
+  pretrained_norm_stats: ./data/vlabench-lerobot-v3.0/dataset_stats.json
+  skip_padding_as_possible: false
+  concat_multi_camera: robotwin
+  processor:
+    _target_: data.lerobot.processors.wam_processor.WAMProcessor
+    shape_meta: ${data.train.shape_meta}
+    num_obs_steps: ${data.train.num_frames}
+    num_output_cameras: 3
+    stack_images: false
+    include_gt_action: false
+    action_output_dim: 10
+    proprio_output_dim: 10
+    action_state_transforms: null
+    use_stepwise_action_norm: false
+    norm_default_mode: min/max
+    norm_exception_mode: null
+    action_state_merger:
+      _target_: data.lerobot.transforms.action_state_merger.ConcatLeftAlign
+    train_transforms:
+      image:
+      - &id001
+        _target_: data.lerobot.transforms.image.ToTensor
+      - &id002
+        _target_: torchvision.transforms.Resize
+        size:
+        - 256
+        - 320
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.0
+      wrist_image:
+      - &id003
+        _target_: data.lerobot.transforms.image.ToTensor
+      - &id004
+        _target_: torchvision.transforms.Resize
+        size:
+        - 128
+        - 160
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.0
+      second_image:
+      - &id005
+        _target_: data.lerobot.transforms.image.ToTensor
+      - &id006
+        _target_: torchvision.transforms.Resize
+        size:
+        - 128
+        - 160
+      - _target_: torchvision.transforms.ColorJitter
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.0
+    val_transforms:
+      image:
+      - *id001
+      - *id002
+      wrist_image:
+      - *id003
+      - *id004
+      second_image:
+      - *id005
+      - *id006
+  text_embedding_cache_dir: ./datasets/text_embeds_cache/vlabench/${model.backbone.name}
+  context_len: ${model.backbone.tokenizer_max_len}
+  text_encoder_id: ${model.backbone.text_encoder_id}
+  mixed_precision: ${mixed_precision}
