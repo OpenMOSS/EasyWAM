@@ -84,11 +84,11 @@ class Wan22Core(torch.nn.Module):
         return model
 
     def to(self, *args, **kwargs):
-        super().to(*args, **kwargs)
-        self.dit.to(*args, **kwargs)
-        self.text_encoder.to(*args, **kwargs)
-        self.vae.to(*args, **kwargs)
-        return self
+        result = super().to(*args, **kwargs)
+        parameter = next(self.dit.parameters())
+        self.device = parameter.device
+        self.torch_dtype = parameter.dtype
+        return result
 
     @staticmethod
     def _check_resize_height_width(height, width, num_frames):
@@ -179,38 +179,18 @@ class Wan22Core(torch.nn.Module):
             fuse_flag = True
         context, context_mask = self.encode_prompt(prompt_list)
 
-        action = None
-        if "action" in sample:
-            action = sample["action"]
-            if not isinstance(action, torch.Tensor):
-                raise TypeError(
-                    f"`sample['action']` must be a torch.Tensor with shape [B, T, a_dim], got {type(action)}"
-                )
-            if action.ndim != 3:
-                raise ValueError(f"`sample['action']` must be 3D [B, T, a_dim], got shape {tuple(action.shape)}")
-            if action.shape[1] <= 0:
-                raise ValueError(f"`sample['action']` temporal dimension must be positive, got {action.shape[1]}")
-            if action.shape[1] % (num_frames - 1) != 0:
-                raise ValueError(
-                    "`sample['action']` temporal dimension must be divisible by video transitions "
-                    f"({num_frames - 1}), got {action.shape[1]}"
-                )
-            action = action.to(device=self.device, dtype=self.torch_dtype)
-
         return {
             "context": context,
             "context_mask": context_mask,
             "input_latents": input_latents,
             "first_frame_latents": first_frame_latents,
             "fuse_vae_embedding_in_latents": fuse_flag,
-            "action": action,
         }
 
     def training_loss(self, sample):
         inputs = self.build_inputs(sample)
         input_latents = inputs["input_latents"]
         batch_size = input_latents.shape[0]
-        action = inputs["action"]
         context = inputs["context"]
         context_mask = inputs["context_mask"]
 
@@ -252,15 +232,12 @@ class Wan22Core(torch.nn.Module):
         prompt: str,
         input_image: torch.Tensor,
         num_frames: int,
-        action: Optional[torch.Tensor] = None,
         negative_prompt: Optional[str] = None,
         text_cfg_scale: float = 5.0,
-        action_cfg_scale: float = 1.0,
         num_inference_steps: int = 20,
         sigma_shift: Optional[float] = None,
         seed: Optional[int] = None,
         rand_device: str = "cpu",
-        **kwargs
     ):
         self.eval()
         if input_image.ndim == 3:
@@ -292,19 +269,6 @@ class Wan22Core(torch.nn.Module):
             dtype=torch.float32,
         ).to(device=self.device, dtype=self.torch_dtype)
         input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
-        if action is not None:
-            action = action.to(device=self.device, dtype=latents.dtype)
-            if action.ndim != 2:
-                raise ValueError(f"`action` must be 2D [T, a_dim], got shape {tuple(action.shape)}")
-            action = action.unsqueeze(0) # [1, T, a_dim]
-            if action.shape[1] % (num_frames - 1) != 0:
-                raise ValueError(
-                    "`action` temporal dimension must be divisible by `num_frames - 1`, "
-                    f"got {action.shape[1]} vs {num_frames - 1}"
-                )
-        if action_cfg_scale != 1.0 and action is None:
-            raise ValueError("`action_cfg_scale` != 1.0 requires non-null `action` input.")
-
         z = self._encode_input_image_latents_tensor(input_image=input_image)
         latents[:, :, 0:1] = z
         first_frame_latents = z
@@ -315,7 +279,6 @@ class Wan22Core(torch.nn.Module):
         context_nega_mask = None
         if text_cfg_scale != 1.0:
             context_nega, context_nega_mask = self.encode_prompt("" if negative_prompt is None else negative_prompt)
-        action_nega = None
 
         infer_timesteps, infer_deltas = self.infer_scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -358,8 +321,8 @@ class Wan22Core(torch.nn.Module):
         torch.save(payload, path)
 
     def load_checkpoint(self, path, optimizer=None):
-        payload = torch.load(path, map_location="cpu")
-        self.dit.load_state_dict(payload["dit"], strict=False)
+        payload = torch.load(path, map_location="cpu", weights_only=True)
+        self.dit.load_state_dict(payload["dit"], strict=True)
         if optimizer is not None and "optimizer" in payload:
             optimizer.load_state_dict(payload["optimizer"])
         return payload
